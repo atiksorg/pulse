@@ -20,9 +20,8 @@ const $$ = (s,ctx)=> Array.from((ctx||document).querySelectorAll(s));
 /* ── In-Memory State (единственное место хранения) ── */
 var AppState = {
   session: null,        // { src, token, expiresAt } | null
-  dashboards: [],       // [{ id, name, panels, layoutMode }]
+  dashboards: [],       // [{ id, name, panels }]
   activeId: null,       // id активного дашборда
-  layoutMode: 'grid',   // 'grid' | 'canvas'
   suggestions: { types: [], fields: [] }
 };
 
@@ -30,7 +29,7 @@ var AppState = {
 var charts = {};
 var refreshTimers = {};
 var editingPanelId = null;
-var canvasMode = false;
+var canvasMode = true;
 var demoPulseTimer = null;
 var currentCase = null;
 var toastTimer;
@@ -120,11 +119,11 @@ async function loadDashboardsFromServer(){
   return AppState.dashboards;
 }
 
-async function createDashboardOnServer(name, panels, layoutMode){
+async function createDashboardOnServer(name, panels){
   var r = await fetch(API + '/dashboards', {
     method:'POST',
     headers: Object.assign({'Content-Type':'application/json'}, authHeaders()),
-    body: JSON.stringify({ name: name || 'Новый дашборд', panels: panels || [], layoutMode: layoutMode || 'grid' })
+    body: JSON.stringify({ name: name || 'Новый дашборд', panels: panels || [], layoutMode: 'canvas' })
   });
   if (r.status === 401) { clearSession(); throw new Error('unauthorized'); }
   if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -140,7 +139,7 @@ async function updateDashboardOnServer(db){
   var r = await fetch(API + '/dashboards/' + encodeURIComponent(db.id), {
     method:'PUT',
     headers: Object.assign({'Content-Type':'application/json'}, authHeaders()),
-    body: JSON.stringify({ name: db.name, panels: db.panels, layoutMode: db.layoutMode || 'grid' })
+    body: JSON.stringify({ name: db.name, panels: db.panels, layoutMode: 'canvas' })
   });
   if (r.status === 401) { clearSession(); throw new Error('unauthorized'); }
   if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -203,17 +202,9 @@ function setActiveId(id){
   } catch(_){}
 }
 
-/* ── Layout mode (только RAM + БД) ───────────────── */
-function getLayoutMode(){ return AppState.layoutMode === 'canvas'; }
-function setLayoutMode(mode){
-  AppState.layoutMode = mode ? 'canvas' : 'grid';
-  // Сохраняем в активный дашборд на сервере (fire-and-forget)
-  var db = getActiveDashboard();
-  if (db) {
-    db.layoutMode = AppState.layoutMode;
-    updateDashboardOnServer(db).catch(function(){});
-  }
-}
+/* ── Layout mode (always canvas now) ────────────── */
+function getLayoutMode(){ return true; }
+function setLayoutMode(mode){ /* no-op: always canvas */ }
 
 /* ── Toast ───────────────────────────────────────── */
 function toast(msg){
