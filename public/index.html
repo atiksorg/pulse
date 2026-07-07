@@ -36,7 +36,7 @@
 <div class="topbar">
   <a href="#docs" class="brand"><span class="dot"></span> pulse</a>
   <div id="sessionIndicator" class="session-indicator" style="display:none;">
-    <span class="session-src">src: <span class="session-badge" id="sessionSrcName">—</span></span>
+    <span class="session-src">src: <span class="session-badge" id="sessionSrcName">—</span><button class="btn-copy-src" id="btnCopySrc" title="Скопировать src в буфер обмена">⧉</button></span>
     <button class="btn btn-ghost btn-sm" id="btnSessionLogout">Выйти</button>
   </div>
 </div>
@@ -111,18 +111,19 @@
         <div class="dash-tabs" id="dashTabs"></div>
       </div>
       <div class="toolbar">
+        <button class="btn btn-ghost" id="btnLayoutMode" title="Переключить режим раскладки">Сетка</button>
         <button class="btn btn-ghost" id="btnRefreshAll">↻ Обновить</button>
         <button class="btn btn-ghost" id="btnShare">Поделиться ссылкой</button>
         <button class="btn btn-primary" id="btnAddPanel">+ Добавить панель</button>
+        <!-- AI-помощник временно скрыт
         <button class="btn btn-ai" id="btnAskAI" title="Сгенерировать панель по текстовому запросу">✨ AI-помощник</button>
+        -->
       </div>
     </div>
 
-    <div id="canvasViewport">
-      <div id="canvasContainer"></div>
-      <div id="canvasMinimap"></div>
-      <div id="canvasZoomIndicator">100%</div>
-    </div>
+    <div id="quickStartBanner"></div>
+
+    <div class="grid" id="panelGrid"></div>
 
     <!-- ═══ Как пользоваться (expandable) ═══ -->
     <div class="help-section" id="helpSection">
@@ -633,7 +634,7 @@ GET https://events.atiks.org/s?src=my_app&type=purchase&group=day&from=2026-06-0
   </div>
 </div>
 
-<!-- ══════════════════ MODAL: AI ASSISTANT ══════════════════ -->
+<!-- ══════════════════ MODAL: AI ASSISTANT (скрыт) ══════════════════
 <div class="overlay" id="aiPanelModal">
   <div class="modal" style="max-width:620px;">
     <h2>✨ AI-помощник по метрикам</h2>
@@ -656,6 +657,7 @@ GET https://events.atiks.org/s?src=my_app&type=purchase&group=day&from=2026-06-0
     </div>
   </div>
 </div>
+-->
 
 <!-- ══════════════════ MODAL: CONFIRM ══════════════════ -->
 <div class="overlay" id="confirmModal">
