@@ -16,7 +16,6 @@ function renderSharedView(){
 
   if(demoPulseTimer){ clearInterval(demoPulseTimer); demoPulseTimer = null; }
 
-  $('#srcInput').parentElement.style.display = 'none';
   $('#dashTabs').style.display = 'none';
 
   var isDemo = payload.src && payload.src.startsWith('demo_');
@@ -50,7 +49,7 @@ function renderSharedView(){
       var copyPanels = JSON.parse(JSON.stringify(payload.dashboard.panels)).map(function(p){
         return Object.assign(p, { id: uid('panel') });
       });
-      var db = await createDashboardOnServer(payload.dashboard.name + ' (копия)', copyPanels, payload.layoutMode);
+      var db = await createDashboardOnServer(payload.dashboard.name + ' (копия)', copyPanels);
       setActiveId(db.id);
       location.hash = '#dashboard';
       toast('Дашборд сохранён в ваш кабинет');
@@ -59,7 +58,7 @@ function renderSharedView(){
     }
   };
 
-  renderPanels({ dashboard: payload.dashboard, src: payload.src, layoutMode: payload.layoutMode });
+  renderPanels({ dashboard: payload.dashboard, src: payload.src });
 }
 
 /* ── Public server-shared view (#public?id=...) ─── */
@@ -87,7 +86,6 @@ async function renderPublicView(){
   isPublicView = true;
   publicShare = data.share || { shareId: shareId, src: data.dashboard && data.dashboard.src };
 
-  $('#srcInput').parentElement.style.display = 'none';
   $('#dashTabs').style.display = 'none';
 
   var bannerText = '🔒 Публичный дашборд <b>' + escapeHtml(data.dashboard.name) + '</b> (только чтение)';
@@ -112,7 +110,7 @@ async function renderPublicView(){
       var copyPanels = JSON.parse(JSON.stringify(data.dashboard.panels)).map(function(p){
         return Object.assign(p, { id: uid('panel') });
       });
-      var db = await createDashboardOnServer(data.dashboard.name + ' (копия)', copyPanels, data.dashboard.layoutMode);
+      var db = await createDashboardOnServer(data.dashboard.name + ' (копия)', copyPanels);
       setActiveId(db.id);
       isPublicView = false;
       publicShare = null;
@@ -128,7 +126,6 @@ async function renderPublicView(){
 
   renderPanels({
     dashboard: { name: data.dashboard.name, panels: data.dashboard.panels },
-    src: data.share && data.share.src,
-    layoutMode: data.dashboard.layoutMode
+    src: data.share && data.share.src
   });
 }
