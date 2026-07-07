@@ -183,13 +183,13 @@ $('#qsSendBtn').onclick=async function(){
   }
 };
 
-$('#qsGoBtn').onclick=function(){
+$('#qsGoBtn').onclick=async function(){
   var db=getActiveDashboard();
   if(currentCase){
     var existingTypes=new Set(db.panels.map(function(p){return p.type;}));
     var added=false;
     currentCase.panels.forEach(function(cfg){ if(!existingTypes.has(cfg.type)){ db.panels.push(Object.assign({id:uid('panel')},cfg)); added=true; } });
-    if(added){ saveDashboards(getDashboards()); renderPanels(); }
+    if(added){ try { await updateDashboardOnServer(db); } catch(_){} renderPanels(); }
   } else {
     if(!db.panels.length){
       addPanelFromConfig({ title:'Тестовые события (сумма value)', viz:'kpi', type:'test_event', group:'', field:'', agg:'sum', aggfield:'value', range:'24h', width:4, autorefresh:0 });
