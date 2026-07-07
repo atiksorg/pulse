@@ -93,6 +93,13 @@ button{cursor:pointer;}
 }
 
 .brand{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-weight:700;font-size:18px;letter-spacing:-0.02em;}
+.topbar-github-link{
+  display:flex;align-items:center;
+  color:var(--muted);
+  transition:color .15s ease;
+  text-decoration:none;
+}
+.topbar-github-link:hover{color:var(--text);}
 .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--teal);box-shadow:0 0 0 3px rgba(77,236,199,0.15);animation:beat 1.8s ease-in-out infinite;}
 @keyframes beat{0%,100%{transform:scale(1);}45%{transform:scale(1.5);}}
 .nav{display:flex;gap:6px;align-items:center;}
