@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pulse — панель событий events.atiks.org</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>
+  // Chart.js multi-CDN loader: jsdelivr → cdnjs → unpkg → local
+  (function(){
+    var CDNS = [
+      'https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js',
+      'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.7/chart.umd.min.js',
+      'https://unpkg.com/chart.js@4.4.7/dist/chart.umd.min.js',
+      'chart.umd.min.js'
+    ];
+    var i = 0;
+    function tryNext(){
+      if(i >= CDNS.length){ console.warn('Chart.js: все CDN недоступны'); return; }
+      var src = CDNS[i++];
+      var s = document.createElement('script');
+      s.src = src;
+      s.onerror = function(){ console.warn('Chart.js CDN fail: ' + src); tryNext(); };
+      s.onload = function(){ console.log('Chart.js loaded from: ' + src); };
+      document.head.appendChild(s);
+    }
+    tryNext();
+  })();
+</script>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='40' fill='%234DECC7'/></svg>">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="topbar">
+  <a href="#docs" class="brand"><span class="dot"></span> pulse</a>
+  <div id="sessionIndicator" class="session-indicator" style="display:none;">
+    <span class="session-src">src: <span class="session-badge" id="sessionSrcName">—</span></span>
+    <button class="btn btn-ghost btn-sm" id="btnSessionLogout">Выйти</button>
+  </div>
+</div>
+
+<!-- ══════════════════ LANDING / DOCS VIEW ══════════════════ -->
+<section id="view-docs" class="view">
+  <div class="wrap">
+    <div class="hero">
+      <p class="eyebrow">events.atiks.org · api для аналитики событий</p>
+      <h1>Отправляйте события.<br>Смотрите <span>пульс</span> в реальном времени.</h1>
+      <p class="lead">Открытый HTTP-эндпоинт для записи событий из любого приложения — без ключей, без регистрации.</p>
+
+      <!-- ═══ Onboarding Checklist ═══ -->
+      <div class="hero-checklist">
+        <div class="hc-item"><span class="hc-num">1</span> Отправьте событие через API</div>
+        <div class="hc-item"><span class="hc-num">2</span> Постройте график в дашборде</div>
+        <div class="hc-item"><span class="hc-num">3</span> Поделитесь ссылкой с командой</div>
+      </div>
+
+      <!-- ═══ Live Playground ═══ -->
+      <div class="hero-playground">
+        <div class="pg-terminal">
+          <div class="pg-term-header">
+            <span class="pg-dot red"></span><span class="pg-dot yellow"></span><span class="pg-dot green"></span>
+            <span class="pg-term-title">fetch-event.js</span>
+          </div>
+          <div class="pg-term-body">
+            <pre><span class="c1">// 1 строка кода — и событие улетает на сервер</span>
+<span class="k1">fetch</span>(<span class="s1" id="pg-url">`https://events.atiks.org/e?src=hero_demo&type=action&value=42`</span>);</pre>
+            <button class="btn btn-primary pg-send-btn" id="pg-send-btn">
+              <span class="pg-btn-icon">▶</span> Отправить запрос
+            </button>
+          </div>
+        </div>
+
+        <div class="pg-chart-wrap">
+          <div class="pg-chart-header">
+            <span>Live Feed · <b>hero_demo</b></span>
+            <span class="pg-status"><span class="pg-status-dot"></span> Connected</span>
+          </div>
+          <canvas id="pg-chart"></canvas>
+        </div>
+      </div>
+
+      <!-- ═══ Enter Dashboard (src + PIN) ═══ -->
+      <div class="hero-enter">
+        <div class="hero-enter-row">
+          <div class="src-tag" title="Идентификатор источника — по нему собирается статистика">
+            <span class="k">src:</span>
+            <input id="heroSrcInput" spellcheck="false" placeholder="имя_источника" autocomplete="off">
+          </div>
+          <div class="src-tag" title="4 цифры. Создаёт новый кабинет, либо открывает существующий">
+            <span class="k">PIN:</span>
+            <input id="heroPinInput" type="password" inputmode="numeric" maxlength="4" pattern="\d{4}" placeholder="••••" autocomplete="off">
+          </div>
+          <button class="btn btn-primary" id="heroEnterBtn">Войти →</button>
+        </div>
+        <p class="hero-enter-hint">Введите <b>src</b> и 4-значный <b>PIN</b>. Если такого src ещё нет — он будет создан автоматически.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ DASHBOARD VIEW ══════════════════ -->
+<section id="view-dashboard" class="view">
+  <div class="wrap">
+
+    <div id="viewBanner"></div>
+
+    <div class="dash-header">
+      <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;">
+        <div class="dash-tabs" id="dashTabs"></div>
+      </div>
+      <div class="toolbar">
+        <button class="btn btn-ghost" id="btnLayoutMode" title="Переключить режим раскладки">Сетка</button>
+        <button class="btn btn-ghost" id="btnRefreshAll">↻ Обновить</button>
+        <button class="btn btn-ghost" id="btnShare">Поделиться ссылкой</button>
+        <button class="btn btn-primary" id="btnAddPanel">+ Добавить панель</button>
+        <button class="btn btn-ai" id="btnAskAI" title="Сгенерировать панель по текстовому запросу">✨ AI-помощник</button>
+      </div>
+    </div>
+
+    <div class="grid" id="panelGrid"></div>
+
+    <!-- ═══ Как пользоваться (expandable) ═══ -->
+    <div class="help-section" id="helpSection">
+      <button class="help-toggle" id="helpToggle">
+        <span class="help-toggle-icon">▸</span>
+        <span>Как пользоваться</span>
+      </button>
+      <div class="help-body" id="helpBody" style="display:none;">
+
+        <!-- ═══ Cases catalog ═══ -->
+        <div class="help-block cases-section" id="cases-block">
+          <h3>Готовые сценарии</h3>
+          <p class="sub">Нажмите «Попробовать →» — мгновенно увидите готовый дашборд с живыми данными.</p>
+          <div class="cases-grid" id="casesGrid"></div>
+        </div>
+
+        <!-- Skill for AI Agents -->
+        <div class="help-block" id="skill-block">
+          <h3>Скилл для ИИ-агентов</h3>
+          <p class="sub">Скопируйте этот промпт и вставьте в систему любого LLM — агент сразу начнёт работать с API events.atiks.org и сможет создавать готовые дашборды с графиками.</p>
+          <div class="skill-wrap skill-glow">
+            <textarea id="skillText" readonly rows="20">Ты — аналитический ИИ-агент. Твоя задача — записывать события в API events.atiks.org и строить дашборды.
+
+═══════════════════════════════════════════════════════
+ВХОДНЫЕ ДАННЫЕ (получи от пользователя)
+═══════════════════════════════════════════════════════
+
+src — идентификатор источника. Для текущего пользователя:
+  usr_065g100962721s43
+
+Используй именно этот src во ВСЕХ запросах.
+Данные попадут прямо в его личный кабинет.
+
+═══════════════════════════════════════════════════════
+1. ЗАПИСЬ СОБЫТИЙ — GET или POST на /e
+═══════════════════════════════════════════════════════
+
+GET (проще всего):
+  GET https://events.atiks.org/e?src=usr_065g100962721s43&type=ТИП&ключ=значение
+
+Примеры:
+  GET /e?src=usr_065g100962721s43&type=purchase&amount=42&currency=rub
+  GET /e?src=usr_065g100962721s43&type=signup&plan=pro
+  GET /e?src=usr_065g100962721s43&type=page_view&page=/pricing
+  GET /e?src=usr_065g100962721s43&type=error&code=500&message=timeout
+  GET /e?src=usr_065g100962721s43&type=click&element=btn_buy
+
+POST (JSON):
+  POST https://events.atiks.org/e
+  Content-Type: application/json
+  {"src":"usr_065g100962721s43","type":"purchase","amount":42}
+
+Пакетная запись (до 1000 за раз):
+  POST https://events.atiks.org/e/batch
+  Content-Type: application/json
+  [{"src":"usr_065g100962721s43","type":"click","element":"btn_a"},
+   {"src":"usr_065g100962721s43","type":"click","element":"btn_b"}]
+
+Ответ: 204 (всегда, событие принято).
+src и type — обязательные строки. Остальное — произвольные ключи payload.
+
+═══════════════════════════════════════════════════════
+2. ЧТЕНИЕ СТАТИСТИКИ — GET на /s
+═══════════════════════════════════════════════════════
+
+  GET https://events.atiks.org/s?src=usr_065g100962721s43
+
+Параметры:
+  src    — (обязательно) src пользователя
+  type   — фильтр по типу события
+  group  — day | hour | field:ИМЯ_ПОЛЯ
+  agg    — count (по умолч.) | sum:ПОЛЕ | avg:ПОЛЕ
+  from   — YYYY-MM-DD
+  to     — YYYY-MM-DD
+
+Примеры:
+  /s?src=usr_065g100962721s43&type=purchase&group=day
+    → покупки по дням
+
+  /s?src=usr_065g100962721s43&type=purchase&agg=sum:amount&group=day
+    → сумма amount по дням
+
+  /s?src=usr_065g100962721s43&type=signup&group=field:plan
+    → регистрации по значению plan
+
+Ответ JSON: {"total":число, "groups":[{"bucket":"значение","value":число}, ...]}
+
+═══════════════════════════════════════════════════════
+3. СОЗДАНИЕ ССЫЛКИ НА ДАШБОРД (ключевое!)
+═══════════════════════════════════════════════════════
+
+После записи событий — создай ссылку на дашборд.
+Пользователь откроет её и сразу увидит графики с данными.
+Ссылка работает МГНОВЕННО — данные берутся прямо с сервера.
+
+Формат ссылки:
+  https://events.atiks.org/pulse/public/index.html#view?d=BASE64
+
+BASE64 — это Base64(JSON-объекта дашборда):
+
+{
+  "v": 1,
+  "src": "usr_065g100962721s43",
+  "layoutMode": true,
+  "dashboard": {
+    "name": "Название",
+    "panels": [
+      {
+        "id": "panel_любой_id",
+        "title": "Название панели",
+        "viz": "ТИП",
+        "type": "тип_события",
+        "group": "ГРУППИРОВКА",
+        "field": "поле",
+        "agg": "АГРЕГАЦИЯ",
+        "aggfield": "поле_для_суммы",
+        "range": "ДИАПАЗОН",
+        "width": 6,
+        "autorefresh": 0
+      }
+    ]
+  }
+}
+
+Значения:
+  viz:     line, bar, pie, kpi, table
+  group:   day, hour, __field
+  agg:     count, sum, avg
+  range:   24h, 7d, 30d, all
+  width:   4, 6, 8, 12
+
+═══════════════════════════════════════════════════════
+4. ПОЛНЫЙ ПРИМЕР СЦЕНАРИЯ
+═══════════════════════════════════════════════════════
+
+Запрос: «Покажи дашборд с выручкой за неделю»
+
+Шаг 1 — Записать события:
+  GET /e?src=usr_065g100962721s43&type=purchase&amount=1500
+  GET /e?src=usr_065g100962721s43&type=purchase&amount=3200
+  GET /e?src=usr_065g100962721s43&type=purchase&amount=800
+
+Шаг 2 — Собрать JSON дашборда:
+  panels: [
+    {viz:"line", type:"purchase", group:"day", agg:"sum", aggfield:"amount", range:"7d"},
+    {viz:"kpi",  type:"purchase", agg:"sum", aggfield:"amount", range:"24h", width:4}
+  ]
+
+Шаг 3 — Закодировать в Base64 и выдать ссылку.
+
+Готово! Пользователь открывает ссылку и видит графики.
+
+═══════════════════════════════════════════════════════
+5. ПРОВЕРКА СЕРВЕРА
+═══════════════════════════════════════════════════════
+
+  GET https://events.atiks.org/health
+  GET https://events.atiks.org/status
+
+═══════════════════════════════════════════════════════
+6. ПРЯМОЙ ВХОД ПО ССЫЛКЕ
+═══════════════════════════════════════════════════════
+
+Чтобы пользователь сразу попал в свой кабинет,
+дайте ему ссылку вида:
+
+  https://events.atiks.org/src/ИСТОЧНИК
+
+При переходе по этой ссылке:
+1. Сервер отдаёт интерфейс (index.html)
+2. Клиент автоматически устанавливает src = ИСТОЧНИК
+3. Пользователь попадает в личный кабинет с этим src
+
+═══════════════════════════════════════════════════════
+7. ТЕКСТОВЫЕ ЛОГИ (макс. 1024 символа)
+═══════════════════════════════════════════════════════
+
+Для записи текстовых логов используй поле text или message:
+
+  GET /e?src=usr_065g100962721s43&type=log&text=Пользователь вошёл в систему
+
+  POST /e
+  {"src":"usr_065g100962721s43","type":"log","text":"Обработка заказа #1234 завершена"}
+
+Максимальная длина текста — 1024 символа.
+Для просмотра логов в дашборде используй тип панели «Логи (события)»
+с group=raw — он покажет последние события в виде таблицы.
+
+═══════════════════════════════════════════════════════
+ПРАВИЛА:
+- Авторизация НЕ нужна
+- CORS открыт — можно из браузера
+- Ответ на запись: 204
+- Ответ на статистику: JSON {total, groups}
+- Ответ на логи (group=raw): JSON {events: [{ts, type, payload}, ...]}</textarea>
+            <button class="btn btn-ghost skill-copy" onclick="navigator.clipboard.writeText(document.getElementById('skillText').value).then(()=>{this.textContent='Скопировано!';setTimeout(()=>this.textContent='Копировать',1500)})">Копировать</button>
+          </div>
+        </div>
+
+        <!-- ═══ Dashboard Config Builder ═══ -->
+        <div class="help-block" id="config-builder-block">
+          <h3>Конструктор дашборда</h3>
+          <p class="sub">Вставьте JSON-конфиг панелей или отредактируйте шаблон. Нажмите «Добавить панели» — графики появятся в вашем дашборде.</p>
+          <div class="config-builder-wrap">
+            <div class="config-editor-wrap">
+              <div class="config-editor-header">
+                <span class="config-editor-title">dashboard.json</span>
+                <button class="btn btn-ghost" id="configReset">Сбросить шаблон</button>
+              </div>
+              <textarea id="configEditor" spellcheck="false" rows="24">{
+  "dashboard": {
+    "name": "my-project",
+    "panels": [
+      {
+        "id": "p1",
+        "title": "Пользователи на сайте",
+        "viz": "kpi",
+        "type": "user_online",
+        "group": "",
+        "field": "",
+        "agg": "count",
+        "aggfield": "",
+        "range": "24h",
+        "width": 4,
+        "autorefresh": 30
+      },
+      {
+        "id": "p2",
+        "title": "Активность по часам",
+        "viz": "line",
+        "type": "activity",
+        "group": "hour",
+        "field": "",
+        "agg": "count",
+        "aggfield": "",
+        "range": "24h",
+        "width": 8,
+        "autorefresh": 30
+      }
+    ]
+  }
+}</textarea>
+            </div>
+            <div class="config-preview">
+              <div class="config-preview-header">
+                <span class="config-preview-title">Предпросмотр</span>
+                <span class="config-status" id="configStatus"></span>
+              </div>
+              <div class="config-preview-panels" id="configPreviewPanels"></div>
+              <div class="config-actions">
+                <button class="btn btn-primary config-create-btn" id="configAddBtn" disabled>+ Добавить панели в дашборд</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══ Endpoints ═══ -->
+        <div class="help-block" id="endpoints-block">
+          <h3>Эндпоинты</h3>
+          <p class="sub">Базовый URL: <code style="font-family:var(--mono);color:var(--teal);">https://events.atiks.org</code>. CORS открыт — обращайтесь напрямую из браузера, мобильного приложения или бэкенда.</p>
+          <table class="endpoint-table">
+            <thead><tr><th>Метод</th><th>Путь</th><th>Описание</th></tr></thead>
+            <tbody>
+              <tr><td><span class="method get">GET</span></td><td class="path">/e</td><td class="desc">Запись одного события через query-параметры</td></tr>
+              <tr><td><span class="method post">POST</span></td><td class="path">/e</td><td class="desc">Запись одного события через JSON-тело</td></tr>
+              <tr><td><span class="method post">POST</span></td><td class="path">/e/batch</td><td class="desc">Пакетная запись массива событий (до 1000 за раз)</td></tr>
+              <tr><td><span class="method get">GET</span></td><td class="path">/s</td><td class="desc">Агрегированная статистика: группировки и агрегации</td></tr>
+              <tr><td><span class="method post">POST</span></td><td class="path">/e/clear</td><td class="desc">Удаление событий по src (и опционально type)</td></tr>
+              <tr><td><span class="method get">GET</span></td><td class="path">/export</td><td class="desc">Экспорт «сырых» событий в CSV</td></tr>
+              <tr><td><span class="method get">GET</span></td><td class="path">/health</td><td class="desc">Быстрая проверка доступности сервиса</td></tr>
+              <tr><td><span class="method get">GET</span></td><td class="path">/status</td><td class="desc">Расширенный мониторинг: память, БД, конфигурация</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- ═══ Code examples ═══ -->
+        <div class="help-block" id="code-examples-block">
+          <h3>Как отправить событие</h3>
+          <p class="sub">Один и тот же вызов — на пяти языках. Замените <code style="font-family:var(--mono);">src</code> на своё имя источника.</p>
+          <div class="code-card">
+            <div class="code-tabs" id="codeTabs"></div>
+            <div class="code-body" id="codeBody"></div>
+          </div>
+        </div>
+
+        <!-- ═══ Stats API ═══ -->
+        <div class="help-block" id="stats-api-block">
+          <h3>Как получить статистику</h3>
+          <p class="sub"><code style="font-family:var(--mono);">GET /s</code> считает события и агрегации на лету по всем таблицам сразу.</p>
+          <div class="param-grid">
+            <div class="param-card"><div class="name">group</div><div class="desc"><code>day</code>, <code>hour</code> или <code>field:название</code> — группировка по значению произвольного поля payload.</div></div>
+            <div class="param-card"><div class="name">agg</div><div class="desc">По умолчанию — count. Также <code>sum:поле</code> и <code>avg:поле</code>.</div></div>
+            <div class="param-card"><div class="name">from / to</div><div class="desc">ISO-даты для ограничения диапазона: <code>?from=2026-07-01</code></div></div>
+            <div class="param-card"><div class="name">type</div><div class="desc">Фильтр по конкретному типу события внутри источника.</div></div>
+          </div>
+          <div style="margin-top:22px;">
+            <div class="code-card">
+              <pre><span class="c1"># количество событий типа purchase по дням за последние 30 дней</span>
+GET https://events.atiks.org/s?src=my_app&type=purchase&group=day&from=2026-06-06</pre>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /help-body -->
+    </div><!-- /help-section -->
+
+    <div class="footer-note" style="padding-left:0;padding-right:0;">
+      кабинет защищён 4-значным PIN · дашборды хранятся на сервере · доступ к публичным ссылкам можно отозвать в любой момент
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ MODAL: ADD/EDIT PANEL ══════════════════ -->
+<div class="overlay" id="panelModal">
+  <div class="modal">
+    <h2 id="modalTitle">Новая панель</h2>
+    <p class="sub">Выберите готовый шаблон или настройте вручную.</p>
+
+    <div class="tpl-grid" id="tplGrid"></div>
+
+    <button class="adv-toggle" id="advToggle">Настроить вручную →</button>
+
+    <div class="adv-form" id="advForm">
+      <div class="field-row">
+        <div class="field"><label>Название панели</label><input id="f_title" placeholder="Например: Регистрации по дням"></div>
+        <div class="field"><label>Тип визуализации</label>
+          <select id="f_viz">
+            <option value="line">Линейный график</option>
+            <option value="bar">Столбчатая диаграмма</option>
+            <option value="pie">Круговая диаграмма</option>
+            <option value="kpi">Число (KPI)</option>
+            <option value="table">Таблица (агрегация)</option>
+            <option value="logs">Логи (события)</option>
+          </select>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Тип события (type)</label><input id="f_type" list="typeSuggestions" placeholder="например purchase, оставьте пустым — все"></div>
+        <datalist id="typeSuggestions"></datalist>
+        <div class="field"><label>Группировка</label>
+          <select id="f_group">
+            <option value="">Без группировки (итого)</option>
+            <option value="day">По дням</option>
+            <option value="hour">По часам</option>
+            <option value="__field">По полю payload…</option>
+          </select>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field" id="fieldNameWrap" style="display:none;"><label>Название поля</label><input id="f_fieldname" list="fieldSuggestions" placeholder="например country"></div>
+        <datalist id="fieldSuggestions"></datalist>
+        <div class="field"><label>Агрегация</label>
+          <select id="f_agg">
+            <option value="count">Количество (count)</option>
+            <option value="sum">Сумма поля (sum)</option>
+            <option value="avg">Среднее по полю (avg)</option>
+          </select>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field" id="aggFieldWrap" style="display:none;"><label>Поле для агрегации</label><input id="f_aggfield" list="fieldSuggestions" placeholder="например amount"></div>
+        <div class="field"><label>Диапазон</label>
+          <select id="f_range">
+            <option value="24h">Последние 24 часа</option>
+            <option value="7d" selected>Последние 7 дней</option>
+            <option value="30d">Последние 30 дней</option>
+            <option value="all">Всё время</option>
+            <option value="custom">Произвольный период…</option>
+          </select>
+        </div>
+        <div class="field" id="customRangeWrap" style="display:none;">
+          <label>С / По</label>
+          <div style="display:flex;gap:8px;">
+            <input type="date" id="f_from" style="flex:1;">
+            <input type="date" id="f_to" style="flex:1;">
+          </div>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Ширина панели (из 12)</label>
+          <select id="f_width">
+            <option value="4">Узкая (4)</option>
+            <option value="6" selected>Средняя (6)</option>
+            <option value="12">Во всю ширину (12)</option>
+          </select>
+        </div>
+        <div class="field"><label>Автообновление</label>
+          <select id="f_autorefresh">
+            <option value="0">Выключено</option>
+            <option value="10">Каждые 10 сек</option>
+            <option value="30">Каждые 30 сек</option>
+            <option value="60">Каждую минуту</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Сортировка и лимит -->
+      <div class="field-row">
+        <div class="field"><label>Сортировка групп</label>
+          <select id="f_sort">
+            <option value="key">По ключу (А→Я)</option>
+            <option value="value_desc">По значению ↓ (топ-first)</option>
+            <option value="value_asc">По значению ↑ (мин-first)</option>
+          </select>
+        </div>
+        <div class="field"><label>Показать топ N (0 = все)</label>
+          <input id="f_limit" type="number" min="0" max="500" placeholder="0 — без лимита">
+        </div>
+      </div>
+
+      <!-- Единицы измерения и цвет -->
+      <div class="field-row">
+        <div class="field"><label>Единица измерения (для tooltip)</label>
+          <input id="f_unit" placeholder="например ₽, $, шт, %">
+        </div>
+        <div class="field"><label>Цвет графика</label>
+          <input id="f_color" type="color" value="#4DECC7" style="height:38px;padding:4px;cursor:pointer;">
+        </div>
+      </div>
+
+      <!-- Стиль линии и формат значений -->
+      <div class="field-row">
+        <div class="field"><label>Стиль линии (для линейного графика)</label>
+          <select id="f_linestyle">
+            <option value="smooth">Сглаженная</option>
+            <option value="straight">Прямая</option>
+            <option value="stepped">Ступенчатая</option>
+          </select>
+        </div>
+        <div class="field"><label>Формат значений</label>
+          <select id="f_format">
+            <option value="number">Число</option>
+            <option value="money">Деньги (K/M)</option>
+            <option value="percent">Проценты</option>
+            <option value="ms">Миллисекунды</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Фильтры -->
+      <div class="filters-section">
+        <div class="filters-header">
+          <label>Фильтры по полям payload</label>
+          <button type="button" class="btn btn-ghost" id="btnAddFilter" style="font-size:11px;padding:5px 10px;">+ условие</button>
+        </div>
+        <div id="filterRows" class="filter-rows"></div>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btnCancelPanel">Отмена</button>
+      <button class="btn btn-primary" id="btnSavePanel">Сохранить панель</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ MODAL: SHARE ══════════════════ -->
+<div class="overlay" id="shareModal">
+  <div class="modal">
+    <h2>Поделиться дашбордом</h2>
+    <p class="sub">Создайте публичную ссылку на текущий дашборд. Получатель увидит графики в режиме чтения — он не сможет менять или удалять ваши данные.</p>
+    <div class="share-box">
+      <input id="shareUrl" readonly>
+      <button class="btn btn-ghost" id="btnCopyShare">Скопировать</button>
+    </div>
+    <p class="sub" style="margin-top:14px;">Ссылка закрытая: её не видно нигде публично. В любой момент её можно отозвать.</p>
+    <div id="shareExisting" style="margin-top:18px;"></div>
+    <div class="modal-actions"><button class="btn btn-ghost" id="btnCloseShare">Готово</button></div>
+  </div>
+</div>
+
+<!-- ══════════════════ MODAL: QUICK SETUP ══════════════════ -->
+<div class="overlay" id="qsModal">
+  <div class="modal" style="max-width:560px;">
+    <h2>Настроить в 2 клика</h2>
+    <p class="sub">Отправим тестовое событие и сразу покажем его в дашборде.</p>
+
+    <div class="src-tag" style="margin-bottom:18px;" title="Вы можете изменить идентификатор источника">
+      <span class="k">src:</span>
+      <input id="qsSrc" spellcheck="false" style="color:var(--teal);font-family:var(--mono);font-size:13px;font-weight:600;background:none;border:none;width:180px;">
+    </div>
+
+    <div class="qs-steps">
+      <div class="qs-step active" id="qsStep1">
+        <div class="step-head">
+          <div class="step-num">1</div>
+          <div class="step-title">Отправить тестовое событие</div>
+        </div>
+        <div class="step-desc">Нажмите кнопку — событие <code style="font-family:var(--mono);color:var(--teal);">test_event</code> с случайным значением <code style="font-family:var(--mono);color:var(--amber);">value</code> будет отправлено на сервер.</div>
+        <div class="qs-linkbox" id="qsLinkbox"></div>
+        <button class="btn btn-primary" id="qsSendBtn">Отправить тестовое событие →</button>
+        <div id="qsSendResult"></div>
+      </div>
+
+      <div class="qs-step" id="qsStep2" style="opacity:0.4;pointer-events:none;">
+        <div class="step-head">
+          <div class="step-num">2</div>
+          <div class="step-title">Увидеть результат</div>
+        </div>
+        <div class="step-desc">Откройте дашборд — там уже будет панель с количеством событий за сегодня.</div>
+        <button class="btn btn-primary" id="qsGoBtn">Показать на графике →</button>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="qsCloseBtn">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ MODAL: AI ASSISTANT ══════════════════ -->
+<div class="overlay" id="aiPanelModal">
+  <div class="modal" style="max-width:620px;">
+    <h2>✨ AI-помощник по метрикам</h2>
+    <p class="sub">Опишите, что хотите увидеть — модель подберёт конфиг панели. Перед добавлением будет превью.</p>
+
+    <div class="ai-input-row">
+      <textarea id="aiPromptInput" rows="3" maxlength="300" placeholder="Например: выручка по дням за неделю, или сколько регистраций сегодня, или топ стран"></textarea>
+      <div class="ai-input-meta">
+        <span id="aiPromptCounter" class="ai-prompt-counter">0 / 300</span>
+        <button class="btn btn-primary" id="aiAskBtn">Спросить →</button>
+      </div>
+    </div>
+
+    <div id="aiStatus" class="ai-status" style="display:none;"></div>
+
+    <div id="aiPreview" class="ai-preview" style="display:none;"></div>
+
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btnCloseAI">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ MODAL: CONFIRM ══════════════════ -->
+<div class="overlay" id="confirmModal">
+  <div class="modal confirm-modal">
+    <h2 id="confirmTitle">Подтверждение</h2>
+    <p class="sub" id="confirmMessage"></p>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="confirmCancel">Отмена</button>
+      <button class="btn btn-danger" id="confirmOk">Подтвердить</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ MODAL: INPUT ══════════════════ -->
+<div class="overlay" id="inputModal">
+  <div class="modal confirm-modal">
+    <h2 id="inputTitle">Введите значение</h2>
+    <div class="field" style="margin-top:14px;">
+      <input id="inputField" type="text" placeholder="">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="inputCancel">Отмена</button>
+      <button class="btn btn-primary" id="inputOk">OK</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ FULLSCREEN PANEL OVERLAY ══════════════════ -->
+<div class="overlay" id="focusOverlay">
+  <div class="modal" style="max-width:none;width:90%;max-height:90vh;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <h2 class="focus-title" style="margin:0;">Панель</h2>
+      <button class="btn btn-ghost" id="btnCloseFocus">✕ Закрыть</button>
+    </div>
+    <div class="focus-body" style="height:calc(90vh - 100px);"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- ═══ FAB: плавающая кнопка добавления панели (мобилки) ═══ -->
+<button class="fab-add-panel" id="fabAddPanel" style="display:none;" title="Добавить панель">+</button>
+
+<script src="https://cdn.jsdelivr.net/npm/p5@1.9.4/lib/p5.min.js"></script>
+<script src="core.js"></script>
+<script src="dashboard.js"></script>
+<script src="cases.js"></script>
+<script src="share.js"></script>
+<script src="extras.js"></script>
+<script src="router.js"></script>
+</body>
+</html>
