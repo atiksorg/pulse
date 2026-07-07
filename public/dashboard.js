@@ -500,7 +500,8 @@ function openFullscreenPanel(p, src){
   var overlay = document.getElementById('focusOverlay');
   if(!overlay) return;
   var title = overlay.querySelector('.focus-title');
-  var body = overlay.querySelector('.focus-body');
+  var body = document.getElementById('focusBody');
+  if(!title || !body) return;
   title.textContent = p.title;
   focusPanelId = p.id;
   overlay.classList.add('active');
@@ -563,13 +564,15 @@ function toggleSmoothing(p){
 }
 
 function renderViz(p, data, body){
-  body.className='panel-body';
+  // Сохраняем focus-body класс, если рендерим в фокус-режиме
+  var isFocus = body.id === 'focusBody';
+  body.className = isFocus ? 'panel-body focus-body' : 'panel-body';
   var key=panelKey(p), groups=data.groups||[];
   if(charts[p.id]){charts[p.id].destroy();delete charts[p.id];}
   var fmtType = p.formatType || 'number';
   if(p.viz==='kpi'){
     var val=data.total!==null&&data.total!==undefined?data.total:(groups[0]?groups[0].value:0);
-    body.className='panel-body kpi-body';
+    body.className = isFocus ? 'panel-body kpi-body focus-body' : 'panel-body kpi-body';
     var unitSuffix = p.unit ? ' <span style="font-size:18px;color:var(--muted);">'+escapeHtml(p.unit)+'</span>' : '';
     body.innerHTML='<div class="kpi-value">'+formatNum(val, fmtType)+unitSuffix+'</div>'+(p.group?'<div class="kpi-sub">'+groups.length+' групп(а)</div>':'');
     return;
