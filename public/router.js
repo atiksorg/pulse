@@ -138,6 +138,20 @@ window.addEventListener('hashchange', render);
       location.hash = '#docs';
     };
   }
+
+  // Кнопка копирования src в буфер обмена
+  var copyBtn = document.getElementById('btnCopySrc');
+  if (copyBtn) {
+    copyBtn.onclick = function(){
+      var sess = getSession();
+      if(!sess || !sess.src) return;
+      navigator.clipboard.writeText(sess.src).then(function(){
+        toast('src скопирован в буфер обмена');
+      }).catch(function(){
+        toast('Не удалось скопировать');
+      });
+    };
+  }
 })();
 
 /* ── Help Section Toggle ─────────────────────────── */
