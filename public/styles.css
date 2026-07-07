@@ -288,13 +288,94 @@ pre .k1{color:var(--amber);}
 
 .toolbar{display:flex;gap:10px;flex-wrap:wrap;}
 
-.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px;padding:8px 0 60px;}
+/* ── Infinite Canvas Viewport ─────────────────── */
+#canvasViewport{
+  position:relative;
+  width:100%;
+  height:calc(100vh - 160px);
+  overflow:hidden;
+  user-select:none;
+  background:
+    radial-gradient(circle at 1px 1px, var(--border-soft) 1px, transparent 0) 0 0/20px 20px;
+  border:1px solid var(--border-soft);
+  border-radius:var(--radius);
+  margin-bottom:20px;
+}
+#canvasContainer{
+  position:absolute;
+  left:0; top:0;
+  width:1px; height:1px;
+  transform-origin:0 0;
+  will-change:transform;
+}
 .panel-card{
-  grid-column: span var(--w,4);
+  position:absolute;
   border:1px solid var(--border);border-radius:var(--radius);background:var(--panel);
-  display:flex;flex-direction:column;min-height:240px;position:relative;
+  display:flex;flex-direction:column;min-height:200px;
+  box-shadow:0 4px 24px rgba(0,0,0,0.4);
+  transition:border-color .15s ease, box-shadow .15s ease;
 }
 .panel-card.h-tall{min-height:340px;}
+.panel-card.canvas-dragging{
+  cursor:grabbing;
+  opacity:0.85;
+  box-shadow:0 8px 32px rgba(0,0,0,0.4);
+  z-index:var(--zi-canvas-max) !important;
+}
+.panel-card .panel-body{
+  overflow:hidden;
+}
+.panel-card .canvas-resize-handle{
+  position:absolute;
+  bottom:0;right:0;
+  width:16px;height:16px;
+  cursor:nwse-resize;
+  opacity:0.3;
+  transition:opacity .15s ease;
+  z-index:10;
+}
+.panel-card .canvas-resize-handle:hover{opacity:1;}
+.panel-card .canvas-resize-handle::after{
+  content:'';position:absolute;bottom:3px;right:3px;
+  width:8px;height:8px;
+  border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);
+  border-bottom-right-radius:2px;
+}
+.panel-card .panel-code-toggle{display:none;}
+
+/* ── Canvas zoom indicator ─────────────────────── */
+#canvasZoomIndicator{
+  position:absolute;
+  bottom:12px; left:12px;
+  font-family:var(--mono);font-size:11px;
+  color:var(--muted);background:rgba(11,15,23,0.8);
+  border:1px solid var(--border-soft);border-radius:6px;
+  padding:4px 10px;pointer-events:none;
+  z-index:50;
+}
+
+/* ── Canvas minimap ────────────────────────────── */
+#canvasMinimap{
+  position:absolute;
+  bottom:12px; right:12px;
+  width:160px; height:100px;
+  background:rgba(11,15,23,0.85);
+  border:1px solid var(--border-soft);
+  border-radius:6px;
+  overflow:hidden;
+  z-index:50;
+  cursor:pointer;
+  display:none;
+}
+#canvasMinimap canvas{
+  width:100%;height:100%;
+}
+#canvasMinimap .minimap-viewport{
+  position:absolute;
+  border:2px solid var(--teal);
+  background:rgba(77,236,199,0.08);
+  pointer-events:none;
+}
 .panel-head{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid var(--border-soft);}
 .panel-head h3{font-family:var(--mono);font-size:13px;font-weight:600;margin:0;letter-spacing:-0.01em;}
 .panel-head .meta{font-size:10.5px;color:var(--muted-2);font-family:var(--mono);margin-top:2px;display:flex;flex-wrap:wrap;gap:4px;}
@@ -402,8 +483,10 @@ pre .k1{color:var(--amber);}
 }
 
 .empty-state{
-  grid-column:1/-1;border:1px dashed var(--border);border-radius:var(--radius);
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  border:1px dashed var(--border);border-radius:var(--radius);
   padding:70px 30px;text-align:center;color:var(--muted);
+  width:80%;max-width:520px;
 }
 .empty-state h3{font-family:var(--mono);color:var(--text);font-size:17px;margin:0 0 10px;}
 .empty-state p{font-size:13.5px;max-width:420px;margin:0 auto 22px;line-height:1.6;}
@@ -535,7 +618,6 @@ pre .k1{color:var(--amber);}
 
 /* ── Demo banner (full width) ─────────────────── */
 .demo-banner{
-  grid-column:1/-1;
   background:linear-gradient(90deg,rgba(77,236,199,0.1),transparent);
   border:1px solid var(--teal-dim);border-radius:9px;
   padding:12px 18px;display:flex;align-items:center;justify-content:space-between;
@@ -543,65 +625,9 @@ pre .k1{color:var(--amber);}
 }
 .demo-banner code{color:var(--amber);font-family:var(--mono);}
 
-/* ── Canvas mode (free-form layout) ────────────── */
-.canvas-mode #panelGrid{
-  position:relative;
-  min-height:calc(100vh - 200px);
-  display:block;
-  background:
-    radial-gradient(circle at 1px 1px, var(--border-soft) 1px, transparent 0) 0 0/20px 20px;
-  padding:0;
-}
-.canvas-mode .panel-card{
-  position:absolute;
-  grid-column:auto;
-  min-height:auto;
-  box-shadow:0 4px 24px rgba(0,0,0,0.4);
-}
-.canvas-mode .panel-card .panel-body{
-  overflow:hidden;
-}
-.canvas-mode .panel-card.canvas-dragging{
-  cursor:grabbing;
-  opacity:0.85;
-  box-shadow:0 8px 32px rgba(0,0,0,0.4);
-  z-index:var(--zi-canvas-max) !important;
-}
-.canvas-mode .panel-card .canvas-resize-handle{
-  position:absolute;
-  bottom:0;right:0;
-  width:16px;height:16px;
-  cursor:nwse-resize;
-  opacity:0.3;
-  transition:opacity .15s ease;
-}
-.canvas-mode .panel-card .canvas-resize-handle:hover{opacity:1;}
-.canvas-mode .panel-card .canvas-resize-handle::after{
-  content:'';position:absolute;bottom:3px;right:3px;
-  width:8px;height:8px;
-  border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);
-  border-bottom-right-radius:2px;
-}
-.canvas-mode .panel-card .panel-resize-handle{display:none;}
-.canvas-mode .panel-card .panel-code-toggle{display:none;}
-
 /* ── Drag & Drop ───────────────────────────────── */
 .panel-card.dragging{opacity:0.4;cursor:grabbing;}
 .panel-card.drag-over{border-color:var(--teal);box-shadow:0 0 0 2px rgba(77,236,199,0.2);}
-.panel-card{transition:border-color .15s ease, box-shadow .15s ease;}
-
-/* ── Resize handle ──────────────────────────────── */
-.panel-resize-handle{
-  position:absolute;bottom:0;right:0;width:18px;height:18px;
-  cursor:pointer;opacity:0.3;transition:opacity .15s ease;
-}
-.panel-resize-handle:hover{opacity:1;}
-.panel-resize-handle::after{
-  content:'';position:absolute;bottom:4px;right:4px;
-  width:8px;height:8px;
-  border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);
-  border-bottom-right-radius:2px;
-}
 
 /* ── Hero Enter (src input + button) ────────── */
 .hero-enter{margin-top:40px;}
@@ -859,7 +885,6 @@ pre .k1{color:var(--amber);}
   .cases-grid{grid-template-columns:repeat(2,1fr);}
 }
 @media (max-width:860px){
-  .panel-card{grid-column:span 12 !important;}
   .field-row{grid-template-columns:1fr;}
   .tpl-grid{grid-template-columns:1fr;}
   .hero{padding:52px 0 30px;}
@@ -995,8 +1020,6 @@ pre .k1{color:var(--amber);}
     -webkit-overflow-scrolling:touch;
   }
 
-  /* ═══ Пункт 10: Отключение режима «Холст» и D&D ═══ */
-  #btnLayoutMode{display:none !important;}
-  .panel-resize-handle{display:none !important;}
-  .panel-card{draggable:false;}
+  /* ═══ На мобилках холст занимает всю высоту ═══ */
+  #canvasViewport{height:calc(100vh - 120px);}
 }
