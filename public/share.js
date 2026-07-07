@@ -58,7 +58,7 @@ function renderSharedView(){
     }
   };
 
-  renderPanels({ dashboard: payload.dashboard, src: payload.src });
+  renderPanels({ dashboard: payload.dashboard, src: payload.src, layoutMode: payload.layoutMode !== undefined ? payload.layoutMode : true });
 }
 
 /* ── Public server-shared view (#public?id=...) ─── */
@@ -126,6 +126,7 @@ async function renderPublicView(){
 
   renderPanels({
     dashboard: { name: data.dashboard.name, panels: data.dashboard.panels },
-    src: data.share && data.share.src
+    src: data.share && data.share.src,
+    layoutMode: data.dashboard.layoutMode !== undefined ? data.dashboard.layoutMode : true
   });
 }
