@@ -111,7 +111,6 @@
         <div class="dash-tabs" id="dashTabs"></div>
       </div>
       <div class="toolbar">
-        <button class="btn btn-ghost" id="btnLayoutMode" title="Переключить режим раскладки">Сетка</button>
         <button class="btn btn-ghost" id="btnRefreshAll">↻ Обновить</button>
         <button class="btn btn-ghost" id="btnShare">Поделиться ссылкой</button>
         <button class="btn btn-primary" id="btnAddPanel">+ Добавить панель</button>
@@ -119,7 +118,11 @@
       </div>
     </div>
 
-    <div class="grid" id="panelGrid"></div>
+    <div id="canvasViewport">
+      <div id="canvasContainer"></div>
+      <div id="canvasMinimap"></div>
+      <div id="canvasZoomIndicator">100%</div>
+    </div>
 
     <!-- ═══ Как пользоваться (expandable) ═══ -->
     <div class="help-section" id="helpSection">
