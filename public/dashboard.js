@@ -28,9 +28,9 @@ async function initDashboard(){
   }
 
   // Рендерим тулбар без кнопки "Сбросить" и без srcInput
-  $('.toolbar').innerHTML = '<button class="btn btn-ghost" id="btnLayoutMode" title="Переключить режим раскладки">Сетка</button><button class="btn btn-ghost" id="btnRefreshAll">↻ Обновить</button><button class="btn btn-ghost" id="btnExport">↓ Экспорт CSV</button><button class="btn btn-ghost" id="btnShare">Поделиться ссылкой</button><button class="btn btn-primary btn-add-panel-desktop" id="btnAddPanel">+ Добавить панель</button>';
+  $('.toolbar').innerHTML = '<button class="btn btn-ghost" id="btnFitView" title="Уместить холст (сброс зума и позиции)">⤢</button><button class="btn btn-ghost" id="btnRefreshAll">↻ Обновить</button><button class="btn btn-ghost" id="btnExport">↓ Экспорт CSV</button><button class="btn btn-ghost" id="btnShare">Поделиться ссылкой</button><button class="btn btn-primary btn-add-panel-desktop" id="btnAddPanel">+ Добавить панель</button>';
   $('#viewBanner').innerHTML = '';
-  $('#btnLayoutMode').onclick = toggleLayoutMode;
+  $('#btnFitView').onclick = resetCanvasView;
   $('#btnRefreshAll').onclick = function(){ renderPanels(); };
   $('#btnExport').onclick = exportCsv;
   $('#btnShare').onclick = function(){ showShareModal(); };
@@ -205,8 +205,6 @@ function renderPanels(readonlyData){
   var isShared = !!readonlyData;
   canvasMode = getLayoutMode();
   if(isShared && readonlyData.layoutMode !== undefined) canvasMode = readonlyData.layoutMode;
-  var btnLayout = $('#btnLayoutMode');
-  if(btnLayout){ btnLayout.textContent = canvasMode?'Холст':'Сетка'; btnLayout.classList.toggle('btn-primary', canvasMode); }
   document.body.classList.toggle('canvas-mode', canvasMode);
   var db = isShared ? readonlyData.dashboard : getActiveDashboard();
   var src = isShared ? readonlyData.src : getSrc();
@@ -783,7 +781,12 @@ async function onDrop(e){
 function onDragEnd(e){ e.currentTarget.classList.remove('dragging'); $$('.panel-card').forEach(function(c){c.classList.remove('drag-over');}); dragSrcPanelId=null; }
 
 /* ── Canvas mode ─────────────────────────────────── */
-function toggleLayoutMode(){ canvasMode=!canvasMode; setLayoutMode(canvasMode); $('#btnLayoutMode').textContent=canvasMode?'Холст':'Сетка'; $('#btnLayoutMode').classList.toggle('btn-primary',canvasMode); renderPanels(); }
+function resetCanvasView(){
+  if(interactiveCanvas){
+    interactiveCanvas.fitToContent();
+    toast('Холст выровнен');
+  }
+}
 function autoLayoutCanvas(panels){ var x=20,y=20,cw=380,rh=280,gap=16,mw=($('#panelGrid').clientWidth||1100)-40; panels.forEach(function(p){p.cx=x;p.cy=y;p.cw=cw;p.ch=rh;x+=cw+gap;if(x+cw>mw){x=20;y+=rh+gap;}}); }
 function applyCanvasPosition(card,p){ card.style.left=(p.cx||20)+'px'; card.style.top=(p.cy||20)+'px'; card.style.width=(p.cw||380)+'px'; card.style.height=(p.ch||280)+'px'; card.style.zIndex=Math.min(Math.max(p.cz || CANVAS_Z_MIN, CANVAS_Z_MIN), CANVAS_Z_MAX); }
 function initCanvasDrag(card,p){ var head=card.querySelector('.panel-head'); head.addEventListener('mousedown',function(e){ if(e.target.closest('.icon-btn')) return; card.classList.add('canvas-dragging'); canvasZCounter = canvasZCounter >= CANVAS_Z_MAX ? CANVAS_Z_MIN : canvasZCounter + 1; card.style.zIndex=canvasZCounter; p.cz=canvasZCounter; var scale = interactiveCanvas ? interactiveCanvas.scale : 1; canvasDragState={ card:card, p:p, startX:e.clientX, startY:e.clientY, origX:p.cx||0, origY:p.cy||0, scale:scale }; e.preventDefault(); }); }
