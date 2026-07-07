@@ -24,15 +24,14 @@ async function initDashboard(){
     AppState.activeId = urlDbId;
   }
 
-  // Рендерим тулбар без кнопки "Сетка/Холст" — всегда холст
-  $('.toolbar').innerHTML = '<button class="btn btn-ghost" id="btnRefreshAll">↻ Обновить</button><button class="btn btn-ghost" id="btnExport">↓ Экспорт CSV</button><button class="btn btn-ghost" id="btnShare">Поделиться ссылкой</button><button class="btn btn-primary btn-add-panel-desktop" id="btnAddPanel">+ Добавить панель</button><button class="btn btn-ai" id="btnAskAI" title="Сгенерировать панель по текстовому запросу">✨ AI-помощник</button>';
+  // Рендерим тулбар без кнопки "Сбросить" и без srcInput
+  $('.toolbar').innerHTML = '<button class="btn btn-ghost" id="btnLayoutMode" title="Переключить режим раскладки">Сетка</button><button class="btn btn-ghost" id="btnRefreshAll">↻ Обновить</button><button class="btn btn-ghost" id="btnExport">↓ Экспорт CSV</button><button class="btn btn-ghost" id="btnShare">Поделиться ссылкой</button><button class="btn btn-primary btn-add-panel-desktop" id="btnAddPanel">+ Добавить панель</button>';
   $('#viewBanner').innerHTML = '';
+  $('#btnLayoutMode').onclick = toggleLayoutMode;
   $('#btnRefreshAll').onclick = function(){ renderPanels(); };
   $('#btnExport').onclick = exportCsv;
   $('#btnShare').onclick = function(){ showShareModal(); };
   $('#btnAddPanel').onclick = openAddPanel;
-  var askBtn = $('#btnAskAI');
-  if(askBtn) askBtn.onclick = openAiPanelModal;
 
   // Пункт 2: FAB — плавающая кнопка на мобилках
   var fab = document.getElementById('fabAddPanel');
@@ -67,6 +66,7 @@ async function initDashboard(){
 
   renderDashTabs();
   renderPanels();
+  showQuickStartBanner();
 }
 
 /* ── Dash tabs ───────────────────────────────────── */
@@ -126,7 +126,7 @@ function renderDashTabs(){
     var name = await inputModal('Новый дашборд', 'Введите название', 'Новый дашборд');
     if(!name) return;
     try {
-      var db = await createDashboardOnServer(name, []);
+      var db = await createDashboardOnServer(name, [], 'grid');
       setActiveId(db.id);
       renderDashTabs();
       renderPanels();
@@ -193,229 +193,31 @@ async function fetchLogs(src, p){
   return res.json();
 }
 
-/* ── Canvas navigation state (Pan & Zoom) ───────── */
-var canvasState = { panX: 0, panY: 0, scale: 1, isPanning: false, panStartX: 0, panStartY: 0, spacePressed: false };
-
-function applyCanvasTransform(){
-  var container = $('#canvasContainer');
-  if(!container) return;
-  container.style.transform = 'translate3d(' + canvasState.panX + 'px, ' + canvasState.panY + 'px, 0) scale(' + canvasState.scale + ')';
-  var zi = document.getElementById('canvasZoomIndicator');
-  if(zi) zi.textContent = Math.round(canvasState.scale * 100) + '%';
-  updateMinimap();
-}
-
-function updateMinimap(){
-  var mm = document.getElementById('canvasMinimap');
-  if(!mm) return;
-  var container = $('#canvasContainer');
-  if(!container) return;
-  var cards = container.querySelectorAll('.panel-card');
-  if(!cards.length){ mm.style.display = 'none'; return; }
-  mm.style.display = 'block';
-  // Вычисляем границы контента
-  var minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
-  cards.forEach(function(c){
-    var x=parseFloat(c.style.left)||0, y=parseFloat(c.style.top)||0;
-    var w=c.offsetWidth||380, h=c.offsetHeight||280;
-    if(x<minX)minX=x; if(y<minY)minY=y; if(x+w>maxX)maxX=x+w; if(y+h>maxY)maxY=y+h;
-  });
-  var cw=maxX-minX, ch=maxY-minY;
-  if(cw<=0||ch<=0){ mm.style.display='none'; return; }
-  var mmW=160, mmH=100;
-  var scale=Math.min(mmW/cw, mmH/ch, 0.3);
-  var offsetX=(mmW-cw*scale)/2 - minX*scale;
-  var offsetY=(mmH-ch*scale)/2 - minY*scale;
-  // Рисуем на canvas
-  var canvas = mm.querySelector('canvas');
-  if(!canvas){
-    canvas = document.createElement('canvas');
-    canvas.width = mmW; canvas.height = mmH;
-    canvas.style.width='100%'; canvas.style.height='100%';
-    mm.appendChild(canvas);
-  }
-  var ctx = canvas.getContext('2d');
-  ctx.clearRect(0,0,mmW,mmH);
-  ctx.fillStyle = 'rgba(77,236,199,0.25)';
-  ctx.strokeStyle = 'rgba(77,236,199,0.5)';
-  cards.forEach(function(c){
-    var x=parseFloat(c.style.left)||0, y=parseFloat(c.style.top)||0;
-    var w=c.offsetWidth||380, h=c.offsetHeight||280;
-    ctx.fillRect(x*scale+offsetX, y*scale+offsetY, w*scale, h*scale);
-  });
-  // Viewport rect
-  var vp = mm.querySelector('.minimap-viewport');
-  if(!vp){
-    vp = document.createElement('div');
-    vp.className = 'minimap-viewport';
-    mm.appendChild(vp);
-  }
-  var vpRect = $('#canvasViewport').getBoundingClientRect();
-  var vpX = (-canvasState.panX / canvasState.scale) * scale + offsetX;
-  var vpY = (-canvasState.panY / canvasState.scale) * scale + offsetY;
-  var vpW = (vpRect.width / canvasState.scale) * scale;
-  var vpH = (vpRect.height / canvasState.scale) * scale;
-  vp.style.left = vpX + 'px';
-  vp.style.top = vpY + 'px';
-  vp.style.width = vpW + 'px';
-  vp.style.height = vpH + 'px';
-}
-
-/* ── Bind Pan & Zoom on viewport ────────────────── */
-var _canvasNavBound = false;
-function _bindCanvasNav(){
-  if(_canvasNavBound) return;
-  _canvasNavBound = true;
-  var vp = document.getElementById('canvasViewport');
-  if(!vp) return;
-
-  // Space key tracking
-  document.addEventListener('keydown', function(e){
-    if(e.code === 'Space' && !e.target.matches('input,textarea,select')){
-      canvasState.spacePressed = true;
-      vp.style.cursor = 'grab';
-      e.preventDefault();
-    }
-  });
-  document.addEventListener('keyup', function(e){
-    if(e.code === 'Space'){
-      canvasState.spacePressed = false;
-      vp.style.cursor = '';
-    }
-  });
-
-  // Pan: middle mouse, right mouse, or space+left
-  vp.addEventListener('mousedown', function(e){
-    var isMiddle = e.button === 1;
-    var isRight = e.button === 2;
-    var isSpacePan = e.button === 0 && canvasState.spacePressed;
-    if(!isMiddle && !isRight && !isSpacePan) return;
-    // Don't pan if clicking inside a panel card (unless space-pan)
-    if(!isSpacePan && e.target.closest('.panel-card')) return;
-    canvasState.isPanning = true;
-    canvasState.panStartX = e.clientX;
-    canvasState.panStartY = e.clientY;
-    vp.style.cursor = 'grabbing';
-    e.preventDefault();
-  });
-
-  document.addEventListener('mousemove', function(e){
-    if(!canvasState.isPanning) return;
-    var dx = e.clientX - canvasState.panStartX;
-    var dy = e.clientY - canvasState.panStartY;
-    canvasState.panX += dx;
-    canvasState.panY += dy;
-    canvasState.panStartX = e.clientX;
-    canvasState.panStartY = e.clientY;
-    applyCanvasTransform();
-  });
-
-  document.addEventListener('mouseup', function(e){
-    if(canvasState.isPanning){
-      canvasState.isPanning = false;
-      vp.style.cursor = canvasState.spacePressed ? 'grab' : '';
-    }
-  });
-
-  // Prevent context menu on viewport (for right-click pan)
-  vp.addEventListener('contextmenu', function(e){
-    if(e.target.closest('.panel-card') && !canvasState.spacePressed) return;
-    e.preventDefault();
-  });
-
-  // Zoom: wheel with cursor focus
-  vp.addEventListener('wheel', function(e){
-    // Don't zoom if scrolling inside a scrollable element
-    var scrollable = e.target.closest('.table-scroll-container, .logs-wrap, .panel-body');
-    if(scrollable){
-      var canScrollY = scrollable.scrollHeight > scrollable.clientHeight;
-      var canScrollX = scrollable.scrollWidth > scrollable.clientWidth;
-      if(canScrollY || canScrollX) return;
-    }
-    e.preventDefault();
-    var rect = vp.getBoundingClientRect();
-    var mouseX = e.clientX - rect.left;
-    var mouseY = e.clientY - rect.top;
-    var delta = e.deltaY < 0 ? 1.1 : 0.9;
-    var newScale = canvasState.scale * delta;
-    newScale = Math.max(0.15, Math.min(3.0, newScale));
-    // Keep point under cursor stable
-    var canvasX = (mouseX - canvasState.panX) / canvasState.scale;
-    var canvasY = (mouseY - canvasState.panY) / canvasState.scale;
-    canvasState.panX = mouseX - canvasX * newScale;
-    canvasState.panY = mouseY - canvasY * newScale;
-    canvasState.scale = newScale;
-    applyCanvasTransform();
-  }, { passive: false });
-
-  // Minimap click-to-navigate
-  mm = document.getElementById('canvasMinimap');
-  if(mm){
-    mm.addEventListener('click', function(e){
-      var rect = mm.getBoundingClientRect();
-      var mx = e.clientX - rect.left;
-      var my = e.clientY - rect.top;
-      var vpRect = vp.getBoundingClientRect();
-      // Convert minimap coords to canvas coords, then center viewport
-      var container = $('#canvasContainer');
-      var cards = container.querySelectorAll('.panel-card');
-      if(!cards.length) return;
-      var minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
-      cards.forEach(function(c){
-        var x=parseFloat(c.style.left)||0,y=parseFloat(c.style.top)||0;
-        var w=c.offsetWidth||380,h=c.offsetHeight||280;
-        if(x<minX)minX=x; if(y<minY)minY=y; if(x+w>maxX)maxX=x+w; if(y+h>maxY)maxY=y+h;
-      });
-      var cw=maxX-minX, ch=maxY-minY;
-      var mmW=160, mmH=100;
-      var scale=Math.min(mmW/cw, mmH/ch, 0.3);
-      var offsetX=(mmW-cw*scale)/2 - minX*scale;
-      var offsetY=(mmH-ch*scale)/2 - minY*scale;
-      var targetCanvasX = (mx - offsetX) / scale;
-      var targetCanvasY = (my - offsetY) / scale;
-      canvasState.panX = vpRect.width/2 - targetCanvasX * canvasState.scale;
-      canvasState.panY = vpRect.height/2 - targetCanvasY * canvasState.scale;
-      applyCanvasTransform();
-    });
-  }
-}
-
 /* ── Render panels ───────────────────────────────── */
 function renderPanels(readonlyData){
-  var grid = $('#canvasContainer');
-  if(!grid) return;
+  var grid = $('#panelGrid');
   grid.innerHTML = '';
   Object.values(refreshTimers).forEach(clearInterval);
   refreshTimers = {};
   var isShared = !!readonlyData;
-  canvasMode = true;
+  canvasMode = getLayoutMode();
+  if(isShared && readonlyData.layoutMode !== undefined) canvasMode = readonlyData.layoutMode;
+  var btnLayout = $('#btnLayoutMode');
+  if(btnLayout){ btnLayout.textContent = canvasMode?'Холст':'Сетка'; btnLayout.classList.toggle('btn-primary', canvasMode); }
+  document.body.classList.toggle('canvas-mode', canvasMode);
   var db = isShared ? readonlyData.dashboard : getActiveDashboard();
   var src = isShared ? readonlyData.src : getSrc();
   if (!db) { db = { id: uid('db'), name: 'Основной', panels: [] }; }
   if (!Array.isArray(db.panels)) db.panels = [];
   var panels = db.panels;
-  if(panels.length && !panels[0].cx){ autoLayoutCanvas(panels); if(!isShared) updateDashboardOnServer(db).catch(function(){}); }
-
-  // Bind pan & zoom (once)
-  _bindCanvasNav();
+  if(canvasMode && panels.length && !panels[0].cx){ autoLayoutCanvas(panels); if(!isShared) updateDashboardOnServer(db).catch(function(){}); }
 
   if(!panels.length){
-    var vp = $('#canvasViewport');
-    if(vp){
-      vp.innerHTML = '<div class="empty-state"><h3>Дашборд пуст</h3><p>Чтобы увидеть данные, отправьте первое событие или выберите готовый шаблон.</p><div style="margin-top:20px;display:flex;gap:12px;justify-content:center;">'+(isShared?'':'<button class="btn btn-primary" id="btnEmptyAdd">+ Добавить панель</button>')+'<button class="btn btn-ghost" id="btnEmptyCase">Посмотреть кейсы</button></div></div>';
-      if(!isShared) $('#btnEmptyAdd').onclick = openAddPanel;
-      var btnCase = document.getElementById('btnEmptyCase');
-      if(btnCase) btnCase.onclick=function(e){ e.preventDefault(); var s=document.getElementById('helpSection'),b=document.getElementById('helpBody'); if(s&&b){s.classList.add('open');b.style.display=''; var c=document.getElementById('cases-block'); if(c) c.scrollIntoView({behavior:'smooth'});} };
-    }
+    grid.innerHTML = '<div class="empty-state"><h3>Дашборд пуст</h3><p>Чтобы увидеть данные, отправьте первое событие или выберите готовый шаблон.</p><div style="margin-top:20px;display:flex;gap:12px;justify-content:center;">'+(isShared?'':'<button class="btn btn-primary" id="btnEmptyAdd">+ Добавить панель</button>')+'<button class="btn btn-ghost" id="btnEmptyCase">Посмотреть кейсы</button></div></div>';
+    if(!isShared) $('#btnEmptyAdd').onclick = openAddPanel;
+    var btnCase = document.getElementById('btnEmptyCase');
+    if(btnCase) btnCase.onclick=function(e){ e.preventDefault(); var s=document.getElementById('helpSection'),b=document.getElementById('helpBody'); if(s&&b){s.classList.add('open');b.style.display=''; var c=document.getElementById('cases-block'); if(c) c.scrollIntoView({behavior:'smooth'});} };
     return;
-  }
-
-  // Reset viewport innerHTML to restore canvas structure if it was emptied
-  var vp2 = $('#canvasViewport');
-  if(vp2 && !$('#canvasContainer')){
-    vp2.innerHTML = '<div id="canvasContainer"></div><div id="canvasMinimap"></div><div id="canvasZoomIndicator">100%</div>';
-    grid = $('#canvasContainer');
-    _bindCanvasNav();
   }
 
   panels.forEach(function(p){
@@ -477,7 +279,27 @@ function renderPanels(readonlyData){
       card.querySelector('[data-act="smooth"]').onclick=function(){ toggleSmoothing(p); };
     }
     if(!isShared){
-      applyCanvasPosition(card,p); initCanvasDrag(card,p); initCanvasResize(card,p);
+      if(canvasMode){ applyCanvasPosition(card,p); initCanvasDrag(card,p); initCanvasResize(card,p); }
+      else if(!isMobile()){
+        card.draggable=true; card.dataset.panelId=p.id;
+        card.addEventListener('dragstart',onDragStart); card.addEventListener('dragover',onDragOver); card.addEventListener('drop',onDrop); card.addEventListener('dragend',onDragEnd);
+        var rh=document.createElement('div'); rh.className='panel-resize-handle'; rh.title='Ширина';
+        rh.onclick=async function(){
+          var w=[4,6,8,12],cur=p.width||6,idx=w.indexOf(cur),next=w[(idx+1)%w.length];
+          p.width=next;
+          card.style.setProperty('--w',next);
+          var db2 = getActiveDashboard();
+          if (db2) {
+            var pp = db2.panels.find(function(x){return x.id===p.id;});
+            if (pp) pp.width = next;
+            try {
+              await updateDashboardOnServer(db2);
+              if(charts[p.id]) charts[p.id].resize();
+            } catch(err) { toast('Ошибка сохранения: ' + err.message); }
+          }
+        };
+        card.appendChild(rh);
+      }
     }
     loadPanel(p,src);
     if(p.autorefresh && Number(p.autorefresh)>0 && !isShared) refreshTimers[p.id]=setInterval(function(){loadPanel(p,src);},Number(p.autorefresh)*1000);
@@ -531,7 +353,17 @@ function renderLogs(p, data, body){
 
 function renderLogsPage(p, body){
   var events = p._logsEvents || [];
-  if(!events.length){ body.innerHTML='<div style="color:var(--muted-2);font-family:var(--mono);font-size:12px;padding:20px;">нет событий</div>'; return; }
+  if(!events.length){
+    body.innerHTML = '<div class="logs-empty-state">'
+      + '<div class="logs-empty-pulse"><span class="logs-empty-dot"></span> Ожидание первых событий в реальном времени…</div>'
+      + '<div class="logs-empty-hint">Отправьте первый HTTP-запрос с вашим src, и он мгновенно появится в этой таблице.</div>'
+      + '<div class="logs-empty-examples">'
+      + '<div class="logs-empty-example"><code>type</code> — название действия (например: purchase, page_view, login)</div>'
+      + '<div class="logs-empty-example">Любые дополнительные query-параметры превращаются в поля лога (например: <code>&amount=500&user=alex</code>)</div>'
+      + '</div>'
+      + '</div>';
+    return;
+  }
   var total = events.length;
   var totalPages = Math.ceil(total / LOGS_PAGE_SIZE);
   var page = p._currentPage || 0;
@@ -677,7 +509,8 @@ function openFullscreenPanel(p, src){
   var overlay = document.getElementById('focusOverlay');
   if(!overlay) return;
   var title = overlay.querySelector('.focus-title');
-  var body = overlay.querySelector('.focus-body');
+  var body = document.getElementById('focusBody');
+  if(!title || !body) return;
   title.textContent = p.title;
   focusPanelId = p.id;
   overlay.classList.add('active');
@@ -740,13 +573,15 @@ function toggleSmoothing(p){
 }
 
 function renderViz(p, data, body){
-  body.className='panel-body';
+  // Сохраняем focus-body класс, если рендерим в фокус-режиме
+  var isFocus = body.id === 'focusBody';
+  body.className = isFocus ? 'panel-body focus-body' : 'panel-body';
   var key=panelKey(p), groups=data.groups||[];
   if(charts[p.id]){charts[p.id].destroy();delete charts[p.id];}
   var fmtType = p.formatType || 'number';
   if(p.viz==='kpi'){
     var val=data.total!==null&&data.total!==undefined?data.total:(groups[0]?groups[0].value:0);
-    body.className='panel-body kpi-body';
+    body.className = isFocus ? 'panel-body kpi-body focus-body' : 'panel-body kpi-body';
     var unitSuffix = p.unit ? ' <span style="font-size:18px;color:var(--muted);">'+escapeHtml(p.unit)+'</span>' : '';
     body.innerHTML='<div class="kpi-value">'+formatNum(val, fmtType)+unitSuffix+'</div>'+(p.group?'<div class="kpi-sub">'+groups.length+' групп(а)</div>':'');
     return;
@@ -896,8 +731,31 @@ function buildPanelCodeTabs(p, src){
   html+='</div>'; return html;
 }
 
+/* ── Drag & Drop ─────────────────────────────────── */
+function onDragStart(e){ dragSrcPanelId=e.currentTarget.dataset.panelId; e.currentTarget.classList.add('dragging'); e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain',dragSrcPanelId); }
+function onDragOver(e){ e.preventDefault(); e.dataTransfer.dropEffect='move'; if(e.currentTarget.dataset.panelId!==dragSrcPanelId) e.currentTarget.classList.add('drag-over'); }
+async function onDrop(e){
+  e.preventDefault();
+  var tid=e.currentTarget.dataset.panelId;
+  if(!dragSrcPanelId||!tid||dragSrcPanelId===tid) return;
+  var db = getActiveDashboard();
+  if (!db) return;
+  var panels = db.panels;
+  var fi = panels.findIndex(function(p){return p.id===dragSrcPanelId;});
+  var ti = panels.findIndex(function(p){return p.id===tid;});
+  if(fi===-1||ti===-1) return;
+  var moved = panels.splice(fi,1);
+  panels.splice(ti,0,moved[0]);
+  try {
+    await updateDashboardOnServer(db);
+    renderPanels();
+  } catch(err) { toast('Ошибка сохранения: ' + err.message); }
+}
+function onDragEnd(e){ e.currentTarget.classList.remove('dragging'); $$('.panel-card').forEach(function(c){c.classList.remove('drag-over');}); dragSrcPanelId=null; }
+
 /* ── Canvas mode ─────────────────────────────────── */
-function autoLayoutCanvas(panels){ var x=20,y=20,cw=380,rh=280,gap=16,mw=($('#canvasViewport').clientWidth||1100)-40; panels.forEach(function(p){p.cx=x;p.cy=y;p.cw=cw;p.ch=rh;x+=cw+gap;if(x+cw>mw){x=20;y+=rh+gap;}}); }
+function toggleLayoutMode(){ canvasMode=!canvasMode; setLayoutMode(canvasMode); $('#btnLayoutMode').textContent=canvasMode?'Холст':'Сетка'; $('#btnLayoutMode').classList.toggle('btn-primary',canvasMode); renderPanels(); }
+function autoLayoutCanvas(panels){ var x=20,y=20,cw=380,rh=280,gap=16,mw=($('#panelGrid').clientWidth||1100)-40; panels.forEach(function(p){p.cx=x;p.cy=y;p.cw=cw;p.ch=rh;x+=cw+gap;if(x+cw>mw){x=20;y+=rh+gap;}}); }
 function applyCanvasPosition(card,p){ card.style.left=(p.cx||20)+'px'; card.style.top=(p.cy||20)+'px'; card.style.width=(p.cw||380)+'px'; card.style.height=(p.ch||280)+'px'; card.style.zIndex=Math.min(Math.max(p.cz || CANVAS_Z_MIN, CANVAS_Z_MIN), CANVAS_Z_MAX); }
 function initCanvasDrag(card,p){ var head=card.querySelector('.panel-head'); head.addEventListener('mousedown',function(e){ if(e.target.closest('.icon-btn')) return; card.classList.add('canvas-dragging'); canvasZCounter = canvasZCounter >= CANVAS_Z_MAX ? CANVAS_Z_MIN : canvasZCounter + 1; card.style.zIndex=canvasZCounter; p.cz=canvasZCounter; canvasDragState={ card:card, p:p, startX:e.clientX, startY:e.clientY, origX:p.cx||0, origY:p.cy||0 }; e.preventDefault(); }); }
 function initCanvasResize(card,p){ var h=document.createElement('div'); h.className='canvas-resize-handle'; card.appendChild(h); h.addEventListener('mousedown',function(e){e.stopPropagation();e.preventDefault(); canvasResizeState={ card:card, p:p, startX:e.clientX, startY:e.clientY, origW:p.cw||380, origH:p.ch||280 }; }); }
@@ -915,20 +773,19 @@ function _bindCanvasGlobalHandlers(){
     if (canvasDragState) {
       var d = canvasDragState;
       var GRID_SIZE = 20;
-      var s = canvasState.scale || 1;
-      d.p.cx = Math.round((d.origX + (e.clientX - d.startX) / s) / GRID_SIZE) * GRID_SIZE;
-      d.p.cy = Math.round((d.origY + (e.clientY - d.startY) / s) / GRID_SIZE) * GRID_SIZE;
+      d.p.cx = Math.round((d.origX + (e.clientX - d.startX)) / GRID_SIZE) * GRID_SIZE;
+      d.p.cy = Math.round((d.origY + (e.clientY - d.startY)) / GRID_SIZE) * GRID_SIZE;
       d.card.style.left = d.p.cx + 'px';
       d.card.style.top  = d.p.cy + 'px';
     }
     if (canvasResizeState) {
       var r = canvasResizeState;
       var GRID_SIZE = 20;
-      var s = canvasState.scale || 1;
-      r.p.cw = Math.max(200, Math.round((r.origW + (e.clientX - r.startX) / s) / GRID_SIZE) * GRID_SIZE);
-      r.p.ch = Math.max(150, Math.round((r.origH + (e.clientY - r.startY) / s) / GRID_SIZE) * GRID_SIZE);
+      r.p.cw = Math.max(200, Math.round((r.origW + (e.clientX - r.startX)) / GRID_SIZE) * GRID_SIZE);
+      r.p.ch = Math.max(150, Math.round((r.origH + (e.clientY - r.startY)) / GRID_SIZE) * GRID_SIZE);
       r.card.style.width  = r.p.cw + 'px';
       r.card.style.height = r.p.ch + 'px';
+      if (charts[r.p.id]) charts[r.p.id].resize();
     }
   });
 
@@ -946,8 +803,6 @@ function _bindCanvasGlobalHandlers(){
     }
     if (canvasResizeState) {
       var r = canvasResizeState;
-      // Resize charts only on mouseup (performance)
-      if (charts[r.p.id]) charts[r.p.id].resize();
       var db2 = getActiveDashboard();
       if (db2) {
         var pp2 = db2.panels.find(function(x){ return x.id === r.p.id; });
@@ -1086,7 +941,7 @@ async function addPanelFromConfig(cfg){
 
 /* ── Share helpers ───────────────────────────────── */
 function encodeDashboard(db, src){
-  var payload={v:1,src:src,layoutMode:true,dashboard:{name:db.name,panels:db.panels}};
+  var payload={v:1,src:src,layoutMode:getLayoutMode(),dashboard:{name:db.name,panels:db.panels}};
   return btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
 }
 function decodeDashboard(str){ return JSON.parse(decodeURIComponent(escape(atob(str)))); }
@@ -1209,28 +1064,10 @@ function closeAiPanelModal(){
   if(modal) modal.classList.remove('active');
 }
 
-(function bindAiModal(){
-  function ensureBind(){
-    var ta = $('#aiPromptInput');
-    if(!ta) return false;
-    var counter = $('#aiPromptCounter');
-    ta.addEventListener('input', function(){
-      counter.textContent = ta.value.length + ' / 300';
-    });
-    ta.addEventListener('keydown', function(e){
-      if(e.key === 'Enter' && (e.ctrlKey || e.metaKey)){
-        e.preventDefault();
-        askAiForPanel();
-      }
-    });
-    $('#aiAskBtn').onclick = function(){ askAiForPanel(); };
-    $('#btnCloseAI').onclick = closeAiPanelModal;
-    return true;
-  }
-  if(!ensureBind()){
-    document.addEventListener('DOMContentLoaded', ensureBind);
-  }
-})();
+// AI Assistant: инициализация отключена (UI скрыт).
+// Функции openAiPanelModal, closeAiPanelModal, askAiForPanel и др.
+// сохранены для будущего использования, но не привязываются к DOM.
+// (function bindAiModal(){ ... })();
 
 function renderAiPreview(panel){
   var html = '';
@@ -1397,6 +1234,99 @@ async function exportCsv(){
     toast('Сеть недоступна');
   } finally {
     if(btn){ btn.disabled = false; btn.textContent = orig || '↓ Экспорт CSV'; }
+  }
+}
+
+/* ── Quick Start Banner (Онбординг) ─────────────── */
+function showQuickStartBanner(){
+  var banner = $('#quickStartBanner');
+  if(!banner) return;
+
+  // Проверяем, закрыл ли пользователь баннер в этой сессии
+  try {
+    if (sessionStorage.getItem('pulse_onboarding_dismissed') === '1') {
+      banner.innerHTML = '';
+      return;
+    }
+  } catch(_) { return; }
+
+  var src = getSrc();
+  if(!src) { banner.innerHTML = ''; return; }
+
+  // Проверяем, есть ли уже события у пользователя
+  var hasEvents = false;
+  try {
+    var db = getActiveDashboard();
+    if (db && db.panels && db.panels.length) {
+      // Если есть панели — возможно пользователь уже работает
+      // Но всё равно показываем баннер, пока не закрыт
+    }
+  } catch(_) {}
+
+  var curlUrl = API + '/e?src=' + encodeURIComponent(src) + '&type=test_event&value=100';
+  var esc = escapeHtml;
+
+  var html = '<div class="qs-banner">';
+  html += '<button class="qs-banner-close" id="qsBannerClose" title="Закрыть">✕</button>';
+  html += '<div class="qs-banner-head">🚀 Добро пожаловать! Ваш источник: <b class="teal">' + esc(src) + '</b></div>';
+  html += '<div class="qs-banner-body">';
+  html += '<div class="qs-banner-code">';
+  html += '<pre><span class="c1"># Отправьте первое событие:</span>\ncurl <span class="s1">"' + esc(curlUrl) + '"</span></pre>';
+  html += '<button class="btn btn-ghost qs-banner-copy" id="qsBannerCopy">Копировать</button>';
+  html += '</div>';
+  html += '<button class="btn btn-primary qs-banner-send" id="qsBannerSend"><span class="pg-btn-icon">▶</span> Отправить тестовое событие</button>';
+  html += '</div>';
+  html += '<div class="qs-banner-hint">Любые query-параметры превращаются в поля лога: <code>&amount=500&user=alex</code></div>';
+  html += '</div>';
+
+  banner.innerHTML = html;
+
+  // Кнопка закрытия
+  var closeBtn = $('#qsBannerClose');
+  if(closeBtn){
+    closeBtn.onclick = function(){
+      try { sessionStorage.setItem('pulse_onboarding_dismissed', '1'); } catch(_){}
+      banner.innerHTML = '';
+    };
+  }
+
+  // Кнопка копирования cURL
+  var copyBtn = $('#qsBannerCopy');
+  if(copyBtn){
+    copyBtn.onclick = function(){
+      navigator.clipboard.writeText('curl "' + curlUrl + '"').then(function(){
+        copyBtn.textContent = 'Скопировано!';
+        setTimeout(function(){ copyBtn.textContent = 'Копировать'; }, 1500);
+      }).catch(function(){ toast('Не удалось скопировать'); });
+    };
+  }
+
+  // Кнопка отправки тестового события
+  var sendBtn = $('#qsBannerSend');
+  if(sendBtn){
+    sendBtn.onclick = async function(){
+      sendBtn.disabled = true;
+      var orig = sendBtn.innerHTML;
+      sendBtn.innerHTML = '<span class="qs-spinner"></span> Отправка…';
+      try {
+        await fetch(curlUrl);
+        sendBtn.innerHTML = '✓ Записано!';
+        toast('Тестовое событие отправлено');
+        // Перерисовываем панели, чтобы обновить логи
+        setTimeout(function(){
+          renderPanels();
+          sendBtn.disabled = false;
+          sendBtn.innerHTML = orig;
+        }, 1000);
+      } catch(e) {
+        sendBtn.innerHTML = '✕ Ошибка';
+        toast('Сеть недоступна');
+        setTimeout(function(){
+          sendBtn.disabled = false;
+          sendBtn.innerHTML = orig;
+        }, 2000);
+      }
+    };
   }
 }
 
