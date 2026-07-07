@@ -585,6 +585,11 @@ pre .k1{color:var(--amber);}
 .canvas-mode .panel-card .panel-resize-handle{display:none;}
 .canvas-mode .panel-card .panel-code-toggle{display:none;}
 
+/* ── Read-only canvas (shared/public view) ─────── */
+.canvas-mode .panel-card.readonly .canvas-resize-handle{display:none !important;}
+.canvas-mode .panel-card.readonly .panel-head{cursor:default;}
+.canvas-mode .panel-card.readonly .panel-actions{opacity:1;}
+
 /* ── Drag & Drop ───────────────────────────────── */
 .panel-card.dragging{opacity:0.4;cursor:grabbing;}
 .panel-card.drag-over{border-color:var(--teal);box-shadow:0 0 0 2px rgba(77,236,199,0.2);}
