@@ -265,6 +265,71 @@
   };
 
   /**
+   * Уместить всё содержимое surface в viewport (fit-to-content).
+   * Вычисляет bounding box всех дочерних элементов, подбирает масштаб
+   * и центрирует содержимое.
+   */
+  InteractiveCanvas.prototype.fitToContent = function() {
+    var viewportRect = this.viewport.getBoundingClientRect();
+    var vw = viewportRect.width;
+    var vh = viewportRect.height;
+    if (vw === 0 || vh === 0) return;
+
+    // Вычисляем bounding box всех дочерних элементов surface
+    var children = this.surface.children;
+    if (!children || !children.length) {
+      // Нет элементов — просто сбрасываем
+      this.resetView();
+      return;
+    }
+
+    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (var i = 0; i < children.length; i++) {
+      var el = children[i];
+      if (el.nodeType !== 1) continue;
+      var left = parseFloat(el.style.left) || 0;
+      var top = parseFloat(el.style.top) || 0;
+      var w = el.offsetWidth || parseFloat(el.style.width) || 0;
+      var h = el.offsetHeight || parseFloat(el.style.height) || 0;
+      if (left < minX) minX = left;
+      if (top < minY) minY = top;
+      if (left + w > maxX) maxX = left + w;
+      if (top + h > maxY) maxY = top + h;
+    }
+
+    if (minX === Infinity || maxX === -Infinity) {
+      this.resetView();
+      return;
+    }
+
+    var contentW = maxX - minX;
+    var contentH = maxY - minY;
+    if (contentW === 0 || contentH === 0) {
+      this.resetView();
+      return;
+    }
+
+    // Padding по 40px с каждой стороны
+    var padding = 40;
+    var availW = vw - padding * 2;
+    var availH = vh - padding * 2;
+
+    // Подбираем масштаб чтобы уместить содержимое
+    var scaleX = availW / contentW;
+    var scaleY = availH / contentH;
+    var newScale = Math.min(scaleX, scaleY, 1.0); // не больше 1.0
+    newScale = this._clampScale(newScale);
+
+    // Центрируем содержимое в viewport
+    this.scale = newScale;
+    this.offsetX = (vw - contentW * newScale) / 2 - minX * newScale;
+    this.offsetY = (vh - contentH * newScale) / 2 - minY * newScale;
+
+    this._applyTransform();
+    this._notifyViewportChange();
+  };
+
+  /**
    * Преобразование экранных координат в локальные координаты холста
    * @param {number} clientX — clientX мыши
    * @param {number} clientY — clientY мыши
