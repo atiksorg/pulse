@@ -196,8 +196,34 @@ function registerSrc(db, src, pin) {
   const salt = genSalt();
   const pinHash = hashPin(pin, salt);
   const now = new Date().toISOString();
-  db.prepare('INSERT INTO sources (src, pin_hash, pin_salt, created_at) VALUES (?, ?, ?, ?)')
-    .run(src, pinHash, salt, now);
+
+  // Дефолтный дашборд «Основной» с панелью логов на всю ширину
+  const defaultPanels = [
+    {
+      id: 'panel_' + crypto.randomBytes(8).toString('hex'),
+      title: 'Лог всех событий',
+      viz: 'logs',
+      type: '',
+      group: 'raw',
+      field: '',
+      agg: 'count',
+      aggfield: '',
+      range: '24h',
+      width: 12,
+      autorefresh: 10
+    }
+  ];
+
+  // Создаём источник и первый дашборд в одной транзакции
+  const dashboardId = 'db_' + crypto.randomBytes(8).toString('hex');
+  db.transaction(() => {
+    db.prepare('INSERT INTO sources (src, pin_hash, pin_salt, created_at) VALUES (?, ?, ?, ?)')
+      .run(src, pinHash, salt, now);
+    db.prepare(`
+      INSERT INTO dashboards (id, src, name, panels_json, layout_mode, created_at, updated_at)
+      VALUES (?, ?, 'Основной', ?, 'grid', ?, ?)
+    `).run(dashboardId, src, JSON.stringify(defaultPanels), now, now);
+  })();
 
   const session = createSession(db, src);
   return { ok: true, code: 200, session, src };
