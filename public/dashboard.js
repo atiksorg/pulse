@@ -222,7 +222,7 @@ function renderPanels(readonlyData){
 
   panels.forEach(function(p){
     var card = document.createElement('div');
-    card.className = 'panel-card';
+    card.className = 'panel-card' + (isShared ? ' readonly' : '');
     card.style.setProperty('--w', p.width||6);
     card.innerHTML = '<div class="panel-head"><div><h3>'+escapeHtml(p.title)+'</h3><div class="meta">'+describeMeta(p)+'</div></div><div class="panel-actions"><button class="icon-btn" data-act="refresh" title="Обновить">↻</button>'+(isShared?'':'<button class="icon-btn" data-act="edit" title="Изменить">✎</button>')+(isShared?'':'<button class="icon-btn icon-btn-danger" data-act="remove" title="Удалить панель с дашборда">🗑</button>')+(isShared?'':'<button class="icon-btn panel-clear-btn" data-act="clear" title="Очистить данные (Alt+клик)">🧹</button>')+(isShared?'':'<button class="icon-btn" data-act="png" title="Сохранить график как PNG">📷</button>')+(isShared?'':'<button class="icon-btn" data-act="copy" title="Копировать данные в буфер">📋</button>')+(isShared?'':'<button class="icon-btn" data-act="fullscreen" title="Полноэкранный режим">⛶</button>')+(isShared?'':'<button class="icon-btn" data-act="smooth" title="Переключить сглаживание линий">∡</button>')+'</div></div><div class="panel-body" id="body-'+p.id+'"><div style="color:var(--muted-2);font-family:var(--mono);font-size:12px;">загрузка…</div></div><div class="panel-code-toggle" data-panel="'+p.id+'"><span class="pct-icon">▸</span> Пример записи данных</div><div class="panel-code-block" id="code-'+p.id+'" style="display:none;">'+buildPanelCodeTabs(p, src)+'</div>';
     grid.appendChild(card);
@@ -300,6 +300,9 @@ function renderPanels(readonlyData){
         };
         card.appendChild(rh);
       }
+    } else if(canvasMode){
+      // Shared/public view: применяем позиции автора, но без drag/resize
+      applyCanvasPosition(card,p);
     }
     loadPanel(p,src);
     if(p.autorefresh && Number(p.autorefresh)>0 && !isShared) refreshTimers[p.id]=setInterval(function(){loadPanel(p,src);},Number(p.autorefresh)*1000);
