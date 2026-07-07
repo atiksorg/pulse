@@ -5,6 +5,9 @@
 /* ── Mobile detection helper ─────────────────────── */
 function isMobile(){ return window.innerWidth < 860; }
 
+/* ── InteractiveCanvas instance (canvas mode) ───── */
+var interactiveCanvas = null;
+
 /* ── Panel templates ─────────────────────────────── */
 var templates = [
   { id:'events_by_day', title:'События по дням', desc:'Линия: сколько событий приходит каждый день', cfg:{viz:'line', type:'', group:'day', agg:'count', field:'', aggfield:'', range:'7d', width:6}},
@@ -212,6 +215,12 @@ function renderPanels(readonlyData){
   var panels = db.panels;
   if(canvasMode && panels.length && !panels[0].cx){ autoLayoutCanvas(panels); if(!isShared) updateDashboardOnServer(db).catch(function(){}); }
 
+  // Уничтожаем старый экземпляр InteractiveCanvas при любом rerender
+  if(interactiveCanvas){
+    interactiveCanvas.destroy();
+    interactiveCanvas = null;
+  }
+
   if(!panels.length){
     grid.innerHTML = '<div class="empty-state"><h3>Дашборд пуст</h3><p>Чтобы увидеть данные, отправьте первое событие или выберите готовый шаблон.</p><div style="margin-top:20px;display:flex;gap:12px;justify-content:center;">'+(isShared?'':'<button class="btn btn-primary" id="btnEmptyAdd">+ Добавить панель</button>')+'<button class="btn btn-ghost" id="btnEmptyCase">Посмотреть кейсы</button></div></div>';
     if(!isShared) $('#btnEmptyAdd').onclick = openAddPanel;
@@ -220,12 +229,29 @@ function renderPanels(readonlyData){
     return;
   }
 
+  // ── InteractiveCanvas: создаём viewport + surface ──
+  var surface = grid; // по умолчанию карточки идут в grid
+  if(canvasMode && !isMobile()){
+    // Создаём структуру: grid (viewport) > surface > cards
+    grid.innerHTML = '';
+    var surfaceEl = document.createElement('div');
+    surfaceEl.className = 'canvas-surface';
+    grid.appendChild(surfaceEl);
+    surface = surfaceEl;
+    // Инициализируем InteractiveCanvas
+    interactiveCanvas = new InteractiveCanvas(grid, surfaceEl, {
+      minScale: 0.15,
+      maxScale: 3.0,
+      zoomSensitivity: 0.0015
+    });
+  }
+
   panels.forEach(function(p){
     var card = document.createElement('div');
     card.className = 'panel-card' + (isShared ? ' readonly' : '');
     card.style.setProperty('--w', p.width||6);
     card.innerHTML = '<div class="panel-head"><div><h3>'+escapeHtml(p.title)+'</h3><div class="meta">'+describeMeta(p)+'</div></div><div class="panel-actions"><button class="icon-btn" data-act="refresh" title="Обновить">↻</button>'+(isShared?'':'<button class="icon-btn" data-act="edit" title="Изменить">✎</button>')+(isShared?'':'<button class="icon-btn icon-btn-danger" data-act="remove" title="Удалить панель с дашборда">🗑</button>')+(isShared?'':'<button class="icon-btn panel-clear-btn" data-act="clear" title="Очистить данные (Alt+клик)">🧹</button>')+(isShared?'':'<button class="icon-btn" data-act="png" title="Сохранить график как PNG">📷</button>')+(isShared?'':'<button class="icon-btn" data-act="copy" title="Копировать данные в буфер">📋</button>')+(isShared?'':'<button class="icon-btn" data-act="fullscreen" title="Полноэкранный режим">⛶</button>')+(isShared?'':'<button class="icon-btn" data-act="smooth" title="Переключить сглаживание линий">∡</button>')+'</div></div><div class="panel-body" id="body-'+p.id+'"><div style="color:var(--muted-2);font-family:var(--mono);font-size:12px;">загрузка…</div></div><div class="panel-code-toggle" data-panel="'+p.id+'"><span class="pct-icon">▸</span> Пример записи данных</div><div class="panel-code-block" id="code-'+p.id+'" style="display:none;">'+buildPanelCodeTabs(p, src)+'</div>';
-    grid.appendChild(card);
+    surface.appendChild(card);
 
     var toggleEl = card.querySelector('.panel-code-toggle');
     var codeEl = card.querySelector('#code-'+p.id);
@@ -760,8 +786,8 @@ function onDragEnd(e){ e.currentTarget.classList.remove('dragging'); $$('.panel-
 function toggleLayoutMode(){ canvasMode=!canvasMode; setLayoutMode(canvasMode); $('#btnLayoutMode').textContent=canvasMode?'Холст':'Сетка'; $('#btnLayoutMode').classList.toggle('btn-primary',canvasMode); renderPanels(); }
 function autoLayoutCanvas(panels){ var x=20,y=20,cw=380,rh=280,gap=16,mw=($('#panelGrid').clientWidth||1100)-40; panels.forEach(function(p){p.cx=x;p.cy=y;p.cw=cw;p.ch=rh;x+=cw+gap;if(x+cw>mw){x=20;y+=rh+gap;}}); }
 function applyCanvasPosition(card,p){ card.style.left=(p.cx||20)+'px'; card.style.top=(p.cy||20)+'px'; card.style.width=(p.cw||380)+'px'; card.style.height=(p.ch||280)+'px'; card.style.zIndex=Math.min(Math.max(p.cz || CANVAS_Z_MIN, CANVAS_Z_MIN), CANVAS_Z_MAX); }
-function initCanvasDrag(card,p){ var head=card.querySelector('.panel-head'); head.addEventListener('mousedown',function(e){ if(e.target.closest('.icon-btn')) return; card.classList.add('canvas-dragging'); canvasZCounter = canvasZCounter >= CANVAS_Z_MAX ? CANVAS_Z_MIN : canvasZCounter + 1; card.style.zIndex=canvasZCounter; p.cz=canvasZCounter; canvasDragState={ card:card, p:p, startX:e.clientX, startY:e.clientY, origX:p.cx||0, origY:p.cy||0 }; e.preventDefault(); }); }
-function initCanvasResize(card,p){ var h=document.createElement('div'); h.className='canvas-resize-handle'; card.appendChild(h); h.addEventListener('mousedown',function(e){e.stopPropagation();e.preventDefault(); canvasResizeState={ card:card, p:p, startX:e.clientX, startY:e.clientY, origW:p.cw||380, origH:p.ch||280 }; }); }
+function initCanvasDrag(card,p){ var head=card.querySelector('.panel-head'); head.addEventListener('mousedown',function(e){ if(e.target.closest('.icon-btn')) return; card.classList.add('canvas-dragging'); canvasZCounter = canvasZCounter >= CANVAS_Z_MAX ? CANVAS_Z_MIN : canvasZCounter + 1; card.style.zIndex=canvasZCounter; p.cz=canvasZCounter; var scale = interactiveCanvas ? interactiveCanvas.scale : 1; canvasDragState={ card:card, p:p, startX:e.clientX, startY:e.clientY, origX:p.cx||0, origY:p.cy||0, scale:scale }; e.preventDefault(); }); }
+function initCanvasResize(card,p){ var h=document.createElement('div'); h.className='canvas-resize-handle'; card.appendChild(h); h.addEventListener('mousedown',function(e){e.stopPropagation();e.preventDefault(); var scale = interactiveCanvas ? interactiveCanvas.scale : 1; canvasResizeState={ card:card, p:p, startX:e.clientX, startY:e.clientY, origW:p.cw||380, origH:p.ch||280, scale:scale }; }); }
 
 /* ── Canvas global drag/resize state (single document listener) ── */
 var canvasDragState = null;   // { card, p, startX, startY, origX, origY }
@@ -776,16 +802,18 @@ function _bindCanvasGlobalHandlers(){
     if (canvasDragState) {
       var d = canvasDragState;
       var GRID_SIZE = 20;
-      d.p.cx = Math.round((d.origX + (e.clientX - d.startX)) / GRID_SIZE) * GRID_SIZE;
-      d.p.cy = Math.round((d.origY + (e.clientY - d.startY)) / GRID_SIZE) * GRID_SIZE;
+      var scale = d.scale || 1;
+      d.p.cx = Math.round((d.origX + (e.clientX - d.startX) / scale) / GRID_SIZE) * GRID_SIZE;
+      d.p.cy = Math.round((d.origY + (e.clientY - d.startY) / scale) / GRID_SIZE) * GRID_SIZE;
       d.card.style.left = d.p.cx + 'px';
       d.card.style.top  = d.p.cy + 'px';
     }
     if (canvasResizeState) {
       var r = canvasResizeState;
       var GRID_SIZE = 20;
-      r.p.cw = Math.max(200, Math.round((r.origW + (e.clientX - r.startX)) / GRID_SIZE) * GRID_SIZE);
-      r.p.ch = Math.max(150, Math.round((r.origH + (e.clientY - r.startY)) / GRID_SIZE) * GRID_SIZE);
+      var scale = r.scale || 1;
+      r.p.cw = Math.max(200, Math.round((r.origW + (e.clientX - r.startX) / scale) / GRID_SIZE) * GRID_SIZE);
+      r.p.ch = Math.max(150, Math.round((r.origH + (e.clientY - r.startY) / scale) / GRID_SIZE) * GRID_SIZE);
       r.card.style.width  = r.p.cw + 'px';
       r.card.style.height = r.p.ch + 'px';
       if (charts[r.p.id]) charts[r.p.id].resize();
