@@ -360,6 +360,11 @@ pre .k1{color:var(--amber);}
   font-size:18px;
 }
 .ft-add-btn:hover{background:#63f0d1;}
+.ft-layout-btn{
+  color:var(--amber);
+  border-color:rgba(242,169,80,0.3);
+}
+.ft-layout-btn:hover{border-color:var(--amber);}
 .ft-help-btn{
   color:var(--amber);
   border-color:rgba(242,169,80,0.3);
