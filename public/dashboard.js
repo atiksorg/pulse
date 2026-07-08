@@ -158,6 +158,7 @@ function renderDashTabs(){
           await deleteDashboardOnServer(db.id);
           renderDashTabs();
           renderPanels();
+          setTimeout(function(){ resetCanvasView(true); }, 400);
           toast('Удалён');
         } catch(err) { toast('Ошибка удаления: ' + err.message); }
       }
@@ -172,6 +173,7 @@ function renderDashTabs(){
             await deleteDashboardOnServer(db.id);
             renderDashTabs();
             renderPanels();
+            setTimeout(function(){ resetCanvasView(true); }, 400);
             toast('Удалён');
           } catch(err) { toast('Ошибка удаления: ' + err.message); }
         }
