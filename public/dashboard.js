@@ -334,7 +334,8 @@ function renderPanels(readonlyData){
         wave: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12c1.5-3 4-6 7-6s4 4 6 4 3-4 7-4"/></svg>',
         terminal: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>',
         trash: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
-        'delete': '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>'
+        'delete': '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>',
+        ellipsis: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>'
       };
       return icons[name] || '';
     }
@@ -346,14 +347,13 @@ function renderPanels(readonlyData){
         + '</button>';
     }).join('');
 
-    card.innerHTML = '<div class="panel-head"><div><h3>'+escapeHtml(p.title)+'</h3><div class="meta">'+describeMeta(p)+'</div></div>'
-      +'<div class="panel-actions">'
-      +'<button class="icon-btn" data-act="refresh-inline" title="Обновить">'+panelMenuIcon('refresh')+'</button>'
+    card.innerHTML = '<div class="panel-head"><div><h3>'+escapeHtml(p.title)+'</h3><div class="meta">'+describeMeta(p)+'</div></div></div>'
+      +'<div class="panel-menu-floating">'
+      +'<button class="pmbtn pmbtn-refresh" data-act="refresh-inline" title="Обновить">'+panelMenuIcon('refresh')+'</button>'
       +'<div class="panel-menu-wrap">'
-      +'<button class="icon-btn panel-menu-btn" data-menu-trigger title="Меню панели"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg></button>'
+      +'<button class="pmbtn pmbtn-trigger" data-menu-trigger title="Ещё">'+panelMenuIcon('ellipsis')+'</button>'
       +'<div class="panel-menu-dropdown">'+menuHtml+'</div>'
-      +'</div>'
-      +'</div>'
+      +'</div></div>'
       +'<div class="panel-body" id="body-'+p.id+'"><div style="color:var(--muted-2);font-family:var(--mono);font-size:12px;">загрузка…</div></div>'
       +'<div class="panel-code-toggle" data-panel="'+p.id+'"><span class="pct-icon">▸</span> Пример записи данных</div>'
       +'<div class="panel-code-block" id="code-'+p.id+'" style="display:none;">'+buildPanelCodeTabs(p, src)+'</div>';
@@ -954,7 +954,7 @@ function arrangeAndFitCanvas(){
 }
 function autoLayoutCanvas(panels){ var x=20,y=20,cw=380,rh=280,gap=16,mw=($('#panelGrid').clientWidth||1100)-40; panels.forEach(function(p){p.cx=x;p.cy=y;p.cw=cw;p.ch=rh;x+=cw+gap;if(x+cw>mw){x=20;y+=rh+gap;}}); }
 function applyCanvasPosition(card,p){ card.style.left=(p.cx||20)+'px'; card.style.top=(p.cy||20)+'px'; card.style.width=(p.cw||380)+'px'; card.style.height=(p.ch||280)+'px'; card.style.zIndex=Math.min(Math.max(p.cz || CANVAS_Z_MIN, CANVAS_Z_MIN), CANVAS_Z_MAX); }
-function initCanvasDrag(card,p){ var head=card.querySelector('.panel-head'); head.addEventListener('mousedown',function(e){ if(e.target.closest('.icon-btn') || e.target.closest('.panel-menu-dropdown')) return; card.classList.add('canvas-dragging'); canvasZCounter = canvasZCounter >= CANVAS_Z_MAX ? CANVAS_Z_MIN : canvasZCounter + 1; card.style.zIndex=canvasZCounter; p.cz=canvasZCounter; var scale = interactiveCanvas ? interactiveCanvas.scale : 1; canvasDragState={ card:card, p:p, startX:e.clientX, startY:e.clientY, origX:p.cx||0, origY:p.cy||0, scale:scale }; e.preventDefault(); }); }
+function initCanvasDrag(card,p){ var head=card.querySelector('.panel-head'); head.addEventListener('mousedown',function(e){ card.classList.add('canvas-dragging'); canvasZCounter = canvasZCounter >= CANVAS_Z_MAX ? CANVAS_Z_MIN : canvasZCounter + 1; card.style.zIndex=canvasZCounter; p.cz=canvasZCounter; var scale = interactiveCanvas ? interactiveCanvas.scale : 1; canvasDragState={ card:card, p:p, startX:e.clientX, startY:e.clientY, origX:p.cx||0, origY:p.cy||0, scale:scale }; e.preventDefault(); }); }
 function initCanvasResize(card,p){ var h=document.createElement('div'); h.className='canvas-resize-handle'; card.appendChild(h); h.addEventListener('mousedown',function(e){e.stopPropagation();e.preventDefault(); var scale = interactiveCanvas ? interactiveCanvas.scale : 1; canvasResizeState={ card:card, p:p, startX:e.clientX, startY:e.clientY, origW:p.cw||380, origH:p.ch||280, scale:scale }; }); }
 
 /* ── Canvas global drag/resize state (single document listener) ── */
