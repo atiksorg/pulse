@@ -268,8 +268,6 @@ pre .k1{color:var(--amber);}
 }
 .panel-card .panel-clear-btn:hover{background:rgba(242,102,79,0.14);border-color:var(--coral);}
 
-.footer-note{padding:40px 0 64px;color:var(--muted-2);font-size:12.5px;font-family:var(--mono);border-top:1px solid var(--border-soft);}
-
 /* ── Dashboard ─────────────────────────────────── */
 .dash-header{
   display:flex;align-items:center;justify-content:space-between;gap:16px;
