@@ -378,7 +378,7 @@ pre .k1{color:var(--amber);}
   display:flex;flex-direction:column;min-height:240px;position:relative;
 }
 .panel-card.h-tall{min-height:340px;}
-.panel-head{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid var(--border-soft);}
+.panel-head{padding:13px 16px;border-bottom:1px solid var(--border-soft);}
 .panel-head h3{font-family:var(--mono);font-size:13px;font-weight:600;margin:0;letter-spacing:-0.01em;}
 .panel-head .meta{font-size:10.5px;color:var(--muted-2);font-family:var(--mono);margin-top:2px;display:flex;flex-wrap:wrap;gap:4px;}
 .panel-head .meta .meta-tag{
@@ -387,25 +387,42 @@ pre .k1{color:var(--amber);}
   padding:2px 6px;
   white-space:nowrap;
 }
-.panel-actions{display:flex;gap:4px;opacity:0;transition:opacity 0.2s ease;}
-.panel-card:hover .panel-actions{opacity:1;}
-.icon-btn{width:26px;height:26px;border-radius:6px;border:1px solid var(--border);background:var(--panel-2);color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:13px;}
-.icon-btn:hover{color:var(--text);}
 
-/* ── Panel dropdown menu ────────────────────────── */
+/* ── Panel floating menu (top-right corner) ─────── */
+.panel-menu-floating{
+  position:absolute;
+  top:8px;right:8px;
+  display:flex;gap:4px;align-items:center;
+  opacity:0;
+  transition:opacity 0.2s ease;
+  z-index:10;
+  pointer-events:none;
+}
+.panel-card:hover .panel-menu-floating{opacity:1;pointer-events:auto;}
+.pmbtn{
+  width:26px;height:26px;
+  border-radius:6px;
+  border:1px solid var(--border);
+  background:rgba(19,25,38,0.88);
+  backdrop-filter:blur(6px);
+  color:var(--muted);
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;
+  transition:all .15s ease;
+}
+.pmbtn:hover{color:var(--text);border-color:var(--muted-2);}
+.pmbtn svg{width:14px;height:14px;}
+.pmbtn-trigger svg{width:16px;height:16px;}
 .panel-menu-wrap{position:relative;}
-.panel-menu-btn{width:26px;height:26px;border-radius:6px;border:1px solid var(--border);background:var(--panel-2);color:var(--muted);display:flex;align-items:center;justify-content:center;cursor:pointer;}
-.panel-menu-btn:hover{color:var(--text);border-color:var(--muted-2);}
 .panel-menu-dropdown{
   position:absolute;
-  top:100%;
-  right:0;
+  top:100%;right:0;
   margin-top:4px;
   background:var(--panel);
   border:1px solid var(--border);
   border-radius:8px;
   padding:4px;
-  min-width:180px;
+  min-width:190px;
   box-shadow:0 4px 12px rgba(0,0,0,0.3);
   z-index:1000;
   display:none;
@@ -413,17 +430,12 @@ pre .k1{color:var(--amber);}
 .panel-menu-dropdown.show{display:block;}
 .panel-menu-item{
   width:100%;
-  display:flex;
-  align-items:center;
-  gap:8px;
+  display:flex;align-items:center;gap:8px;
   padding:8px 12px;
-  border:none;
-  background:none;
+  border:none;background:none;
   color:var(--text);
-  font-size:12px;
-  font-family:var(--sans);
-  cursor:pointer;
-  border-radius:4px;
+  font-size:12px;font-family:var(--sans);
+  cursor:pointer;border-radius:4px;
   transition:background 0.15s ease;
   text-align:left;
 }
@@ -718,7 +730,7 @@ pre .k1{color:var(--amber);}
 /* ── Read-only canvas (shared/public view) ─────── */
 .canvas-mode .panel-card.readonly .canvas-resize-handle{display:none !important;}
 .canvas-mode .panel-card.readonly .panel-head{cursor:default;}
-.canvas-mode .panel-card.readonly .panel-actions{opacity:1;}
+.canvas-mode .panel-card.readonly .panel-menu-floating{opacity:1;}
 
 /* ── InteractiveCanvas: viewport + surface ─────── */
 .ic-viewport{
