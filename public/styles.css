@@ -391,6 +391,47 @@ pre .k1{color:var(--amber);}
 .panel-card:hover .panel-actions{opacity:1;}
 .icon-btn{width:26px;height:26px;border-radius:6px;border:1px solid var(--border);background:var(--panel-2);color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:13px;}
 .icon-btn:hover{color:var(--text);}
+
+/* ── Panel dropdown menu ────────────────────────── */
+.panel-menu-wrap{position:relative;}
+.panel-menu-btn{width:26px;height:26px;border-radius:6px;border:1px solid var(--border);background:var(--panel-2);color:var(--muted);display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.panel-menu-btn:hover{color:var(--text);border-color:var(--muted-2);}
+.panel-menu-dropdown{
+  position:absolute;
+  top:100%;
+  right:0;
+  margin-top:4px;
+  background:var(--panel);
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:4px;
+  min-width:180px;
+  box-shadow:0 4px 12px rgba(0,0,0,0.3);
+  z-index:1000;
+  display:none;
+}
+.panel-menu-dropdown.show{display:block;}
+.panel-menu-item{
+  width:100%;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:8px 12px;
+  border:none;
+  background:none;
+  color:var(--text);
+  font-size:12px;
+  font-family:var(--sans);
+  cursor:pointer;
+  border-radius:4px;
+  transition:background 0.15s ease;
+  text-align:left;
+}
+.panel-menu-item:hover{background:var(--panel-2);}
+.panel-menu-item.danger{color:var(--coral);}
+.panel-menu-item.danger:hover{background:rgba(242,102,79,0.1);}
+.panel-menu-item svg{width:14px;height:14px;flex-shrink:0;}
+
 .panel-body{flex:1;padding:14px 16px;position:relative;}
 .panel-body canvas{max-height:100%;}
 .panel-body.kpi-body{display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;}
