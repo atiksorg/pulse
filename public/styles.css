@@ -722,6 +722,9 @@ pre .k1{color:var(--amber);}
   margin-top:80px;
   padding-bottom:20px;
 }
+.usecases-section{
+  text-align:center;
+}
 .usecases-title{
   font-family:var(--mono);
   font-size:clamp(20px,3vw,28px);
@@ -736,6 +739,7 @@ pre .k1{color:var(--amber);}
   margin:0 0 32px;
   max-width:540px;
   line-height:1.6;
+  display:inline-block;
 }
 .usecases-grid{
   display:grid;
@@ -813,8 +817,8 @@ pre .k1{color:var(--amber);}
   border-color:var(--teal-dim);
 }
 .uc-textarea{
-  flex:1;
   width:100%;
+  height:10lh;
   border:none;
   background:var(--bg);
   color:var(--teal);
