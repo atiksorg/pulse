@@ -99,6 +99,329 @@
         </div>
         <p class="hero-enter-hint">Введите <b>src</b> и 4-значный <b>PIN</b>. Если такого src ещё нет — он будет создан автоматически.</p>
       </div>
+
+      <!-- ═══ Top 10 Use Cases ═══ -->
+      <div class="usecases-section">
+        <h2 class="usecases-title">🔥 Топ 10 кейсов использования</h2>
+        <p class="usecases-sub">Готовые инструкции — скопируйте и используйте прямо сейчас.</p>
+        <div class="usecases-grid">
+
+          <!-- 1. ИИ-агент -->
+          <div class="usecase-card">
+            <div class="uc-icon">🤖</div>
+            <h3 class="uc-title">ИИ-агент с инструментом GET-запроса</h3>
+            <p class="uc-desc">Скопируйте промпт в ChatGPT, Claude или Cursor — агент сразу начнёт записывать события и строить дашборды.</p>
+            <div class="uc-code-wrap">
+              <div class="uc-code-header">
+                <span>Промпт для LLM</span>
+                <button class="btn btn-ghost uc-copy-btn" onclick="navigator.clipboard.writeText(this.closest('.uc-code-wrap').querySelector('textarea').value).then(()=>{this.textContent='✓ Скопировано';setTimeout(()=>this.textContent='Копировать',1500)})">Копировать</button>
+              </div>
+              <textarea readonly class="uc-textarea">Ты — аналитический агент. Используй API events.atiks.org для записи событий и построения дашбордов.
+
+Твой src: {ВСТАВЬ_СВОЙ_SRC}
+
+Запись события:
+GET https://events.atiks.org/e?src={src}&type=ТИП&ключ=значение
+
+Чтение статистики:
+GET https://events.atiks.org/s?src={src}&group=day
+
+Параметры /s: type, group (day|hour|field:ИМЯ), agg (count|sum:ПОЛЕ|avg:ПОЛЕ), from, to
+
+После записи — сгенерируй ссылку на дашборд:
+https://events.atiks.org/pulse/public/index.html#view?d=BASE64
+
+Где BASE64 = Base64(JSON:
+{"v":1,"src":"{src}","layoutMode":true,"dashboard":{"name":"Название","panels":[
+  {"id":"p1","title":"График","viz":"line","type":"тип","group":"day","agg":"count","range":"7d","width":6}
+]}})
+
+viz: line|bar|pie|kpi|table
+group: day|hour|__field
+agg: count|sum|avg
+range: 24h|7d|30d|all
+width: 4|6|8|12</textarea>
+            </div>
+          </div>
+
+          <!-- 2. Bitrix24 CRM -->
+          <div class="usecase-card">
+            <div class="uc-icon">🏢</div>
+            <h3 class="uc-title">Bitrix24 CRM — исходящий вебхук</h3>
+            <p class="uc-desc">Настройте исходящий вебхук в Битрикс24, чтобы каждая сделка автоматически попадала в аналитику.</p>
+            <div class="uc-code-wrap">
+              <div class="uc-code-header">
+                <span>Инструкция</span>
+                <button class="btn btn-ghost uc-copy-btn" onclick="navigator.clipboard.writeText(this.closest('.uc-code-wrap').querySelector('textarea').value).then(()=>{this.textContent='✓ Скопировано';setTimeout(()=>this.textContent='Копировать',1500)})">Копировать</button>
+              </div>
+              <textarea readonly class="uc-textarea">Настройка Bitrix24 → Pulse (events.atiks.org)
+
+Шаг 1. В Bitrix24: CRM → Автоматизация → Бизнес-процесс
+  → Исходящий вебхук
+
+Шаг 2. URL вебхука:
+  https://events.atiks.org/e
+
+Шаг 3. Метод: GET
+
+Шаг 4. Параметры запроса:
+  src=ВАШ_SRC
+  type=deal_created
+  &title={=Document:TITLE}
+  &amount={=Document:OPPORTUNITY}
+  &stage={=Document:STAGE_ID}
+
+Шаг 5. Триггер: при создании/изменении сделки
+
+Аналогично для лидов:
+  type=lead_created&name={=Document:NAME}&source={=Document:SOURCE}
+
+Результат: каждая сделка мгновенно появляется в дашборде.</textarea>
+            </div>
+          </div>
+
+          <!-- 3. JavaScript / Frontend -->
+          <div class="usecase-card">
+            <div class="uc-icon">🌐</div>
+            <h3 class="uc-title">Веб-аналитика из JavaScript</h3>
+            <p class="uc-desc">Добавьте 1 строку на сайт — и каждое действие пользователя попадёт в аналитику.</p>
+            <div class="uc-code-wrap">
+              <div class="uc-code-header">
+                <span>Код</span>
+                <button class="btn btn-ghost uc-copy-btn" onclick="navigator.clipboard.writeText(this.closest('.uc-code-wrap').querySelector('textarea').value).then(()=>{this.textContent='✓ Скопировано';setTimeout(()=>this.textContent='Копировать',1500)})">Копировать</button>
+              </div>
+              <textarea readonly class="uc-textarea">// Отправка события с любого сайта
+fetch('https://events.atiks.org/e?src=ВАШ_SRC&type=page_view&page=' + encodeURIComponent(location.pathname));
+
+// Трекинг кликов по кнопкам
+document.querySelectorAll('[data-track]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    fetch(`https://events.atiks.org/e?src=ВАШ_SRC&type=click&element=${btn.dataset.track}`);
+  });
+});
+
+// Трекинг покупок
+function trackPurchase(orderId, amount) {
+  fetch(`https://events.atiks.org/e?src=ВАШ_SRC&type=purchase&order=${orderId}&amount=${amount}`);
+}</textarea>
+            </div>
+          </div>
+
+          <!-- 4. Мониторинг сервера -->
+          <div class="usecase-card">
+            <div class="uc-icon">🖥️</div>
+            <h3 class="uc-title">Мониторинг сервера с алертами</h3>
+            <p class="uc-desc">Crontab-скрипт отправляет метрики каждую минуту. Дашборд показывает нагрузку в реальном времени.</p>
+            <div class="uc-code-wrap">
+              <div class="uc-code-header">
+                <span>monitoring.sh</span>
+                <button class="btn btn-ghost uc-copy-btn" onclick="navigator.clipboard.writeText(this.closest('.uc-code-wrap').querySelector('textarea').value).then(()=>{this.textContent='✓ Скопировано';setTimeout(()=>this.textContent='Копировать',1500)})">Копировать</button>
+              </div>
+              <textarea readonly class="uc-textarea">#!/bin/bash
+# Добавить в crontab: * * * * * /path/to/monitoring.sh
+SRC="ВАШ_SRC"
+API="https://events.atiks.org/e"
+
+# CPU usage
+CPU=$(top -bn1 | grep "Cpu(s)" | awk '{print $2}')
+curl -s "$API?src=$SRC&type=cpu_usage&value=$CPU" > /dev/null
+
+# RAM usage
+RAM=$(free -m | awk '/Mem:/ {printf "%.0f", $3/$2*100}')
+curl -s "$API?src=$SRC&type=ram_usage&value=$RAM" > /dev/null
+
+# Disk usage
+DISK=$(df -h / | awk 'NR==2 {print $5}' | tr -d '%')
+curl -s "$API?src=$SRC&type=disk_usage&value=$DISK" > /dev/null</textarea>
+            </div>
+          </div>
+
+          <!-- 5. E-commerce -->
+          <div class="usecase-card">
+            <div class="uc-icon">🛒</div>
+            <h3 class="uc-title">E-commerce: трекинг заказов</h3>
+            <p class="uc-desc">Встраивайте вызов в checkout-процесс — выручка, средний чек, конверсия на одном дашборде.</p>
+            <div class="uc-code-wrap">
+              <div class="uc-code-header">
+                <span>Примеры запросов</span>
+                <button class="btn btn-ghost uc-copy-btn" onclick="navigator.clipboard.writeText(this.closest('.uc-code-wrap').querySelector('textarea').value).then(()=>{this.textContent='✓ Скопировано';setTimeout(()=>this.textContent='Копировать',1500)})">Копировать</button>
+              </div>
+              <textarea readonly class="uc-textarea">// Просмотр товара
+GET /e?src=shop&type=product_view&product_id=SKU123&price=2990
+
+// Добавление в корзину
+GET /e?src=shop&type=add_to_cart&product_id=SKU123&price=2990
+
+// Оформление заказа
+GET /e?src=shop&type=purchase&order_id=ORD456&amount=5980&items=2
+
+// Возврат
+GET /e?src=shop&type=refund&order_id=ORD456&amount=2990
+
+Дашборд:
+- KPI: выручка за 24ч (agg=sum, field=amount)
+- Линия: заказы по дням
+- Столбцы: топ товаров</textarea>
+            </div>
+          </div>
+
+          <!-- 6. Мобильное приложение -->
+          <div class="usecase-card">
+            <div class="uc-icon">📱</div>
+            <h3 class="uc-title">События из мобильного приложения</h3>
+            <p class="uc-desc">Отправляйте события из iOS/Android через обычный HTTP. Без SDK, без зависимостей.</p>
+            <div class="uc-code-wrap">
+              <div class="uc-code-header">
+                <span>Swift / Kotlin / Dart</span>
+                <button class="btn btn-ghost uc-copy-btn" onclick="navigator.clipboard.writeText(this.closest('.uc-code-wrap').querySelector('textarea').value).then(()=>{this.textContent='✓ Скопировано';setTimeout(()=>this.textContent='Копировать',1500)})">Копировать</button>
+              </div>
+              <textarea readonly class="uc-textarea">// Swift (iOS)
+let url = URL(string: "https://events.atiks.org/e?src=ios_app&type=screen_view&screen=home")!
+URLSession.shared.dataTask(with: url).resume()
+
+// Kotlin (Android)
+URL("https://events.atiks.org/e?src=android_app&type=purchase&amount=499").openConnection()
+
+// Flutter (Dart)
+http.get(Uri.parse(
+  'https://events.atiks.org/e?src=my_app&type=signup&plan=pro'
+));
+
+// React Native
+fetch('https://events.atiks.org/e?src=mobile&type=click&btn=buy');
+
+src может быть один для всех платформ
+или отдельный для iOS/Android.</textarea>
+            </div>
+          </div>
+
+          <!-- 7. IoT / Умный дом -->
+          <div class="usecase-card">
+            <div class="uc-icon">🌡️</div>
+            <h3 class="uc-title">IoT-датчики и умный дом</h3>
+            <p class="uc-desc">ESP32, Raspberry Pi или Home Assistant — данные с датчиков мгновенно на графиках.</p>
+            <div class="uc-code-wrap">
+              <div class="uc-code-header">
+                <span>Python / Shell</span>
+                <button class="btn btn-ghost uc-copy-btn" onclick="navigator.clipboard.writeText(this.closest('.uc-code-wrap').querySelector('textarea').value).then(()=>{this.textContent='✓ Скопировано';setTimeout(()=>this.textContent='Копировать',1500)})">Копировать</button>
+              </div>
+              <textarea readonly class="uc-textarea">import requests
+
+# Температура с датчика DHT22
+temp = read_sensor()  # ваш код чтения
+requests.get(f"https://events.atiks.org/e?src=home&type=temperature&value={temp}&room=living")
+
+# Влажность
+humidity = read_humidity()
+requests.get(f"https://events.atiks.org/e?src=home&type=humidity&value={humidity}&room=living")
+
+# Движение (PIR)
+requests.get(f"https://events.atiks.org/e?src=home&type=motion&location=hallway")
+
+# Home Assistant (automation):
+# action: shell_command.send_event
+# shell_command:
+#   send_event: 'curl "https://events.atiks.org/e?src=hass&type={{ states.sensor.entity_id.state }}"'</textarea>
+            </div>
+          </div>
+
+          <!-- 8. CI/CD пайплайн -->
+          <div class="usecase-card">
+            <div class="uc-icon">🚀</div>
+            <h3 class="uc-title">CI/CD: мониторинг деплоев</h3>
+            <p class="uc-desc">GitHub Actions, GitLab CI или Jenkins — трекайте время сборки, частоту деплоев и ошибки.</p>
+            <div class="uc-code-wrap">
+              <div class="uc-code-header">
+                <span>GitHub Actions</span>
+                <button class="btn btn-ghost uc-copy-btn" onclick="navigator.clipboard.writeText(this.closest('.uc-code-wrap').querySelector('textarea').value).then(()=>{this.textContent='✓ Скопировано';setTimeout(()=>this.textContent='Копировать',1500)})">Копировать</button>
+              </div>
+              <textarea readonly class="uc-textarea"># .github/workflows/deploy.yml
+steps:
+  - name: Track deploy start
+    run: |
+      curl "https://events.atiks.org/e?src=ci&type=deploy_start&branch=${{ github.ref_name }}&commit=${{ github.sha }}"
+
+  - name: Build & Deploy
+    run: npm run build && npm run deploy
+    id: deploy
+
+  - name: Track deploy success
+    if: success()
+    run: curl "https://events.atiks.org/e?src=ci&type=deploy_ok&branch=${{ github.ref_name }}"
+
+  - name: Track deploy failure
+    if: failure()
+    run: curl "https://events.atiks.org/e?src=ci&type=deploy_fail&branch=${{ github.ref_name }}"
+
+Дашборд: частота деплоев, % успеха, время между деплоями.</textarea>
+            </div>
+          </div>
+
+          <!-- 9. Telegram бот -->
+          <div class="usecase-card">
+            <div class="uc-icon">💬</div>
+            <h3 class="uc-title">Telegram-бот: аналитика диалогов</h3>
+            <p class="uc-desc">Трекайте количество сообщений, популярные команды и пиковую нагрузку бота.</p>
+            <div class="uc-code-wrap">
+              <div class="uc-code-header">
+                <span>Python (aiogram)</span>
+                <button class="btn btn-ghost uc-copy-btn" onclick="navigator.clipboard.writeText(this.closest('.uc-code-wrap').querySelector('textarea').value).then(()=>{this.textContent='✓ Скопировано';setTimeout(()=>this.textContent='Копировать',1500)})">Копировать</button>
+              </div>
+              <textarea readonly class="uc-textarea">import requests
+from aiogram import Bot, Dispatcher, types
+
+API = "https://events.atiks.org/e?src=telegram_bot"
+
+@dp.message_handler(commands=['start'])
+async def cmd_start(message: types.Message):
+    requests.get(f"{API}&type=command&cmd=start&user={message.from_user.id}")
+    await message.answer("Привет!")
+
+@dp.message_handler()
+async def on_message(message: types.Message):
+    requests.get(f"{API}&type=message&lang={message.from_user.language_code}")
+    # ... обработка
+
+# Дашборд:
+# - KPI: сообщений за 24ч
+# - Линия: активность по часам
+# - Столбцы: топ команд</textarea>
+            </div>
+          </div>
+
+          <!-- 10. Маркетинг / UTM -->
+          <div class="usecase-card">
+            <div class="uc-icon">📊</div>
+            <h3 class="uc-title">Маркетинг: трекинг UTM-меток</h3>
+            <p class="uc-desc">Отслеживайте эффективность рекламных кампаний — какой канал приводит клиентов.</p>
+            <div class="uc-code-wrap">
+              <div class="uc-code-header">
+                <span>JavaScript + Параметры</span>
+                <button class="btn btn-ghost uc-copy-btn" onclick="navigator.clipboard.writeText(this.closest('.uc-code-wrap').querySelector('textarea').value).then(()=>{this.textContent='✓ Скопировано';setTimeout(()=>this.textContent='Копировать',1500)})">Копировать</button>
+              </div>
+              <textarea readonly class="uc-textarea">// Автоматический трекинг UTM-меток при загрузке страницы
+(function() {
+  var p = new URLSearchParams(location.search);
+  var utm = {};
+  ['utm_source','utm_medium','utm_campaign','utm_content','utm_term'].forEach(function(k) {
+    if (p.get(k)) utm[k] = p.get(k);
+  });
+  if (Object.keys(utm).length) {
+    var qs = Object.entries(utm).map(function(e){return e[0]+'='+encodeURIComponent(e[1])}).join('&');
+    fetch('https://events.atiks.org/e?src=ВАШ_SRC&type=visit&' + qs);
+  }
+})();
+
+Дашборд:
+- Столбцы: визиты по utm_source (Яндекс, Google, Telegram)
+- Pie: распределение по utm_medium (cpc, organic, social)
+- KPI: конверсия по utm_campaign</textarea>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
     </div>
   </div>
 </section>
