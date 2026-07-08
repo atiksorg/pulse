@@ -27,8 +27,21 @@ async function initDashboard(){
     AppState.activeId = urlDbId;
   }
 
-  // Рендерим тулбар без кнопки "Сбросить" и без srcInput
-  $('.toolbar').innerHTML = '<button class="btn btn-ghost" id="btnFitView" title="Уместить холст (сброс зума и позиции)">⤢</button><button class="btn btn-ghost" id="btnRefreshAll">↻ Обновить</button><button class="btn btn-ghost" id="btnExport">↓ Экспорт CSV</button><button class="btn btn-ghost" id="btnShare">Поделиться ссылкой</button><button class="btn btn-primary btn-add-panel-desktop" id="btnAddPanel">+ Добавить панель</button>';
+  // Восстанавливаем кнопки floating-toolbar (share.js мог их заменить)
+  var ftActions = document.querySelector('.ft-actions.toolbar');
+  if(ftActions){
+    ftActions.innerHTML =
+      '<button class="icon-btn ft-btn" id="btnFitView" title="Уместить холст">⤢</button>' +
+      '<button class="icon-btn ft-btn" id="btnRefreshAll" title="Обновить">↻</button>' +
+      '<button class="icon-btn ft-btn" id="btnExport" title="Экспорт CSV">↓</button>' +
+      '<button class="icon-btn ft-btn" id="btnShare" title="Поделиться">🔗</button>' +
+      '<button class="icon-btn ft-btn ft-help-btn" id="btnHelpModal" title="Справка">?</button>' +
+      '<button class="icon-btn ft-btn ft-add-btn" id="btnAddPanel" title="Добавить панель">+</button>';
+  }
+  // Восстанавливаем видимость табов
+  var dashTabsEl = document.getElementById('dashTabs');
+  if(dashTabsEl) dashTabsEl.style.display = '';
+
   $('#viewBanner').innerHTML = '';
   $('#btnFitView').onclick = resetCanvasView;
   $('#btnRefreshAll').onclick = function(){ renderPanels(); };
@@ -36,31 +49,31 @@ async function initDashboard(){
   $('#btnShare').onclick = function(){ showShareModal(); };
   $('#btnAddPanel').onclick = openAddPanel;
 
-  // Пункт 2: FAB — плавающая кнопка на мобилках
+  // Справка → модалка
+  var helpBtn = document.getElementById('btnHelpModal');
+  if(helpBtn){
+    helpBtn.onclick = function(){
+      document.getElementById('helpModal').classList.add('active');
+    };
+  }
+  var helpClose = document.getElementById('btnCloseHelp');
+  if(helpClose){
+    helpClose.onclick = function(){
+      document.getElementById('helpModal').classList.remove('active');
+    };
+  }
+
+  // Auto-hide floating toolbar
+  _initFloatingToolbarAutoHide();
+
+  // FAB — плавающая кнопка на мобилках
   var fab = document.getElementById('fabAddPanel');
   if(fab){
     fab.style.display = isMobile() ? 'flex' : 'none';
     fab.onclick = openAddPanel;
   }
 
-  // Пункт 3: Scroll Shrink — компактная шапка при скролле
-  if(!window._scrollShrinkBound){
-    window._scrollShrinkBound = true;
-    window.addEventListener('scroll', function(){
-      if(window.innerWidth < 860){
-        if(window.scrollY > 100){
-          document.body.classList.add('scrolled');
-        } else {
-          document.body.classList.remove('scrolled');
-        }
-      } else {
-        document.body.classList.remove('scrolled');
-      }
-    }, { passive: true });
-  }
-
   try {
-    // Загружаем дашборды и suggestions с сервера
     await loadDashboardsFromServer();
     await loadSuggestionsFromServer();
   } catch(e) {
@@ -69,7 +82,47 @@ async function initDashboard(){
 
   renderDashTabs();
   renderPanels();
-  showQuickStartBanner();
+}
+
+/* ── Floating Toolbar: auto-hide logic ──────────── */
+var _ftHideTimer = null;
+var _ftShowTimer = null;
+var _ftGlobalMouseMoveBound = false;
+
+function _initFloatingToolbarAutoHide(){
+  var toolbar = document.getElementById('floatingToolbar');
+  if(!toolbar) return;
+  if(isMobile()) return; // на мобилках не скрываем
+
+  // Начальное состояние: видна
+  toolbar.classList.remove('hidden');
+
+  toolbar.addEventListener('mouseenter', function(){
+    clearTimeout(_ftHideTimer);
+    toolbar.classList.remove('hidden');
+  });
+
+  toolbar.addEventListener('mouseleave', function(){
+    clearTimeout(_ftHideTimer);
+    _ftHideTimer = setTimeout(function(){
+      toolbar.classList.add('hidden');
+    }, 600);
+  });
+
+  // Глобальный mousemove: показываем toolbar при движении мыши в верхней трети экрана
+  if(!_ftGlobalMouseMoveBound){
+    _ftGlobalMouseMoveBound = true;
+    document.addEventListener('mousemove', function(e){
+      if(isMobile()) return;
+      if(e.clientY < window.innerHeight * 0.25){
+        toolbar.classList.remove('hidden');
+        clearTimeout(_ftHideTimer);
+        _ftHideTimer = setTimeout(function(){
+          toolbar.classList.add('hidden');
+        }, 1800);
+      }
+    }, { passive: true });
+  }
 }
 
 /* ── Dash tabs ───────────────────────────────────── */
@@ -223,7 +276,7 @@ function renderPanels(readonlyData){
     grid.innerHTML = '<div class="empty-state"><h3>Дашборд пуст</h3><p>Чтобы увидеть данные, отправьте первое событие или выберите готовый шаблон.</p><div style="margin-top:20px;display:flex;gap:12px;justify-content:center;">'+(isShared?'':'<button class="btn btn-primary" id="btnEmptyAdd">+ Добавить панель</button>')+'<button class="btn btn-ghost" id="btnEmptyCase">Посмотреть кейсы</button></div></div>';
     if(!isShared) $('#btnEmptyAdd').onclick = openAddPanel;
     var btnCase = document.getElementById('btnEmptyCase');
-    if(btnCase) btnCase.onclick=function(e){ e.preventDefault(); var s=document.getElementById('helpSection'),b=document.getElementById('helpBody'); if(s&&b){s.classList.add('open');b.style.display=''; var c=document.getElementById('cases-block'); if(c) c.scrollIntoView({behavior:'smooth'});} };
+    if(btnCase) btnCase.onclick=function(e){ e.preventDefault(); var m=document.getElementById('helpModal'); if(m) m.classList.add('active'); };
     return;
   }
 
