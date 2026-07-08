@@ -105,36 +105,34 @@
 
 <!-- ══════════════════ DASHBOARD VIEW ══════════════════ -->
 <section id="view-dashboard" class="view">
-  <div class="wrap">
 
     <div id="viewBanner"></div>
 
-    <div class="dash-header">
-      <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;">
-        <div class="dash-tabs" id="dashTabs"></div>
-      </div>
-      <div class="toolbar">
-        <button class="btn btn-ghost" id="btnFitView" title="Уместить холст (сброс зума и позиции)">⤢</button>
-        <button class="btn btn-ghost" id="btnRefreshAll">↻ Обновить</button>
-        <button class="btn btn-ghost" id="btnShare">Поделиться ссылкой</button>
-        <button class="btn btn-primary" id="btnAddPanel">+ Добавить панель</button>
-        <!-- AI-помощник временно скрыт
-        <button class="btn btn-ai" id="btnAskAI" title="Сгенерировать панель по текстовому запросу">✨ AI-помощник</button>
-        -->
+    <!-- ═══ Floating Toolbar (fixed, auto-hide) ═══ -->
+    <div class="floating-toolbar" id="floatingToolbar">
+      <div class="ft-tabs" id="dashTabs"></div>
+      <div class="ft-sep"></div>
+      <div class="ft-actions toolbar">
+        <button class="icon-btn ft-btn" id="btnFitView" title="Уместить холст">⤢</button>
+        <button class="icon-btn ft-btn" id="btnRefreshAll" title="Обновить">↻</button>
+        <button class="icon-btn ft-btn" id="btnExport" title="Экспорт CSV">↓</button>
+        <button class="icon-btn ft-btn" id="btnShare" title="Поделиться">🔗</button>
+        <button class="icon-btn ft-btn ft-help-btn" id="btnHelpModal" title="Справка">?</button>
+        <button class="icon-btn ft-btn ft-add-btn" id="btnAddPanel" title="Добавить панель">+</button>
       </div>
     </div>
 
-    <div id="quickStartBanner"></div>
-
     <div class="grid" id="panelGrid"></div>
 
-    <!-- ═══ Как пользоваться (expandable) ═══ -->
-    <div class="help-section" id="helpSection">
-      <button class="help-toggle" id="helpToggle">
-        <span class="help-toggle-icon">▸</span>
-        <span>Как пользоваться</span>
-      </button>
-      <div class="help-body" id="helpBody" style="display:none;">
+</section>
+
+<!-- ══════════════════ MODAL: HELP ══════════════════ -->
+<div class="overlay" id="helpModal">
+  <div class="modal" style="max-width:860px;max-height:90vh;overflow-y:auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+      <h2 style="margin:0;">Справка и кейсы</h2>
+      <button class="btn btn-ghost" id="btnCloseHelp">✕</button>
+    </div>
 
         <!-- ═══ Cases catalog ═══ -->
         <div class="help-block cases-section" id="cases-block">
@@ -437,7 +435,7 @@ GET https://events.atiks.org/s?src=my_app&type=purchase&group=day&from=2026-06-0
       кабинет защищён 4-значным PIN · дашборды хранятся на сервере · доступ к публичным ссылкам можно отозвать в любой момент
     </div>
   </div>
-</section>
+</div>
 
 <!-- ══════════════════ MODAL: ADD/EDIT PANEL ══════════════════ -->
 <div class="overlay" id="panelModal">
