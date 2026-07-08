@@ -310,7 +310,53 @@ function renderPanels(readonlyData){
     var card = document.createElement('div');
     card.className = 'panel-card' + (isShared ? ' readonly' : '');
     card.style.setProperty('--w', p.width||6);
-    card.innerHTML = '<div class="panel-head"><div><h3>'+escapeHtml(p.title)+'</h3><div class="meta">'+describeMeta(p)+'</div></div><div class="panel-actions"><button class="icon-btn" data-act="refresh" title="Обновить">↻</button>'+(isShared?'':'<button class="icon-btn" data-act="edit" title="Изменить">✎</button>')+(isShared?'':'<button class="icon-btn" data-act="duplicate" title="Создать копию">📋+</button>')+(isShared?'':'<button class="icon-btn icon-btn-danger" data-act="remove" title="Удалить панель с дашборда">🗑</button>')+(isShared?'':'<button class="icon-btn panel-clear-btn" data-act="clear" title="Очистить данные (Alt+клик)">🧹</button>')+(isShared?'':'<button class="icon-btn" data-act="png" title="Сохранить график как PNG">📷</button>')+(isShared?'':'<button class="icon-btn" data-act="copy" title="Копировать данные в буфер">📋</button>')+(isShared?'':'<button class="icon-btn" data-act="fullscreen" title="Полноэкранный режим">⛶</button>')+(isShared?'':'<button class="icon-btn" data-act="smooth" title="Переключить сглаживание линий">∡</button>')+(isShared?'':'<button class="icon-btn" data-act="example" title="Пример записи">📡</button>')+'</div></div><div class="panel-body" id="body-'+p.id+'"><div style="color:var(--muted-2);font-family:var(--mono);font-size:12px;">загрузка…</div></div><div class="panel-code-toggle" data-panel="'+p.id+'"><span class="pct-icon">▸</span> Пример записи данных</div><div class="panel-code-block" id="code-'+p.id+'" style="display:none;">'+buildPanelCodeTabs(p, src)+'</div>';
+    var panelMenuItems = [
+      { act:'edit', icon:'edit', label:'Изменить', hidden: isShared },
+      { act:'duplicate', icon:'copy', label:'Дублировать', hidden: isShared },
+      { act:'refresh', icon:'refresh', label:'Обновить' },
+      { act:'fullscreen', icon:'fullscreen', label:'Полный экран', hidden: isShared },
+      { act:'png', icon:'download', label:'Экспорт PNG', hidden: isShared },
+      { act:'copy', icon:'clipboard', label:'Копировать данные', hidden: isShared },
+      { act:'smooth', icon:'wave', label:'Сглаживание', hidden: isShared },
+      { act:'example', icon:'terminal', label:'Пример записи', hidden: isShared },
+      { act:'clear', icon:'trash', label:'Очистить данные', danger: true, hidden: isShared },
+      { act:'remove', icon:'delete', label:'Удалить панель', danger: true, hidden: isShared }
+    ].filter(function(m){ return !m.hidden; });
+
+    function panelMenuIcon(name){
+      var icons = {
+        edit: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
+        copy: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+        refresh: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>',
+        fullscreen: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>',
+        download: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
+        clipboard: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>',
+        wave: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12c1.5-3 4-6 7-6s4 4 6 4 3-4 7-4"/></svg>',
+        terminal: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>',
+        trash: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+        'delete': '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>'
+      };
+      return icons[name] || '';
+    }
+
+    var menuHtml = panelMenuItems.map(function(m){
+      return '<button class="panel-menu-item'+(m.danger?' danger':'')+'" data-act="'+m.act+'">'
+        + panelMenuIcon(m.icon)
+        + '<span>'+escapeHtml(m.label)+'</span>'
+        + '</button>';
+    }).join('');
+
+    card.innerHTML = '<div class="panel-head"><div><h3>'+escapeHtml(p.title)+'</h3><div class="meta">'+describeMeta(p)+'</div></div>'
+      +'<div class="panel-actions">'
+      +'<button class="icon-btn" data-act="refresh-inline" title="Обновить">'+panelMenuIcon('refresh')+'</button>'
+      +'<div class="panel-menu-wrap">'
+      +'<button class="icon-btn panel-menu-btn" data-menu-trigger title="Меню панели"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg></button>'
+      +'<div class="panel-menu-dropdown">'+menuHtml+'</div>'
+      +'</div>'
+      +'</div>'
+      +'<div class="panel-body" id="body-'+p.id+'"><div style="color:var(--muted-2);font-family:var(--mono);font-size:12px;">загрузка…</div></div>'
+      +'<div class="panel-code-toggle" data-panel="'+p.id+'"><span class="pct-icon">▸</span> Пример записи данных</div>'
+      +'<div class="panel-code-block" id="code-'+p.id+'" style="display:none;">'+buildPanelCodeTabs(p, src)+'</div>';
     surface.appendChild(card);
 
     var toggleEl = card.querySelector('.panel-code-toggle');
@@ -322,7 +368,7 @@ function renderPanels(readonlyData){
     var cpyBtn = codeEl.querySelector('.pc-copy-btn');
     if(cpyBtn){ cpyBtn.onclick=function(ev){ ev.stopPropagation(); var act=codeEl.querySelector('.pc-panel.active pre'); if(act) navigator.clipboard.writeText(act.textContent).then(function(){cpyBtn.textContent='Скопировано!';setTimeout(function(){cpyBtn.textContent='Копировать';},1500);}); }; }
 
-    card.querySelector('[data-act="refresh"]').onclick=function(){loadPanel(p,src);};
+    card.querySelector('[data-act="refresh-inline"]').onclick=function(){loadPanel(p,src);};
     if(!isShared){
       card.querySelector('[data-act="edit"]').onclick=function(){openEditPanel(p);};
       card.querySelector('[data-act="remove"]').onclick=async function(){
@@ -365,6 +411,18 @@ function renderPanels(readonlyData){
       card.querySelector('[data-act="smooth"]').onclick=function(){ toggleSmoothing(p); };
       card.querySelector('[data-act="duplicate"]').onclick=async function(){ duplicatePanel(p); };
       card.querySelector('[data-act="example"]').onclick=function(){ showExampleToast(p, src); };
+    }
+    // Dropdown menu toggle
+    var menuTrigger = card.querySelector('[data-menu-trigger]');
+    var menuDropdown = card.querySelector('.panel-menu-dropdown');
+    if(menuTrigger && menuDropdown){
+      menuTrigger.onclick = function(e){
+        e.stopPropagation();
+        var isOpen = menuDropdown.classList.contains('show');
+        // Close all open dropdowns first
+        document.querySelectorAll('.panel-menu-dropdown.show').forEach(function(d){ d.classList.remove('show'); });
+        if(!isOpen) menuDropdown.classList.add('show');
+      };
     }
     if(!isShared){
       if(canvasMode){ applyCanvasPosition(card,p); initCanvasDrag(card,p); initCanvasResize(card,p); }
@@ -896,7 +954,7 @@ function arrangeAndFitCanvas(){
 }
 function autoLayoutCanvas(panels){ var x=20,y=20,cw=380,rh=280,gap=16,mw=($('#panelGrid').clientWidth||1100)-40; panels.forEach(function(p){p.cx=x;p.cy=y;p.cw=cw;p.ch=rh;x+=cw+gap;if(x+cw>mw){x=20;y+=rh+gap;}}); }
 function applyCanvasPosition(card,p){ card.style.left=(p.cx||20)+'px'; card.style.top=(p.cy||20)+'px'; card.style.width=(p.cw||380)+'px'; card.style.height=(p.ch||280)+'px'; card.style.zIndex=Math.min(Math.max(p.cz || CANVAS_Z_MIN, CANVAS_Z_MIN), CANVAS_Z_MAX); }
-function initCanvasDrag(card,p){ var head=card.querySelector('.panel-head'); head.addEventListener('mousedown',function(e){ if(e.target.closest('.icon-btn')) return; card.classList.add('canvas-dragging'); canvasZCounter = canvasZCounter >= CANVAS_Z_MAX ? CANVAS_Z_MIN : canvasZCounter + 1; card.style.zIndex=canvasZCounter; p.cz=canvasZCounter; var scale = interactiveCanvas ? interactiveCanvas.scale : 1; canvasDragState={ card:card, p:p, startX:e.clientX, startY:e.clientY, origX:p.cx||0, origY:p.cy||0, scale:scale }; e.preventDefault(); }); }
+function initCanvasDrag(card,p){ var head=card.querySelector('.panel-head'); head.addEventListener('mousedown',function(e){ if(e.target.closest('.icon-btn') || e.target.closest('.panel-menu-dropdown')) return; card.classList.add('canvas-dragging'); canvasZCounter = canvasZCounter >= CANVAS_Z_MAX ? CANVAS_Z_MIN : canvasZCounter + 1; card.style.zIndex=canvasZCounter; p.cz=canvasZCounter; var scale = interactiveCanvas ? interactiveCanvas.scale : 1; canvasDragState={ card:card, p:p, startX:e.clientX, startY:e.clientY, origX:p.cx||0, origY:p.cy||0, scale:scale }; e.preventDefault(); }); }
 function initCanvasResize(card,p){ var h=document.createElement('div'); h.className='canvas-resize-handle'; card.appendChild(h); h.addEventListener('mousedown',function(e){e.stopPropagation();e.preventDefault(); var scale = interactiveCanvas ? interactiveCanvas.scale : 1; canvasResizeState={ card:card, p:p, startX:e.clientX, startY:e.clientY, origW:p.cw||380, origH:p.ch||280, scale:scale }; }); }
 
 /* ── Canvas global drag/resize state (single document listener) ── */
@@ -955,6 +1013,13 @@ function _bindCanvasGlobalHandlers(){
   });
 }
 _bindCanvasGlobalHandlers();
+
+/* ── Close all panel dropdowns on outside click ──── */
+document.addEventListener('click', function(e){
+  if(!e.target.closest('.panel-menu-wrap')){
+    document.querySelectorAll('.panel-menu-dropdown.show').forEach(function(d){ d.classList.remove('show'); });
+  }
+});
 
 /* ── Add / Edit panel modal ──────────────────────── */
 function openAddPanel(){ editingPanelId=null; $('#modalTitle').textContent='Новая панель'; buildTemplateGrid(); resetAdvForm(); populateSuggestions(); $('#advForm').classList.remove('active'); $('#advToggle').textContent='Настроить вручную →'; $('#panelModal').classList.add('active'); }
