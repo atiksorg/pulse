@@ -139,7 +139,7 @@ function renderDashTabs(){
     var b = document.createElement('button');
     b.className = 'dash-tab' + (db.id===activeId ? ' active':'');
     b.textContent = db.name;
-    b.onclick = function(){ setActiveId(db.id); renderDashTabs(); renderPanels(); };
+    b.onclick = function(){ setActiveId(db.id); renderDashTabs(); renderPanels(); setTimeout(function(){ resetCanvasView(true); }, 400); };
     b.ondblclick = async function(){
       var name = await inputModal('Название дашборда', 'Введите название', db.name);
       if(name){
@@ -190,6 +190,7 @@ function renderDashTabs(){
       setActiveId(db.id);
       renderDashTabs();
       renderPanels();
+      setTimeout(function(){ resetCanvasView(true); }, 400);
     } catch(e) { toast('Ошибка создания: ' + e.message); }
   };
   el.appendChild(add);
