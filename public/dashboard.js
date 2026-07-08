@@ -43,7 +43,7 @@ async function initDashboard(){
   if(dashTabsEl) dashTabsEl.style.display = '';
 
   $('#viewBanner').innerHTML = '';
-  $('#btnFitView').onclick = resetCanvasView;
+  $('#btnFitView').onclick = function(){ resetCanvasView(); };
   $('#btnRefreshAll').onclick = function(){ renderPanels(); };
   $('#btnExport').onclick = exportCsv;
   $('#btnShare').onclick = function(){ showShareModal(); };
@@ -82,6 +82,10 @@ async function initDashboard(){
 
   renderDashTabs();
   renderPanels();
+
+  // Автоматически центрируем холст при входе в дашборд
+  // (даём время загрузиться графикам, затем fitToContent)
+  setTimeout(function(){ resetCanvasView(true); }, 400);
 }
 
 /* ── Floating Toolbar: auto-hide logic ──────────── */
@@ -834,10 +838,10 @@ async function onDrop(e){
 function onDragEnd(e){ e.currentTarget.classList.remove('dragging'); $$('.panel-card').forEach(function(c){c.classList.remove('drag-over');}); dragSrcPanelId=null; }
 
 /* ── Canvas mode ─────────────────────────────────── */
-function resetCanvasView(){
+function resetCanvasView(silent){
   if(interactiveCanvas){
     interactiveCanvas.fitToContent();
-    toast('Холст выровнен');
+    if(!silent) toast('Холст выровнен');
   }
 }
 function autoLayoutCanvas(panels){ var x=20,y=20,cw=380,rh=280,gap=16,mw=($('#panelGrid').clientWidth||1100)-40; panels.forEach(function(p){p.cx=x;p.cy=y;p.cw=cw;p.ch=rh;x+=cw+gap;if(x+cw>mw){x=20;y+=rh+gap;}}); }
