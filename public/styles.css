@@ -283,9 +283,9 @@ pre .k1{color:var(--amber);}
 .src-tag input{background:none;border:none;color:var(--teal);font-family:var(--mono);font-size:13px;font-weight:600;width:150px;}
 .src-tag input:focus{outline:none;}
 .dash-tabs{display:flex;gap:4px;align-items:center;overflow-x:auto;padding-bottom:2px;}
-.dash-tab{font-family:var(--mono);font-size:12.5px;padding:7px 14px;border-radius:7px;border:1px solid transparent;color:var(--muted);white-space:nowrap;background:none;}
+.dash-tab{font-family:var(--mono);font-size:11.5px;padding:5px 10px;border-radius:7px;border:1px solid transparent;color:var(--muted);white-space:nowrap;background:none;cursor:pointer;}
 .dash-tab.active{background:var(--panel-2);border-color:var(--border);color:var(--text);}
-.dash-tab-add{color:var(--muted-2);font-size:16px;padding:7px 11px;}
+.dash-tab-add{color:var(--muted-2);font-size:16px;padding:5px 8px;}
 .dash-tab-del{
   margin-left:8px;color:var(--muted-2);font-size:15px;font-weight:400;
   cursor:pointer;line-height:1;padding:2px;border-radius:4px;
@@ -294,6 +294,79 @@ pre .k1{color:var(--amber);}
 .dash-tab-del:hover{color:var(--coral);background:rgba(242,102,79,0.12);}
 
 .toolbar{display:flex;gap:10px;flex-wrap:wrap;}
+
+/* ── Floating Toolbar ─────────────────────────────── */
+.floating-toolbar{
+  position:fixed;
+  top:62px;
+  left:50%;
+  transform:translateX(-50%) translateY(0);
+  z-index:950;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:8px 14px;
+  background:rgba(19,25,38,0.92);
+  backdrop-filter:blur(14px);
+  border:1px solid var(--border);
+  border-radius:14px;
+  box-shadow:0 4px 24px rgba(0,0,0,0.5);
+  opacity:1;
+  transition:opacity 0.35s ease, transform 0.35s ease;
+  pointer-events:auto;
+}
+.floating-toolbar.hidden{
+  opacity:0;
+  transform:translateX(-50%) translateY(-14px);
+  pointer-events:none;
+}
+.ft-tabs{
+  display:flex;
+  gap:4px;
+  align-items:center;
+  overflow-x:auto;
+  max-width:340px;
+  scrollbar-width:none;
+}
+.ft-tabs::-webkit-scrollbar{display:none;}
+.ft-sep{
+  width:1px;
+  height:22px;
+  background:var(--border);
+  flex-shrink:0;
+}
+.ft-actions{
+  display:flex;
+  gap:4px;
+  align-items:center;
+}
+.ft-btn{
+  width:32px;
+  height:32px;
+  border-radius:8px;
+  border:1px solid var(--border);
+  background:var(--panel-2);
+  color:var(--muted);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:15px;
+  transition:all .15s ease;
+}
+.ft-btn:hover{color:var(--text);border-color:var(--muted-2);}
+.ft-add-btn{
+  background:var(--teal);
+  color:#062420;
+  border-color:var(--teal);
+  font-weight:700;
+  font-size:18px;
+}
+.ft-add-btn:hover{background:#63f0d1;}
+.ft-help-btn{
+  color:var(--amber);
+  border-color:rgba(242,169,80,0.3);
+}
+.ft-help-btn:hover{border-color:var(--amber);}
 
 .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px;padding:8px 0 60px;}
 .panel-card{
@@ -552,12 +625,18 @@ pre .k1{color:var(--amber);}
 
 /* ── Canvas mode (free-form layout) ────────────── */
 .canvas-mode #panelGrid{
-  position:relative;
-  min-height:calc(100vh - 200px);
+  position:fixed;
+  top:0;
+  left:0;
+  right:0;
+  bottom:0;
+  height:100vh;
+  height:100dvh;
   display:block;
   background:
     radial-gradient(circle at 1px 1px, var(--border-soft) 1px, transparent 0) 0 0/20px 20px;
   padding:0;
+  overflow:hidden;
 }
 .canvas-mode .panel-card{
   position:absolute;
@@ -1132,4 +1211,30 @@ pre .k1{color:var(--amber);}
   #btnLayoutMode{display:none !important;}
   .panel-resize-handle{display:none !important;}
   .panel-card{draggable:false;}
+
+  /* ═══ Floating Toolbar: всегда виден на мобилках ═══ */
+  .floating-toolbar{
+    top:auto;
+    bottom:0;
+    left:0;
+    right:0;
+    transform:none;
+    border-radius:16px 16px 0 0;
+    padding:10px 12px;
+    width:100%;
+    max-width:100%;
+    justify-content:center;
+  }
+  .floating-toolbar.hidden{
+    opacity:1;
+    transform:none;
+    pointer-events:auto;
+  }
+  .ft-tabs{max-width:180px;}
+  .ft-btn{width:36px;height:36px;font-size:16px;}
+
+  /* Canvas grid offset для мобильного toolbar */
+  .canvas-mode #panelGrid{
+    bottom:60px;
+  }
 }
