@@ -32,6 +32,7 @@ async function initDashboard(){
   if(ftActions){
     ftActions.innerHTML =
       '<button class="icon-btn ft-btn" id="btnFitView" title="Уместить холст">⤢</button>' +
+      '<button class="icon-btn ft-btn ft-layout-btn" id="btnArrangeLayout" title="Выстроить графики">▦</button>' +
       '<button class="icon-btn ft-btn" id="btnRefreshAll" title="Обновить">↻</button>' +
       '<button class="icon-btn ft-btn" id="btnExport" title="Экспорт CSV">↓</button>' +
       '<button class="icon-btn ft-btn" id="btnShare" title="Поделиться">🔗</button>' +
@@ -44,6 +45,7 @@ async function initDashboard(){
 
   $('#viewBanner').innerHTML = '';
   $('#btnFitView').onclick = function(){ resetCanvasView(); };
+  $('#btnArrangeLayout').onclick = function(){ arrangeAndFitCanvas(); };
   $('#btnRefreshAll').onclick = function(){ renderPanels(); };
   $('#btnExport').onclick = exportCsv;
   $('#btnShare').onclick = function(){ showShareModal(); };
@@ -308,7 +310,7 @@ function renderPanels(readonlyData){
     var card = document.createElement('div');
     card.className = 'panel-card' + (isShared ? ' readonly' : '');
     card.style.setProperty('--w', p.width||6);
-    card.innerHTML = '<div class="panel-head"><div><h3>'+escapeHtml(p.title)+'</h3><div class="meta">'+describeMeta(p)+'</div></div><div class="panel-actions"><button class="icon-btn" data-act="refresh" title="Обновить">↻</button>'+(isShared?'':'<button class="icon-btn" data-act="edit" title="Изменить">✎</button>')+(isShared?'':'<button class="icon-btn icon-btn-danger" data-act="remove" title="Удалить панель с дашборда">🗑</button>')+(isShared?'':'<button class="icon-btn panel-clear-btn" data-act="clear" title="Очистить данные (Alt+клик)">🧹</button>')+(isShared?'':'<button class="icon-btn" data-act="png" title="Сохранить график как PNG">📷</button>')+(isShared?'':'<button class="icon-btn" data-act="copy" title="Копировать данные в буфер">📋</button>')+(isShared?'':'<button class="icon-btn" data-act="fullscreen" title="Полноэкранный режим">⛶</button>')+(isShared?'':'<button class="icon-btn" data-act="smooth" title="Переключить сглаживание линий">∡</button>')+'</div></div><div class="panel-body" id="body-'+p.id+'"><div style="color:var(--muted-2);font-family:var(--mono);font-size:12px;">загрузка…</div></div><div class="panel-code-toggle" data-panel="'+p.id+'"><span class="pct-icon">▸</span> Пример записи данных</div><div class="panel-code-block" id="code-'+p.id+'" style="display:none;">'+buildPanelCodeTabs(p, src)+'</div>';
+    card.innerHTML = '<div class="panel-head"><div><h3>'+escapeHtml(p.title)+'</h3><div class="meta">'+describeMeta(p)+'</div></div><div class="panel-actions"><button class="icon-btn" data-act="refresh" title="Обновить">↻</button>'+(isShared?'':'<button class="icon-btn" data-act="edit" title="Изменить">✎</button>')+(isShared?'':'<button class="icon-btn" data-act="duplicate" title="Создать копию">📋+</button>')+(isShared?'':'<button class="icon-btn icon-btn-danger" data-act="remove" title="Удалить панель с дашборда">🗑</button>')+(isShared?'':'<button class="icon-btn panel-clear-btn" data-act="clear" title="Очистить данные (Alt+клик)">🧹</button>')+(isShared?'':'<button class="icon-btn" data-act="png" title="Сохранить график как PNG">📷</button>')+(isShared?'':'<button class="icon-btn" data-act="copy" title="Копировать данные в буфер">📋</button>')+(isShared?'':'<button class="icon-btn" data-act="fullscreen" title="Полноэкранный режим">⛶</button>')+(isShared?'':'<button class="icon-btn" data-act="smooth" title="Переключить сглаживание линий">∡</button>')+(isShared?'':'<button class="icon-btn" data-act="example" title="Пример записи">📡</button>')+'</div></div><div class="panel-body" id="body-'+p.id+'"><div style="color:var(--muted-2);font-family:var(--mono);font-size:12px;">загрузка…</div></div><div class="panel-code-toggle" data-panel="'+p.id+'"><span class="pct-icon">▸</span> Пример записи данных</div><div class="panel-code-block" id="code-'+p.id+'" style="display:none;">'+buildPanelCodeTabs(p, src)+'</div>';
     surface.appendChild(card);
 
     var toggleEl = card.querySelector('.panel-code-toggle');
@@ -361,6 +363,8 @@ function renderPanels(readonlyData){
       card.querySelector('[data-act="copy"]').onclick=function(){ copyPanelData(p); };
       card.querySelector('[data-act="fullscreen"]').onclick=function(){ openFullscreenPanel(p,src); };
       card.querySelector('[data-act="smooth"]').onclick=function(){ toggleSmoothing(p); };
+      card.querySelector('[data-act="duplicate"]').onclick=async function(){ duplicatePanel(p); };
+      card.querySelector('[data-act="example"]').onclick=function(){ showExampleToast(p, src); };
     }
     if(!isShared){
       if(canvasMode){ applyCanvasPosition(card,p); initCanvasDrag(card,p); initCanvasResize(card,p); }
@@ -659,6 +663,40 @@ function toggleSmoothing(p){
   toast(ds.tension > 0 ? 'Сглаживание включено' : 'Сглаживание выключено');
 }
 
+/* ── Duplicate panel ─────────────────────────────── */
+async function duplicatePanel(p){
+  var db = getActiveDashboard();
+  if(!db) return;
+  var clone = Object.assign({}, p, { id: uid('panel'), title: (p.title||'Копия')+' (копия)' });
+  // Смещаем позицию на холсте, если есть координаты
+  if(typeof clone.cx === 'number'){ clone.cx += 40; clone.cy += 40; }
+  db.panels.push(clone);
+  try {
+    await updateDashboardOnServer(db);
+    renderPanels();
+    toast('Копия создана');
+  } catch(e) { toast('Ошибка сохранения: ' + e.message); }
+}
+
+/* ── Show example event toast ────────────────────── */
+function showExampleToast(p, src){
+  var esc = escapeHtml;
+  var typePart = p.type ? '&type=' + encodeURIComponent(p.type) : '';
+  var extra = '';
+  if(p.agg==='sum' && p.aggfield) extra += '&' + encodeURIComponent(p.aggfield) + '=42';
+  else if(p.agg==='avg' && p.aggfield) extra += '&' + encodeURIComponent(p.aggfield) + '=42';
+  else if(p.group==='__field' && p.field) extra += '&' + encodeURIComponent(p.field) + '=sample';
+  else extra += '&value=1';
+  var url = API + '/e?src=' + encodeURIComponent(src) + typePart + extra;
+  var code = 'fetch("' + url + '");';
+  // Копируем в буфер и показываем toast
+  navigator.clipboard.writeText(code).then(function(){
+    toast('📡 Пример скопирован: ' + code);
+  }).catch(function(){
+    toast('📡 ' + code);
+  });
+}
+
 function renderViz(p, data, body){
   // Сохраняем focus-body класс, если рендерим в фокус-режиме
   var isFocus = body.id === 'focusBody';
@@ -846,6 +884,15 @@ function resetCanvasView(silent){
     interactiveCanvas.fitToContent();
     if(!silent) toast('Холст выровнен');
   }
+}
+function arrangeAndFitCanvas(){
+  var db = getActiveDashboard();
+  if(!db || !Array.isArray(db.panels) || !db.panels.length){ toast('Нет панелей для выравнивания'); return; }
+  autoLayoutCanvas(db.panels);
+  updateDashboardOnServer(db).catch(function(){});
+  renderPanels();
+  setTimeout(function(){ resetCanvasView(true); }, 500);
+  toast('Графики выстроены');
 }
 function autoLayoutCanvas(panels){ var x=20,y=20,cw=380,rh=280,gap=16,mw=($('#panelGrid').clientWidth||1100)-40; panels.forEach(function(p){p.cx=x;p.cy=y;p.cw=cw;p.ch=rh;x+=cw+gap;if(x+cw>mw){x=20;y+=rh+gap;}}); }
 function applyCanvasPosition(card,p){ card.style.left=(p.cx||20)+'px'; card.style.top=(p.cy||20)+'px'; card.style.width=(p.cw||380)+'px'; card.style.height=(p.ch||280)+'px'; card.style.zIndex=Math.min(Math.max(p.cz || CANVAS_Z_MIN, CANVAS_Z_MIN), CANVAS_Z_MAX); }
