@@ -575,23 +575,18 @@ function renderLogs(p, data, body){
   renderLogsPage(p, body);
 }
 
-/* ── Server clock drift (ms) — measured at startup ── */
-var _serverDriftMs = 0;
-
-/* ── Format UTC timestamp to local time string (with drift correction) ── */
+/* ── Format UTC timestamp to local time string ──── */
 function formatLocalTime(utcIsoStr){
   if(!utcIsoStr) return '';
   try{
     var d = new Date(utcIsoStr);
-    if(isNaN(d.getTime())) return utcIsoStr;
-    // Корректируем на дрифт часов сервера
-    var corrected = new Date(d.getTime() + _serverDriftMs);
-    var yyyy = corrected.getFullYear();
-    var mm = String(corrected.getMonth()+1).padStart(2,'0');
-    var dd = String(corrected.getDate()).padStart(2,'0');
-    var hh = String(corrected.getHours()).padStart(2,'0');
-    var mi = String(corrected.getMinutes()).padStart(2,'0');
-    var ss = String(corrected.getSeconds()).padStart(2,'0');
+    if(isNaN(d.getTime())) return utcIsoStr.replace('T',' ').replace(/\.\d+Z$/,'');
+    var yyyy = d.getFullYear();
+    var mm = String(d.getMonth()+1).padStart(2,'0');
+    var dd = String(d.getDate()).padStart(2,'0');
+    var hh = String(d.getHours()).padStart(2,'0');
+    var mi = String(d.getMinutes()).padStart(2,'0');
+    var ss = String(d.getSeconds()).padStart(2,'0');
     return yyyy+'-'+mm+'-'+dd+' '+hh+':'+mi+':'+ss;
   }catch(_){ return utcIsoStr; }
 }
@@ -627,34 +622,13 @@ function renderLogsPage(p, body){
   p._currentPage = page;
   var slice = events.slice(page * LOGS_PAGE_SIZE, (page + 1) * LOGS_PAGE_SIZE);
 
-  var html = '';
-
   // ── Замер дрифта часов сервера из данных событий ──
   var newestTs = events[0] ? new Date(events[0].ts).getTime() : 0;
-  var nowMs = Date.now();
   if(newestTs > 0){
-    var measuredDrift = nowMs - newestTs;
-    // Обновляем глобальный дрифт (для formatLocalTime)
-    _serverDriftMs = measuredDrift;
+    _serverDriftMs = Date.now() - newestTs;
   }
-  var driftSec = Math.round(_serverDriftMs / 1000);
-  var driftLabel = '';
-  if(driftSec > 60) driftLabel = Math.floor(driftSec/60) + ' мин ' + (driftSec%60) + ' сек';
-  else if(driftSec > 2) driftLabel = driftSec + ' сек';
-  else driftLabel = '';
 
-  // ── Компактный блок информации о системном времени ──
-  html += '<div class="server-time-info">';
-  html += '<div class="sti-clock" id="stClock"></div>';
-  html += '<div class="sti-details">';
-  html += '<span class="sti-zone">' + escapeHtml(getUtcOffsetStr()) + '</span>';
-  if(driftLabel){
-    html += '<span class="sti-sep">·</span>';
-    html += '<span class="sti-diff">⏱ событие записано <b>' + escapeHtml(driftLabel) + '</b> назад</span>';
-  }
-  html += '</div>';
-  html += '</div>';
-
+  var html = '';
   html+='<div class="table-scroll-container"><div class="logs-wrap" style="flex:1;overflow-y:auto;padding-right:4px;">';
   html+='<table class="logs-table"><thead><tr><th class="logs-th-time">Время (' + escapeHtml(getUtcOffsetStr()) + ')</th><th class="logs-th-type">Тип</th><th class="logs-th-msg">Сообщение</th></tr></thead><tbody>';
   for(var i=0;i<slice.length;i++){ var ev=slice[i]; var msg=''; try{var pl=JSON.parse(ev.payload); msg=pl.text||pl.message||pl.msg||''; if(!msg){var keys=Object.keys(pl); msg=keys.slice(0,3).map(function(k){return k+'='+String(pl[k]);}).join(', ');} }catch(_){msg=ev.payload;} if(msg.length>120) msg=msg.slice(0,117)+'…'; var time=formatLocalTime(ev.ts); html+='<tr><td class="logs-time">'+escapeHtml(time)+'</td><td class="logs-type">'+escapeHtml(ev.type)+'</td><td class="logs-msg">'+escapeHtml(msg)+'</td></tr>'; }
@@ -676,21 +650,6 @@ function renderLogsPage(p, body){
       renderLogsPage(p, body);
     };
   });
-
-  // ── Обновление часов каждую секунду ──
-  clearInterval(p._clockTimer);
-  var clockEl = body.querySelector('#stClock');
-  if(clockEl){
-    function updateClock(){
-      var now = new Date();
-      var hh = String(now.getHours()).padStart(2,'0');
-      var mm = String(now.getMinutes()).padStart(2,'0');
-      var ss = String(now.getSeconds()).padStart(2,'0');
-      if(clockEl) clockEl.textContent = hh+':'+mm+':'+ss;
-    }
-    updateClock();
-    p._clockTimer = setInterval(updateClock, 1000);
-  }
 }
 
 /* ── Smart zero-fill for time series ────────────── */
