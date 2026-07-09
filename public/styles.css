@@ -1199,6 +1199,32 @@ pre .k1{color:var(--amber);}
 }
 .btn-copy-src:hover{color:var(--teal);border-color:var(--teal-dim);}
 
+/* ── Topbar clock (compact, with ms) ─────────────── */
+.topbar-clock{
+  display:flex;
+  align-items:baseline;
+  gap:4px;
+  font-family:var(--mono);
+  margin-right:12px;
+  user-select:none;
+}
+.tc-zone{
+  font-size:10px;
+  color:var(--muted-2);
+  letter-spacing:0.03em;
+}
+.tc-time{
+  font-size:13px;
+  font-weight:600;
+  color:var(--muted);
+  letter-spacing:0.02em;
+}
+.tc-ms{
+  font-size:10px;
+  font-weight:400;
+  color:var(--muted-2);
+}
+
 /* ── Quick Start Banner (Онбординг) ──────────────── */
 .qs-banner{
   position:relative;
