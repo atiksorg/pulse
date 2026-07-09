@@ -500,6 +500,32 @@ function renderLogs(p, data, body){
   renderLogsPage(p, body);
 }
 
+/* ── Format UTC timestamp to local time string ──── */
+function formatLocalTime(utcIsoStr){
+  if(!utcIsoStr) return '';
+  try{
+    var d = new Date(utcIsoStr);
+    if(isNaN(d.getTime())) return utcIsoStr;
+    var yyyy = d.getFullYear();
+    var mm = String(d.getMonth()+1).padStart(2,'0');
+    var dd = String(d.getDate()).padStart(2,'0');
+    var hh = String(d.getHours()).padStart(2,'0');
+    var mi = String(d.getMinutes()).padStart(2,'0');
+    var ss = String(d.getSeconds()).padStart(2,'0');
+    return yyyy+'-'+mm+'-'+dd+' '+hh+':'+mi+':'+ss;
+  }catch(_){ return utcIsoStr; }
+}
+
+/* ── Get UTC offset string like "+03:00" ─────────── */
+function getUtcOffsetStr(){
+  var off = -new Date().getTimezoneOffset(); // минуты, + для восточных
+  var sign = off >= 0 ? '+' : '-';
+  var abs = Math.abs(off);
+  var h = String(Math.floor(abs/60)).padStart(2,'0');
+  var m = String(abs%60).padStart(2,'0');
+  return 'UTC'+sign+':'+h+':'+m;
+}
+
 function renderLogsPage(p, body){
   var events = p._logsEvents || [];
   if(!events.length){
@@ -521,9 +547,32 @@ function renderLogsPage(p, body){
   p._currentPage = page;
   var slice = events.slice(page * LOGS_PAGE_SIZE, (page + 1) * LOGS_PAGE_SIZE);
 
-  var html='<div class="table-scroll-container"><div class="logs-wrap" style="flex:1;overflow-y:auto;padding-right:4px;">';
-  html+='<table class="logs-table"><thead><tr><th class="logs-th-time">Время</th><th class="logs-th-type">Тип</th><th class="logs-th-msg">Сообщение</th></tr></thead><tbody>';
-  for(var i=0;i<slice.length;i++){ var ev=slice[i]; var msg=''; try{var pl=JSON.parse(ev.payload); msg=pl.text||pl.message||pl.msg||''; if(!msg){var keys=Object.keys(pl); msg=keys.slice(0,3).map(function(k){return k+'='+String(pl[k]);}).join(', ');} }catch(_){msg=ev.payload;} if(msg.length>120) msg=msg.slice(0,117)+'…'; var time=ev.ts?ev.ts.replace('T',' ').replace(/\.\d+Z$/,''):''; html+='<tr><td class="logs-time">'+escapeHtml(time)+'</td><td class="logs-type">'+escapeHtml(ev.type)+'</td><td class="logs-msg">'+escapeHtml(msg)+'</td></tr>'; }
+  // ── Вычисляем разницу между серверным и локальным временем ──
+  var newestServerTs = events[0] ? events[0].ts : null;
+  var serverDate = newestServerTs ? new Date(newestServerTs) : null;
+  var nowLocal = new Date();
+  var diffSec = serverDate ? Math.round((nowLocal.getTime() - serverDate.getTime()) / 1000) : 0;
+  var diffLabel = '';
+  if(diffSec > 60) diffLabel = 'событие записано ' + Math.floor(diffSec/60) + ' мин ' + (diffSec%60) + ' сек назад';
+  else if(diffSec > 0) diffLabel = 'событие записано ' + diffSec + ' сек назад';
+  else if(diffSec < -60) diffLabel = 'событие из будущего на ' + Math.abs(Math.floor(diffSec/60)) + ' мин';
+  else diffLabel = 'только что';
+
+  var html = '';
+
+  // ── Блок информации о времени системы ──
+  html += '<div class="server-time-info">';
+  html += '<div class="sti-clock" id="stClock"></div>';
+  html += '<div class="sti-details">';
+  html += '<span class="sti-zone">Ваш часовой пояс: <b>' + escapeHtml(getUtcOffsetStr()) + '</b></span>';
+  html += '<span class="sti-sep">·</span>';
+  html += '<span class="sti-diff">Последнее событие: <b>' + escapeHtml(diffLabel) + '</b></span>';
+  html += '</div>';
+  html += '</div>';
+
+  html+='<div class="table-scroll-container"><div class="logs-wrap" style="flex:1;overflow-y:auto;padding-right:4px;">';
+  html+='<table class="logs-table"><thead><tr><th class="logs-th-time">Время (' + escapeHtml(getUtcOffsetStr()) + ')</th><th class="logs-th-type">Тип</th><th class="logs-th-msg">Сообщение</th></tr></thead><tbody>';
+  for(var i=0;i<slice.length;i++){ var ev=slice[i]; var msg=''; try{var pl=JSON.parse(ev.payload); msg=pl.text||pl.message||pl.msg||''; if(!msg){var keys=Object.keys(pl); msg=keys.slice(0,3).map(function(k){return k+'='+String(pl[k]);}).join(', ');} }catch(_){msg=ev.payload;} if(msg.length>120) msg=msg.slice(0,117)+'…'; var time=formatLocalTime(ev.ts); html+='<tr><td class="logs-time">'+escapeHtml(time)+'</td><td class="logs-type">'+escapeHtml(ev.type)+'</td><td class="logs-msg">'+escapeHtml(msg)+'</td></tr>'; }
   html+='</tbody></table></div></div>';
 
   html+='<div class="logs-pager">';
@@ -542,6 +591,21 @@ function renderLogsPage(p, body){
       renderLogsPage(p, body);
     };
   });
+
+  // ── Обновление часов каждую секунду ──
+  clearInterval(p._clockTimer);
+  var clockEl = body.querySelector('#stClock');
+  if(clockEl){
+    function updateClock(){
+      var now = new Date();
+      var hh = String(now.getHours()).padStart(2,'0');
+      var mm = String(now.getMinutes()).padStart(2,'0');
+      var ss = String(now.getSeconds()).padStart(2,'0');
+      if(clockEl) clockEl.textContent = hh+':'+mm+':'+ss;
+    }
+    updateClock();
+    p._clockTimer = setInterval(updateClock, 1000);
+  }
 }
 
 /* ── Smart zero-fill for time series ────────────── */
@@ -1052,12 +1116,28 @@ $('#btnSavePanel').onclick=async function(){
     if (p) Object.assign(p,cfg);
   } else {
     var pNew = Object.assign({ id: uid('panel') }, cfg);
+    // ── Помещаем новую панель в центр видимой области холста ──
+    if(canvasMode && !isMobile() && interactiveCanvas){
+      var vp = interactiveCanvas.viewport.getBoundingClientRect();
+      var cw = pNew.cw || 380;
+      var ch = pNew.ch || 280;
+      var centerX = (vp.width / 2 - interactiveCanvas.offsetX) / interactiveCanvas.scale - cw / 2;
+      var centerY = (vp.height / 2 - interactiveCanvas.offsetY) / interactiveCanvas.scale - ch / 2;
+      pNew.cx = Math.round(centerX / 20) * 20;
+      pNew.cy = Math.round(centerY / 20) * 20;
+      pNew.cw = cw;
+      pNew.ch = ch;
+    }
     db.panels.push(pNew);
   }
 
   try {
     await updateDashboardOnServer(db);
     renderPanels();
+    // После рендера — центрируем холст на новой панели
+    if(!editingPanelId && canvasMode && !isMobile()){
+      setTimeout(function(){ resetCanvasView(true); }, 300);
+    }
     closePanelModal();
   } catch(e) { toast('Ошибка сохранения: ' + e.message); }
 };
@@ -1138,10 +1218,30 @@ async function addPanelFromConfig(cfg){
   var db = getActiveDashboard();
   if (!db) return;
   var p = Object.assign({ id: uid('panel') }, cfg);
+
+  // ── Помещаем новую панель в центр видимой области холста ──
+  if(canvasMode && !isMobile() && interactiveCanvas){
+    var vp = interactiveCanvas.viewport.getBoundingClientRect();
+    var cw = p.cw || 380;
+    var ch = p.ch || 280;
+    // Центр viewport в координатах холста
+    var centerX = (vp.width / 2 - interactiveCanvas.offsetX) / interactiveCanvas.scale - cw / 2;
+    var centerY = (vp.height / 2 - interactiveCanvas.offsetY) / interactiveCanvas.scale - ch / 2;
+    // Привязка к сетке 20px
+    p.cx = Math.round(centerX / 20) * 20;
+    p.cy = Math.round(centerY / 20) * 20;
+    p.cw = cw;
+    p.ch = ch;
+  }
+
   db.panels.push(p);
   try {
     await updateDashboardOnServer(db);
     renderPanels();
+    // После рендера — центрируем холст на новой панели
+    if(canvasMode && !isMobile()){
+      setTimeout(function(){ resetCanvasView(true); }, 300);
+    }
   } catch(e) { toast('Ошибка сохранения: ' + e.message); }
 }
 
