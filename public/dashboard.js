@@ -575,6 +575,9 @@ function renderLogs(p, data, body){
   renderLogsPage(p, body);
 }
 
+/* ── Server clock drift (ms) — measured from event data ── */
+var _serverDriftMs = 0;
+
 /* ── Format UTC timestamp to local time string ──── */
 function formatLocalTime(utcIsoStr){
   if(!utcIsoStr) return '';
