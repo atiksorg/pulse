@@ -1224,6 +1224,20 @@ pre .k1{color:var(--amber);}
   font-weight:400;
   color:var(--muted-2);
 }
+.tc-drift{
+  font-size:9px;
+  font-weight:500;
+  color:var(--amber);
+  padding:1px 6px;
+  border-radius:4px;
+  background:rgba(242,169,80,0.1);
+  margin-left:6px;
+  white-space:nowrap;
+}
+.tc-drift-warn{
+  color:var(--coral);
+  background:rgba(242,102,79,0.1);
+}
 
 /* ── Quick Start Banner (Онбординг) ──────────────── */
 .qs-banner{
