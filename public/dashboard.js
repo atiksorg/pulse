@@ -85,6 +85,22 @@ async function initDashboard(){
     toast('Ошибка загрузки данных: ' + e.message);
   }
 
+  // ── Замер дрифта часов сервера ──
+  try {
+    var _measureStart = Date.now();
+    var _healthRes = await fetch(API + '/health');
+    var _measureEnd = Date.now();
+    if(_healthRes.ok){
+      var _healthData = await _healthRes.json();
+      if(_healthData.server_time){
+        var _serverNow = new Date(_healthData.server_time).getTime();
+        var _roundTrip = _measureEnd - _measureStart;
+        var _serverAtMeasure = _serverNow + Math.round(_roundTrip / 2);
+        _serverDriftMs = _measureEnd - _serverAtMeasure;
+      }
+    }
+  } catch(_){}
+
   renderDashTabs();
   renderPanels();
 
@@ -129,6 +145,12 @@ function _initTopbarClock(){
   _msSpan.className = 'tc-ms';
   el.appendChild(_msSpan);
 
+  // Индикатор дрифта (если > 2 сек)
+  var _driftBadge = document.createElement('span');
+  _driftBadge.className = 'tc-drift';
+  _driftBadge.style.display = 'none';
+  el.appendChild(_driftBadge);
+
   function tick(){
     var now = new Date();
     var hh = String(now.getHours()).padStart(2,'0');
@@ -137,6 +159,23 @@ function _initTopbarClock(){
     var ms = String(now.getMilliseconds()).padStart(3,'0');
     _timeSpan.textContent = hh+':'+mm+':'+ss;
     _msSpan.textContent = '.'+ms;
+
+    // Показываем дрифт сервера если > 2 сек
+    if(Math.abs(_serverDriftMs) > 2000){
+      var driftSec = Math.round(Math.abs(_serverDriftMs) / 1000);
+      var driftMin = Math.floor(driftSec / 60);
+      var driftRem = driftSec % 60;
+      _driftBadge.style.display = '';
+      if(driftMin > 0){
+        _driftBadge.textContent = 'сервер отстаёт на ' + driftMin + ' мин ' + driftRem + ' сек';
+      } else {
+        _driftBadge.textContent = 'сервер: ±' + driftSec + ' сек';
+      }
+      _driftBadge.className = 'tc-drift' + (driftSec > 30 ? ' tc-drift-warn' : '');
+    } else {
+      _driftBadge.style.display = 'none';
+    }
+
     _topbarClockRAF = requestAnimationFrame(tick);
   }
   tick();
@@ -552,18 +591,23 @@ function renderLogs(p, data, body){
   renderLogsPage(p, body);
 }
 
-/* ── Format UTC timestamp to local time string ──── */
+/* ── Server clock drift (ms) — measured at startup ── */
+var _serverDriftMs = 0;
+
+/* ── Format UTC timestamp to local time string (with drift correction) ── */
 function formatLocalTime(utcIsoStr){
   if(!utcIsoStr) return '';
   try{
     var d = new Date(utcIsoStr);
     if(isNaN(d.getTime())) return utcIsoStr;
-    var yyyy = d.getFullYear();
-    var mm = String(d.getMonth()+1).padStart(2,'0');
-    var dd = String(d.getDate()).padStart(2,'0');
-    var hh = String(d.getHours()).padStart(2,'0');
-    var mi = String(d.getMinutes()).padStart(2,'0');
-    var ss = String(d.getSeconds()).padStart(2,'0');
+    // Корректируем на дрифт часов сервера
+    var corrected = new Date(d.getTime() + _serverDriftMs);
+    var yyyy = corrected.getFullYear();
+    var mm = String(corrected.getMonth()+1).padStart(2,'0');
+    var dd = String(corrected.getDate()).padStart(2,'0');
+    var hh = String(corrected.getHours()).padStart(2,'0');
+    var mi = String(corrected.getMinutes()).padStart(2,'0');
+    var ss = String(corrected.getSeconds()).padStart(2,'0');
     return yyyy+'-'+mm+'-'+dd+' '+hh+':'+mi+':'+ss;
   }catch(_){ return utcIsoStr; }
 }
