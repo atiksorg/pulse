@@ -525,6 +525,8 @@ function renderPanels(readonlyData){
       // Shared/public view: применяем позиции автора, но без drag/resize
       applyCanvasPosition(card,p);
     }
+    // Для лог-панелей всегда начинаем с первой страницы (самые новые события)
+    if(p.viz === 'logs') p._currentPage = 0;
     loadPanel(p,src);
     if(p.autorefresh && Number(p.autorefresh)>0 && !isShared) refreshTimers[p.id]=setInterval(function(){loadPanel(p,src);},Number(p.autorefresh)*1000);
   });
