@@ -578,14 +578,13 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/health') {
       const tables = db.prepare(
         "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'events_%'"
-      ).all();
-
-      res.setHeader('Content-Type', 'application/json');
+      ).all();      res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({
         uptime: process.uptime(),
         buffer_size: buffer.length,
         tables: tables.length,
-        last_flush_ms_ago: Date.now() - lastFlushTime
+        last_flush_ms_ago: Date.now() - lastFlushTime,
+        server_time: new Date().toISOString()
       }));
       return;
     }
