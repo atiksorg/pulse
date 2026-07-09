@@ -65,6 +65,9 @@ async function initDashboard(){
     };
   }
 
+  // ── Компактные часы в шапке (с миллисекундами) ──
+  _initTopbarClock();
+
   // Auto-hide floating toolbar
   _initFloatingToolbarAutoHide();
 
@@ -88,6 +91,55 @@ async function initDashboard(){
   // Автоматически центрируем холст при входе в дашборд
   // (даём время загрузиться графикам, затем fitToContent)
   setTimeout(function(){ resetCanvasView(true); }, 400);
+}
+
+/* ── Topbar clock (compact, with milliseconds) ─── */
+var _topbarClockRAF = null;
+function _initTopbarClock(){
+  // Удаляем старый элемент если есть
+  var old = document.getElementById('topbarClock');
+  if(old) old.remove();
+  cancelAnimationFrame(_topbarClockRAF);
+
+  var sessionEl = document.getElementById('sessionIndicator');
+  var topbar = document.querySelector('.topbar');
+  if(!topbar) return;
+
+  var el = document.createElement('div');
+  el.className = 'topbar-clock';
+  el.id = 'topbarClock';
+  // Вставляем перед sessionIndicator или в конец topbar
+  if(sessionEl && sessionEl.parentNode === topbar){
+    topbar.insertBefore(el, sessionEl);
+  } else {
+    topbar.appendChild(el);
+  }
+
+  var _tzStr = getUtcOffsetStr();
+  var _tzLabel = document.createElement('span');
+  _tzLabel.className = 'tc-zone';
+  _tzLabel.textContent = _tzStr;
+  el.appendChild(_tzLabel);
+
+  var _timeSpan = document.createElement('span');
+  _timeSpan.className = 'tc-time';
+  el.appendChild(_timeSpan);
+
+  var _msSpan = document.createElement('span');
+  _msSpan.className = 'tc-ms';
+  el.appendChild(_msSpan);
+
+  function tick(){
+    var now = new Date();
+    var hh = String(now.getHours()).padStart(2,'0');
+    var mm = String(now.getMinutes()).padStart(2,'0');
+    var ss = String(now.getSeconds()).padStart(2,'0');
+    var ms = String(now.getMilliseconds()).padStart(3,'0');
+    _timeSpan.textContent = hh+':'+mm+':'+ss;
+    _msSpan.textContent = '.'+ms;
+    _topbarClockRAF = requestAnimationFrame(tick);
+  }
+  tick();
 }
 
 /* ── Floating Toolbar: auto-hide logic ──────────── */
@@ -547,29 +599,7 @@ function renderLogsPage(p, body){
   p._currentPage = page;
   var slice = events.slice(page * LOGS_PAGE_SIZE, (page + 1) * LOGS_PAGE_SIZE);
 
-  // ── Вычисляем разницу между серверным и локальным временем ──
-  var newestServerTs = events[0] ? events[0].ts : null;
-  var serverDate = newestServerTs ? new Date(newestServerTs) : null;
-  var nowLocal = new Date();
-  var diffSec = serverDate ? Math.round((nowLocal.getTime() - serverDate.getTime()) / 1000) : 0;
-  var diffLabel = '';
-  if(diffSec > 60) diffLabel = 'событие записано ' + Math.floor(diffSec/60) + ' мин ' + (diffSec%60) + ' сек назад';
-  else if(diffSec > 0) diffLabel = 'событие записано ' + diffSec + ' сек назад';
-  else if(diffSec < -60) diffLabel = 'событие из будущего на ' + Math.abs(Math.floor(diffSec/60)) + ' мин';
-  else diffLabel = 'только что';
-
   var html = '';
-
-  // ── Блок информации о времени системы ──
-  html += '<div class="server-time-info">';
-  html += '<div class="sti-clock" id="stClock"></div>';
-  html += '<div class="sti-details">';
-  html += '<span class="sti-zone">Ваш часовой пояс: <b>' + escapeHtml(getUtcOffsetStr()) + '</b></span>';
-  html += '<span class="sti-sep">·</span>';
-  html += '<span class="sti-diff">Последнее событие: <b>' + escapeHtml(diffLabel) + '</b></span>';
-  html += '</div>';
-  html += '</div>';
-
   html+='<div class="table-scroll-container"><div class="logs-wrap" style="flex:1;overflow-y:auto;padding-right:4px;">';
   html+='<table class="logs-table"><thead><tr><th class="logs-th-time">Время (' + escapeHtml(getUtcOffsetStr()) + ')</th><th class="logs-th-type">Тип</th><th class="logs-th-msg">Сообщение</th></tr></thead><tbody>';
   for(var i=0;i<slice.length;i++){ var ev=slice[i]; var msg=''; try{var pl=JSON.parse(ev.payload); msg=pl.text||pl.message||pl.msg||''; if(!msg){var keys=Object.keys(pl); msg=keys.slice(0,3).map(function(k){return k+'='+String(pl[k]);}).join(', ');} }catch(_){msg=ev.payload;} if(msg.length>120) msg=msg.slice(0,117)+'…'; var time=formatLocalTime(ev.ts); html+='<tr><td class="logs-time">'+escapeHtml(time)+'</td><td class="logs-type">'+escapeHtml(ev.type)+'</td><td class="logs-msg">'+escapeHtml(msg)+'</td></tr>'; }
@@ -592,20 +622,6 @@ function renderLogsPage(p, body){
     };
   });
 
-  // ── Обновление часов каждую секунду ──
-  clearInterval(p._clockTimer);
-  var clockEl = body.querySelector('#stClock');
-  if(clockEl){
-    function updateClock(){
-      var now = new Date();
-      var hh = String(now.getHours()).padStart(2,'0');
-      var mm = String(now.getMinutes()).padStart(2,'0');
-      var ss = String(now.getSeconds()).padStart(2,'0');
-      if(clockEl) clockEl.textContent = hh+':'+mm+':'+ss;
-    }
-    updateClock();
-    p._clockTimer = setInterval(updateClock, 1000);
-  }
 }
 
 /* ── Smart zero-fill for time series ────────────── */
