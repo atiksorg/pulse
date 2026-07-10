@@ -855,6 +855,9 @@ async function duplicatePanel(p){
   var db = getActiveDashboard();
   if(!db) return;
   var clone = Object.assign({}, p, { id: uid('panel'), title: (p.title||'Копия')+' (копия)' });
+  // Копия всегда поверх остальных
+  canvasZCounter = canvasZCounter >= CANVAS_Z_MAX ? CANVAS_Z_MIN : canvasZCounter + 1;
+  clone.cz = canvasZCounter;
   // Смещаем позицию на холсте, если есть координаты
   if(typeof clone.cx === 'number'){ clone.cx += 40; clone.cy += 40; }
   db.panels.push(clone);
@@ -1083,8 +1086,23 @@ function arrangeAndFitCanvas(){
 }
 function autoLayoutCanvas(panels){
   var x=20,y=20,cw=380,rh=280,gap=16,mw=($('#panelGrid').clientWidth||1100)-40;
+
+  // ── Сначала определяем нижнюю границу закреплённых блоков,
+  //    чтобы свободные блоки не наезжали на них ──
+  var maxYLocked = 0;
   panels.forEach(function(p){
-    if(p.locked) return;
+    if(p.locked){
+      var bottom = (p.cy||0) + (p.ch||rh);
+      if(bottom > maxYLocked) maxYLocked = bottom;
+    }
+  });
+  // Если есть закреплённые блоки — начинаем ниже них с отступом
+  if(maxYLocked > 0){
+    y = maxYLocked + gap;
+  }
+
+  panels.forEach(function(p){
+    if(p.locked) return;   // закреплённые не трогаем
     p.cx=x;p.cy=y;p.cw=cw;p.ch=rh;
     x+=cw+gap;
     if(x+cw>mw){x=20;y+=rh+gap;}
@@ -1271,6 +1289,9 @@ $('#btnSavePanel').onclick=async function(){
     if (p) Object.assign(p,cfg);
   } else {
     var pNew = Object.assign({ id: uid('panel') }, cfg);
+    // ── Новая панель всегда поверх остальных ──
+    canvasZCounter = canvasZCounter >= CANVAS_Z_MAX ? CANVAS_Z_MIN : canvasZCounter + 1;
+    pNew.cz = canvasZCounter;
     // ── Помещаем новую панель в центр видимой области холста ──
     if(canvasMode && !isMobile() && interactiveCanvas){
       var vp = interactiveCanvas.viewport.getBoundingClientRect();
@@ -1373,6 +1394,10 @@ async function addPanelFromConfig(cfg){
   var db = getActiveDashboard();
   if (!db) return;
   var p = Object.assign({ id: uid('panel') }, cfg);
+
+  // ── Новая панель всегда поверх остальных ──
+  canvasZCounter = canvasZCounter >= CANVAS_Z_MAX ? CANVAS_Z_MIN : canvasZCounter + 1;
+  p.cz = canvasZCounter;
 
   // ── Помещаем новую панель в центр видимой области холста ──
   if(canvasMode && !isMobile() && interactiveCanvas){
