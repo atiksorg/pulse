@@ -333,7 +333,7 @@ async function fetchLogs(src, p){
   return res.json();
 }
 
-/* ── Toggle panel lock (pin) ─────────────────────── */
+/* ── Toggle panel lock (pin) — in-place, no full re-render ── */
 async function togglePanelLock(p){
   p.locked = !p.locked;
   var db = getActiveDashboard();
@@ -342,7 +342,24 @@ async function togglePanelLock(p){
     if (pp) pp.locked = p.locked;
     try { await updateDashboardOnServer(db); } catch(e) { toast('Ошибка: ' + e.message); }
   }
-  renderPanels();
+
+  // ── In-place обновление карточки без перерендера ──
+  var card = document.getElementById('body-' + p.id);
+  if(card) card = card.closest('.panel-card');
+  if(card){
+    // Переключаем CSS-класс (стили locked обрабатываются через CSS)
+    card.classList.toggle('locked', p.locked);
+    // Обновляем cursor заголовка
+    var head = card.querySelector('.panel-head');
+    if(head) head.style.cursor = p.locked ? 'default' : 'grab';
+    // Обновляем лейбл в dropdown-меню
+    var lockItem = card.querySelector('[data-act="lock"]');
+    if(lockItem){
+      var lbl = lockItem.querySelector('span');
+      if(lbl) lbl.textContent = p.locked ? 'Разблокировать' : 'Закрепить';
+    }
+  }
+
   toast(p.locked ? '🔒 Панель закреплена' : '🔓 Панель разблокирована');
 }
 
@@ -1113,10 +1130,10 @@ function applyCanvasPosition(card,p){ card.style.left=(p.cx||20)+'px'; card.styl
 var DRAG_DEAD_ZONE = 5;
 
 function initCanvasDrag(card,p){
-  if(p.locked) return;
   var head = card.querySelector('.panel-head');
-  head.style.cursor = 'grab';
+  head.style.cursor = p.locked ? 'default' : 'grab';
   head.addEventListener('pointerdown', function(e){
+    if(p.locked) return;       // runtime check — respects lock state
     if(e.button !== 0) return;
     e.preventDefault();
     try { head.setPointerCapture(e.pointerId); } catch(_){}
@@ -1133,12 +1150,12 @@ function initCanvasDrag(card,p){
 }
 
 function initCanvasResize(card,p){
-  if(p.locked) return;
   var h = document.createElement('div');
   h.className = 'canvas-resize-handle';
   card.appendChild(h);
   h.style.touchAction = 'none';
   h.addEventListener('pointerdown', function(e){
+    if(p.locked) return;       // runtime check — respects lock state
     e.stopPropagation(); e.preventDefault();
     try { h.setPointerCapture(e.pointerId); } catch(_){}
     var scale = interactiveCanvas ? interactiveCanvas.scale : 1;
