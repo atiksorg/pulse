@@ -15,6 +15,7 @@ const http = require('http');
 const fs = require('fs');
 const fsp = require('fs').promises;
 const path = require('path');
+const os = require('os');
 const { Worker } = require('worker_threads');
 const Database = require('better-sqlite3');
 const auth = require('./auth');
@@ -40,6 +41,8 @@ const FLUSH_FAIL_THRESHOLD = 5;    // после N подряд ошибок flu
 const BUFFER_HARD_LIMIT   = 50000; // жёсткий лимит буфера — после него 429
 const ANALYZE_INTERVAL_MS = 3600000; // раз в час — обновление статистики SQLite
 const TRUST_PROXY         = process.env.TRUST_PROXY === 'true' || process.env.TRUST_PROXY === '1';
+const STATS_CACHE_TTL_MS  = 5000;   // TTL кэша /s-агрегаций (5 сек)
+const WAL_CHECKPOINT_MS   = 300000; // WAL checkpoint PASSIVE каждые 5 минут
 // ───────────────────────────────────────────────────────
 
 // Инициализация БД
@@ -58,8 +61,12 @@ let lastAdaptiveCheck = Date.now();
 let eventsSinceLastCheck = 0;
 let flushFailCount = 0;
 
+// ── Stats cache (in-memory, invalidated on flush) ──
+const _statsCache = new Map();
+let _statsCacheGen = 0; // incremented on each flush
+
 // ── Пул воркеров для тяжёлых аналитических запросов ──
-const WORKER_COUNT = 2;
+const WORKER_COUNT = Math.max(1, (process.env.WORKER_COUNT ? Number(process.env.WORKER_COUNT) : Math.min(os.cpus().length - 1, 4)));
 const workers = [];
 const workerQueue = []; // очередь запросов, ожидающих свободного воркера
 let workerMsgId = 0;
@@ -463,11 +470,12 @@ function flush() {
         if (!safeJsonString(r.payload)) r.payload = '{}';
         insertStmt.run(r.ts, r.src, r.type, r.payload, r.ip, r.ua);
       }
-    });
-    insertMany(batch);
+    });    insertMany(batch);
     buffer.splice(0, batch.length); // Удаляем только успешно записанные
     lastFlushTime = Date.now();
     flushFailCount = 0;
+    _statsCache.clear(); // Инвалидируем кэш статистики после записи
+    _statsCacheGen++;
     truncateBufferWAL(); // Очищаем WAL-лог после успешной записи в БД
   } catch (e) {
     console.error('[flush] error:', e.message);
@@ -826,8 +834,7 @@ const server = http.createServer(async (req, res) => {
         console.error('[POST /e/batch] error:', e.message);
       }
       return;    }    // GET /s?src=...&type=...&group=raw — return raw events (for logs panel)
-    // GET /s?src=...&type=...&group=...&agg=...&from=...&to=...&sort=...&limit=...&filters=... — aggregated stats
-    if (url.pathname === '/s' && req.method === 'GET') {
+    // GET /s?src=...&type=...&group=...&agg=...&from=...&to=...&sort=...&limit=...&filters=... — aggregated stats    if (url.pathname === '/s' && req.method === 'GET') {
       const q = Object.fromEntries(url.searchParams);
       if (!q.src) { res.statusCode = 400; res.end('src required'); return; }
 
@@ -838,6 +845,16 @@ const server = http.createServer(async (req, res) => {
       if (q.filters) {
         filters = parseFiltersParam(q.filters);
         if (filters === null) { res.statusCode = 400; res.end('invalid filters'); return; }
+      }
+
+      // ── Cache key & check ──────────────────────────────
+      const _cacheKey = url.search;
+      const _cached = _statsCache.get(_cacheKey);
+      if (_cached && (Date.now() - _cached.ts < STATS_CACHE_TTL_MS) && _cached.gen === _statsCacheGen) {
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('X-Cache', 'HIT');
+        res.end(_cached.body);
+        return;
       }
 
       // ── group=raw → return last N raw events (for logs table) ──────
@@ -909,7 +926,8 @@ const server = http.createServer(async (req, res) => {
       if (filters.length) {
         const filterClauses = buildFilterWhereClauses(filters, params);
         where.push(...filterClauses);
-      }
+      }      // ── Parse breakdown param (compound group) ───────
+      const breakdownField = q.breakdown && typeof q.breakdown === 'string' && IDENT_RE.test(q.breakdown) ? q.breakdown : null;
 
       let groupExpr = '1';
       if (q.group === 'day')   groupExpr = "date(ts)";
@@ -918,6 +936,10 @@ const server = http.createServer(async (req, res) => {
         const field = safeField(q.group.slice(6));
         if (!field) { res.statusCode = 400; res.end('invalid field'); return; }
         groupExpr = `json_extract(payload, '$."${field}"')`;
+      }
+      let breakdownExpr = null;
+      if (breakdownField) {
+        breakdownExpr = `json_extract(payload, '$."${breakdownField}"')`;
       }
 
       let aggExpr = 'COUNT(*)';
@@ -934,13 +956,114 @@ const server = http.createServer(async (req, res) => {
         // For weighted avg: fetch SUM and COUNT separately per table
         aggExpr = `SUM(json_extract(payload, '$."${field}"'))`;
         aggMode = 'avg';
-      }
-
-      const tables = await workerQuery(
+      }      const tables = await workerQuery(
         "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'events_%' ORDER BY name"
       );
       const filteredTables = filterTablesByDate(tables, q.from, q.to);
 
+      // ── BREAKDOWN (compound group) → return early with series ──
+      if (breakdownExpr) {
+        const seriesMap = {}; // { fieldVal: { bucket: value } }
+
+        // Buffer events
+        const bufBD = buffer.slice();
+        for (const ev of bufBD) {
+          if (ev.src !== q.src) continue;
+          if (q.type && ev.type !== q.type) continue;
+          if (q.from && ev.ts < q.from) continue;
+          if (q.to && ev.ts > q.to) continue;
+          if (filters.length && !applyFiltersToPayload(ev.payload, filters)) continue;
+          let bkt;
+          if (q.group === 'day')  bkt = ev.ts.slice(0, 10);
+          else if (q.group === 'hour') bkt = ev.ts.slice(0, 13) + ':00';
+          else bkt = '1';
+          let fv = 'null';
+          try { const pl = JSON.parse(ev.payload); fv = String(pl[breakdownField] ?? 'null'); } catch (_) {}
+          if (!seriesMap[fv]) seriesMap[fv] = {};
+          if (aggMode === 'count') {
+            seriesMap[fv][bkt] = (seriesMap[fv][bkt] || 0) + 1;
+          } else if (aggMode === 'sum' || aggMode === 'avg') {
+            const fld = q.agg.slice(4);
+            try { const pl = JSON.parse(ev.payload); const v = Number(pl[fld]); if (!isNaN(v)) { seriesMap[fv][bkt] = (seriesMap[fv][bkt] || 0) + v; } } catch (_) {}
+          }
+        }
+
+        // DB tables
+        for (const { name } of filteredTables) {
+          try {
+            const selectVal = aggMode === 'sum' || aggMode === 'avg'
+              ? `SUM(json_extract(payload, '$."${safeField(q.agg.slice(4))}"'))`
+              : 'COUNT(*)';
+            const sql = `
+              SELECT ${groupExpr} AS bkt, ${breakdownExpr} AS fv, ${selectVal} AS v
+              FROM "${name}"
+              WHERE ${where.join(' AND ')}
+              GROUP BY bkt, fv
+              ORDER BY bkt
+            `;
+            const rows = await workerQuery(sql, params);
+            for (const r of rows) {
+              const bkt = String(r.bkt ?? '');
+              const fv  = String(r.fv ?? 'null');
+              if (!seriesMap[fv]) seriesMap[fv] = {};
+              seriesMap[fv][bkt] = (seriesMap[fv][bkt] || 0) + (r.v || 0);
+            }
+          } catch (e) {
+            console.error(`[GET /s breakdown] error reading table ${name}:`, e.message);
+          }
+        }
+
+        // Build series array
+        const series = [];
+        const allBucketsSet = new Set();
+        for (const fv of Object.keys(seriesMap)) {
+          for (const bkt of Object.keys(seriesMap[fv])) {
+            allBucketsSet.add(bkt);
+          }
+        }
+        const allBuckets = Array.from(allBucketsSet).sort();
+
+        for (const fv of Object.keys(seriesMap)) {
+          const points = allBuckets.map(b => ({ bucket: b, value: seriesMap[fv][b] || 0 }));
+          series.push({ key: fv, points });
+        }
+
+        // Sort series
+        if (sort === 'value_desc') {
+          series.sort((a, b) => {
+            const sa = a.points.reduce((s, p) => s + p.value, 0);
+            const sb = b.points.reduce((s, p) => s + p.value, 0);
+            return sb - sa;
+          });
+        } else if (sort === 'value_asc') {
+          series.sort((a, b) => {
+            const sa = a.points.reduce((s, p) => s + p.value, 0);
+            const sb = b.points.reduce((s, p) => s + p.value, 0);
+            return sa - sb;
+          });
+        } else {
+          series.sort((a, b) => String(a.key).localeCompare(String(b.key)));
+        }
+
+        // Limit series
+        if (limitParam && limitParam > 0 && series.length > limitParam) {
+          series.length = limitParam;
+        }
+
+        // Total
+        let total = null;
+        if (aggMode === 'count') {
+          total = series.reduce((s, sr) => s + sr.points.reduce((ss, p) => ss + p.value, 0), 0);
+        }
+
+        const respBD = JSON.stringify({ total, series });
+        _statsCache.set(_cacheKey, { ts: Date.now(), gen: _statsCacheGen, body: respBD });
+        res.setHeader('Content-Type', 'application/json');
+        res.end(respBD);
+        return;
+      }
+
+      // ── Standard (single-group) aggregation below ──
       const merged = {};
       const countsForAvg = {};
 
@@ -1051,13 +1174,13 @@ const server = http.createServer(async (req, res) => {
           allCnt += cnt;
         }
         total = allCnt > 0 ? Math.round((allSum / allCnt) * 100) / 100 : 0;
-      }
-
-      // Apply sort + limit (AFTER total is computed)
+      }      // Apply sort + limit (AFTER total is computed)
       applySortAndLimit(groups, sort, limitParam, responseGroupKey);
 
+      const _respBody = JSON.stringify({ total, groups });
+      _statsCache.set(_cacheKey, { ts: Date.now(), gen: _statsCacheGen, body: _respBody });
       res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ total, groups }));
+      res.end(_respBody);
       return;
     }    // GET /export?src=...
     if (url.pathname === '/export' && req.method === 'GET') {
@@ -1503,6 +1626,13 @@ setInterval(() => {
     console.error('[analyze] error:', e.message);
   }
 }, ANALYZE_INTERVAL_MS);
+
+// Периодический WAL checkpoint — не даёт WAL-файлу расти бесконечно
+setInterval(() => {
+  try {
+    db.pragma('wal_checkpoint(PASSIVE)');
+  } catch (_) {}
+}, WAL_CHECKPOINT_MS);
 
 server.listen(PORT, () => console.log(`listening on :${PORT}`));
 
