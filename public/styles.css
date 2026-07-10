@@ -766,6 +766,24 @@ pre .k1{color:var(--amber);}
 .canvas-mode .panel-card .panel-resize-handle{display:none;}
 .canvas-mode .panel-card .panel-code-toggle{display:none;}
 
+/* ── Locked panel state ─────────────────────────── */
+.canvas-mode .panel-card.locked .panel-head{cursor:default;opacity:0.85;}
+.canvas-mode .panel-card.locked .canvas-resize-handle{display:none !important;cursor:default;}
+.canvas-mode .panel-card.locked::after{
+  content:'🔒';
+  position:absolute;
+  top:6px;left:6px;
+  font-size:12px;
+  opacity:0.55;
+  pointer-events:none;
+  z-index:11;
+}
+.canvas-mode .panel-card.locked{border-style:dashed;border-color:rgba(77,236,199,0.25);}
+
+/* ── Body cursor during canvas drag ─────────────── */
+body.canvas-dragging{cursor:grabbing !important;}
+body.canvas-dragging *{cursor:grabbing !important;}
+
 /* ── Read-only canvas (shared/public view) ─────── */
 .canvas-mode .panel-card.readonly .canvas-resize-handle{display:none !important;}
 .canvas-mode .panel-card.readonly .panel-head{cursor:default;}
