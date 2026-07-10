@@ -457,6 +457,35 @@ function cleanupOldTables() {
   }
 }
 
+// ── Cache invalidation по src ───────────────────────────
+// При flush() собираем уникальные src из пакета и удаляем только
+// записи кэша, у которых в URL встречается `src=<X>&...` (X ∈ batch).
+// Раньше _statsCache.clear() сбрасывал ВСЕ записи, из-за чего при
+// множестве активных источников кэш постоянно терял «чужие» хиты.
+function invalidateCacheForBatch(batch) {
+  if (_statsCache.size === 0) return;
+  const affectedSrc = new Set();
+  for (const r of batch) {
+    if (r && r.src) affectedSrc.add(r.src);
+  }
+  if (affectedSrc.size === 0) {
+    _statsCache.clear();
+    return;
+  }
+  for (const key of _statsCache.keys()) {
+    // key — это url.search, формат "...&src=foo&..." или "...&src=foo"
+    for (const src of affectedSrc) {
+      // Экранируем src (на всякий случай — src это идентификатор,
+      // но всё равно ищем точное вхождение «src=<src>» с & или концом)
+      const marker = 'src=' + src;
+      if (key.indexOf(marker + '&') !== -1 || key.endsWith(marker)) {
+        _statsCache.delete(key);
+        break;
+      }
+    }
+  }
+}
+
 // ── Batch-запись ───────────────────────────────────────
 function flush() {
   if (buffer.length === 0) return;
@@ -474,7 +503,10 @@ function flush() {
     buffer.splice(0, batch.length); // Удаляем только успешно записанные
     lastFlushTime = Date.now();
     flushFailCount = 0;
-    _statsCache.clear(); // Инвалидируем кэш статистики после записи
+    // Инвалидируем кэш точечно: только записи для src из пакета.
+    // Если в пакете смешаны разные src — все они получат сброс, остальные
+    // записи кэша (для других src) переживут flush().
+    invalidateCacheForBatch(batch);
     _statsCacheGen++;
     truncateBufferWAL(); // Очищаем WAL-лог после успешной записи в БД
   } catch (e) {
@@ -968,8 +1000,12 @@ const server = http.createServer(async (req, res) => {
       const filteredTables = filterTablesByDate(tables, q.from, q.to);
 
       // ── BREAKDOWN (compound group) → return early with series ──
+      // Структура: для каждой серии (fieldVal) копим отдельно sum и cnt
+      // для каждого bucket, а в конце делим sum/cnt → получаем корректный avg
+      // (и count, и sum считаются как раньше — просто sum/cnt).
       if (breakdownExpr) {
-        const seriesMap = {}; // { fieldVal: { bucket: value } }
+        // { fv: { bkt: { sum, cnt } } }
+        const seriesMap = {};
 
         // Buffer events
         const bufBD = buffer.slice();
@@ -986,22 +1022,32 @@ const server = http.createServer(async (req, res) => {
           let fv = 'null';
           try { const pl = JSON.parse(ev.payload); fv = String(pl[breakdownField] ?? 'null'); } catch (_) {}
           if (!seriesMap[fv]) seriesMap[fv] = {};
+          if (!seriesMap[fv][bkt]) seriesMap[fv][bkt] = { sum: 0, cnt: 0 };
           if (aggMode === 'count') {
-            seriesMap[fv][bkt] = (seriesMap[fv][bkt] || 0) + 1;
+            seriesMap[fv][bkt].cnt += 1;
           } else if (aggMode === 'sum' || aggMode === 'avg') {
             const fld = q.agg.slice(4);
-            try { const pl = JSON.parse(ev.payload); const v = Number(pl[fld]); if (!isNaN(v)) { seriesMap[fv][bkt] = (seriesMap[fv][bkt] || 0) + v; } } catch (_) {}
+            try { const pl = JSON.parse(ev.payload); const v = Number(pl[fld]); if (!isNaN(v)) { seriesMap[fv][bkt].sum += v; seriesMap[fv][bkt].cnt += 1; } } catch (_) {}
           }
         }
 
-        // DB tables
+        // DB tables: для avg тащим SUM и COUNT(*) рядом;
+        // для sum — только SUM; для count — только COUNT(*).
         for (const { name } of filteredTables) {
           try {
-            const selectVal = aggMode === 'sum' || aggMode === 'avg'
-              ? `SUM(json_extract(payload, '$."${safeField(q.agg.slice(4))}"'))`
-              : 'COUNT(*)';
+            let selectVal, selectCnt;
+            if (aggMode === 'sum') {
+              selectVal = `SUM(json_extract(payload, '$."${safeField(q.agg.slice(4))}"'))`;
+              selectCnt = '0';
+            } else if (aggMode === 'avg') {
+              selectVal = `SUM(json_extract(payload, '$."${safeField(q.agg.slice(4))}"'))`;
+              selectCnt = 'COUNT(*)';
+            } else {
+              selectVal = 'COUNT(*)';
+              selectCnt = '0';
+            }
             const sql = `
-              SELECT ${groupExpr} AS bkt, ${breakdownExpr} AS fv, ${selectVal} AS v
+              SELECT ${groupExpr} AS bkt, ${breakdownExpr} AS fv, ${selectVal} AS v, ${selectCnt} AS c
               FROM "${name}"
               WHERE ${where.join(' AND ')}
               GROUP BY bkt, fv
@@ -1012,14 +1058,20 @@ const server = http.createServer(async (req, res) => {
               const bkt = String(r.bkt ?? '');
               const fv  = String(r.fv ?? 'null');
               if (!seriesMap[fv]) seriesMap[fv] = {};
-              seriesMap[fv][bkt] = (seriesMap[fv][bkt] || 0) + (r.v || 0);
+              if (!seriesMap[fv][bkt]) seriesMap[fv][bkt] = { sum: 0, cnt: 0 };
+              if (aggMode === 'count') {
+                seriesMap[fv][bkt].cnt += (r.v || 0);
+              } else {
+                seriesMap[fv][bkt].sum += (r.v || 0);
+                seriesMap[fv][bkt].cnt += (r.c || 0);
+              }
             }
           } catch (e) {
             console.error(`[GET /s breakdown] error reading table ${name}:`, e.message);
           }
         }
 
-        // Build series array
+        // Build series array: для каждой (fv, bkt) считаем финальное value
         const series = [];
         const allBucketsSet = new Set();
         for (const fv of Object.keys(seriesMap)) {
@@ -1030,7 +1082,20 @@ const server = http.createServer(async (req, res) => {
         const allBuckets = Array.from(allBucketsSet).sort();
 
         for (const fv of Object.keys(seriesMap)) {
-          const points = allBuckets.map(b => ({ bucket: b, value: seriesMap[fv][b] || 0 }));
+          const points = allBuckets.map(b => {
+            const cell = seriesMap[fv][b] || { sum: 0, cnt: 0 };
+            let value;
+            if (aggMode === 'avg') {
+              value = cell.cnt > 0 ? cell.sum / cell.cnt : 0;
+              value = Math.round(value * 100) / 100;
+            } else if (aggMode === 'sum') {
+              value = cell.sum;
+            } else {
+              // count
+              value = cell.cnt;
+            }
+            return { bucket: b, value };
+          });
           series.push({ key: fv, points });
         }
 
@@ -1056,10 +1121,21 @@ const server = http.createServer(async (req, res) => {
           series.length = limitParam;
         }
 
-        // Total
+        // Total: count → сумма; sum → сумма; avg → взвешенное среднее по cnt
         let total = null;
         if (aggMode === 'count') {
           total = series.reduce((s, sr) => s + sr.points.reduce((ss, p) => ss + p.value, 0), 0);
+        } else if (aggMode === 'sum') {
+          total = series.reduce((s, sr) => s + sr.points.reduce((ss, p) => ss + p.value, 0), 0);
+        } else if (aggMode === 'avg') {
+          let allSum = 0, allCnt = 0;
+          for (const fv of Object.keys(seriesMap)) {
+            for (const bkt of Object.keys(seriesMap[fv])) {
+              allSum += seriesMap[fv][bkt].sum;
+              allCnt += seriesMap[fv][bkt].cnt;
+            }
+          }
+          total = allCnt > 0 ? Math.round((allSum / allCnt) * 100) / 100 : 0;
         }
 
         const respBD = JSON.stringify({ total, series });
