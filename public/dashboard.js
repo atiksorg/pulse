@@ -1351,17 +1351,34 @@ function toggleCondFields(){
   $('#fieldNameWrap').style.display=$('#f_group').value==='__field'?'flex':'none';
   $('#aggFieldWrap').style.display=$('#f_agg').value!=='count'?'flex':'none';
   var cr=$('#customRangeWrap'); if(cr)cr.style.display=$('#f_range').value==='custom'?'flex':'none';
-  // Показываем breakdown только для line/bar/pie
+  // Breakdown имеет смысл только для line/bar — у Chart.js multi-dataset
+  // pie рендерится как вложенные кольца и визуально запутывает пользователя
+  // (непонятно, какая серия какому кольцу соответствует). Скрываем UI для pie,
+  // и на всякий случай сбрасываем значение breakdownfield, если viz=pie.
   var viz=$('#f_viz').value;
   var bw=$('#breakdownWrap');
-  if(bw) bw.style.display=(viz==='line'||viz==='bar'||viz==='pie')?'flex':'none';
+  if(bw){
+    var showBreakdown = (viz==='line'||viz==='bar');
+    bw.style.display=showBreakdown?'flex':'none';
+    if(!showBreakdown){
+      var dbf=$('#f_breakdownfield');
+      if(dbf) dbf.value='';
+    }
+  }
+  // Avg + breakdown считается по-особому (взвешенное среднее по сериям).
+  // UI-предупреждение не обязательно, но если viz=pie — breakdown не показывается
+  // и avg-комбинация бессмысленна. Логика сервера остаётся корректной.
 }
 $('#f_group').addEventListener('change',toggleCondFields);
 $('#f_agg').addEventListener('change',toggleCondFields);
 $('#f_range').addEventListener('change',toggleCondFields);
 $('#f_viz').addEventListener('change',toggleCondFields);
 $('#btnAddFilter').addEventListener('click',function(){ addFilterRow('','eq',''); });
-function readAdvForm(){ var c={title:$('#f_title').value.trim()||'Без названия',viz:$('#f_viz').value,type:$('#f_type').value.trim(),group:$('#f_group').value,field:$('#f_fieldname').value.trim(),agg:$('#f_agg').value,aggfield:$('#f_aggfield').value.trim(),range:$('#f_range').value,width:Number($('#f_width').value),autorefresh:Number($('#f_autorefresh').value),sort:$('#f_sort').value,key:'key',unit:$('#f_unit').value.trim(),color:$('#f_color').value,lineStyle:$('#f_linestyle').value,formatType:$('#f_format').value}; var limitVal=$('#f_limit').value.trim(); c.limit=limitVal?Number(limitVal):null; if(isNaN(c.limit)||c.limit<=0) c.limit=null; c.filters=readFilterRows(); if(c.range==='custom'){c.from=$('#f_from').value||'';c.to=$('#f_to').value||'';} var bw=$('#f_breakdownfield'); c.breakdownfield=bw?bw.value.trim():''; return c; }
+function readAdvForm(){ var c={title:$('#f_title').value.trim()||'Без названия',viz:$('#f_viz').value,type:$('#f_type').value.trim(),group:$('#f_group').value,field:$('#f_fieldname').value.trim(),agg:$('#f_agg').value,aggfield:$('#f_aggfield').value.trim(),range:$('#f_range').value,width:Number($('#f_width').value),autorefresh:Number($('#f_autorefresh').value),sort:$('#f_sort').value,key:'key',unit:$('#f_unit').value.trim(),color:$('#f_color').value,lineStyle:$('#f_linestyle').value,formatType:$('#f_format').value}; var limitVal=$('#f_limit').value.trim(); c.limit=limitVal?Number(limitVal):null; if(isNaN(c.limit)||c.limit<=0) c.limit=null; c.filters=readFilterRows(); if(c.range==='custom'){c.from=$('#f_from').value||'';c.to=$('#f_to').value||'';} var bw=$('#f_breakdownfield'); c.breakdownfield=bw?bw.value.trim():''; // Breakdown имеет смысл только для line/bar — pie рисует вложенные
+  // кольца, а не осмысленную разбивку. Если viz — что-то иное, не пробрасываем
+  // breakdownfield, чтобы бэкенд не отдал мусорный multi-series.
+  if(c.viz !== 'line' && c.viz !== 'bar') c.breakdownfield = '';
+  return c; }
 
 $('#btnSavePanel').onclick=async function(){
   var cfg=readAdvForm();
