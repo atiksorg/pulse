@@ -679,8 +679,9 @@ const server = http.createServer(async (req, res) => {
 
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify(status, null, 2));
-      return;
-    }    // GET /e?src=...&type=...&...
+      return;    }
+
+    // GET /e?src=...&type=...&...
     if (url.pathname === '/e' && req.method === 'GET') {
       const qs = Object.fromEntries(url.searchParams);
       if (!qs.src || !qs.type) { res.statusCode = 400; res.end('src and type required'); return; }
@@ -744,8 +745,9 @@ const server = http.createServer(async (req, res) => {
       } catch (e) {
         console.error('[POST /e] error:', e.message);
       }
-      return;
-    }    // POST /e/clear — удаление событий по src (и опционально type)
+      return;    }
+
+    // POST /e/clear — удаление событий по src (и опционально type)
     if (url.pathname === '/e/clear' && req.method === 'POST') {
       try {
         const body = await readBody(req);
@@ -795,8 +797,9 @@ const server = http.createServer(async (req, res) => {
         res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify({error:'invalid JSON'}));
         return;
-      }
-    }    // POST /e/batch  [{ src, type, ... }, ...]
+      }    }
+
+    // POST /e/batch  [{ src, type, ... }, ...]
     if (url.pathname === '/e/batch' && req.method === 'POST') {
       // Backpressure: если буфер переполнен — 429
       if (buffer.length >= BUFFER_HARD_LIMIT) {
@@ -832,9 +835,12 @@ const server = http.createServer(async (req, res) => {
         if (buffer.length >= BATCH_SIZE) flush();
       } catch (e) {
         console.error('[POST /e/batch] error:', e.message);
-      }
-      return;    }    // GET /s?src=...&type=...&group=raw — return raw events (for logs panel)
-    // GET /s?src=...&type=...&group=...&agg=...&from=...&to=...&sort=...&limit=...&filters=... — aggregated stats    if (url.pathname === '/s' && req.method === 'GET') {
+      }      return;
+    }
+
+    // GET /s?src=...&type=...&group=raw — return raw events (for logs panel)
+    // GET /s?src=...&type=...&group=...&agg=...&from=...&to=...&sort=...&limit=...&filters=... — aggregated stats
+    if (url.pathname === '/s' && req.method === 'GET') {
       const q = Object.fromEntries(url.searchParams);
       if (!q.src) { res.statusCode = 400; res.end('src required'); return; }
 
@@ -1181,8 +1187,9 @@ const server = http.createServer(async (req, res) => {
       _statsCache.set(_cacheKey, { ts: Date.now(), gen: _statsCacheGen, body: _respBody });
       res.setHeader('Content-Type', 'application/json');
       res.end(_respBody);
-      return;
-    }    // GET /export?src=...
+      return;    }
+
+    // GET /export?src=...
     if (url.pathname === '/export' && req.method === 'GET') {
       const q = Object.fromEntries(url.searchParams);
       if (!q.src) { res.statusCode = 400; res.end('src required'); return; }
@@ -1219,10 +1226,11 @@ const server = http.createServer(async (req, res) => {
             res.write(`${row.ts},${row.type},"${safePayload}"\n`);
           }
         } catch (_) {}
-      }
-      res.end();
+      }      res.end();
       return;
-    }    // ═══════════════════════════════════════════════════════
+    }
+
+    // ═══════════════════════════════════════════════════════
     // AUTH & DASHBOARDS & SHARES
     // ═══════════════════════════════════════════════════════
 
