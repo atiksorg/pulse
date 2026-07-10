@@ -333,6 +333,19 @@ async function fetchLogs(src, p){
   return res.json();
 }
 
+/* ── Toggle panel lock (pin) ─────────────────────── */
+async function togglePanelLock(p){
+  p.locked = !p.locked;
+  var db = getActiveDashboard();
+  if (db) {
+    var pp = db.panels.find(function(x){ return x.id === p.id; });
+    if (pp) pp.locked = p.locked;
+    try { await updateDashboardOnServer(db); } catch(e) { toast('Ошибка: ' + e.message); }
+  }
+  renderPanels();
+  toast(p.locked ? '🔒 Панель закреплена' : '🔓 Панель разблокирована');
+}
+
 /* ── Render panels ───────────────────────────────── */
 function renderPanels(readonlyData){
   var grid = $('#panelGrid');
@@ -383,10 +396,11 @@ function renderPanels(readonlyData){
 
   panels.forEach(function(p){
     var card = document.createElement('div');
-    card.className = 'panel-card' + (isShared ? ' readonly' : '');
+    card.className = 'panel-card' + (isShared ? ' readonly' : '') + (p.locked ? ' locked' : '');
     card.style.setProperty('--w', p.width||6);
     var panelMenuItems = [
       { act:'edit', icon:'edit', label:'Изменить', hidden: isShared },
+      { act:'lock', icon:'lock', label: p.locked ? 'Разблокировать' : 'Закрепить', hidden: isShared },
       { act:'duplicate', icon:'copy', label:'Дублировать', hidden: isShared },
       { act:'refresh', icon:'refresh', label:'Обновить' },
       { act:'fullscreen', icon:'fullscreen', label:'Полный экран', hidden: isShared },
@@ -410,7 +424,8 @@ function renderPanels(readonlyData){
         terminal: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>',
         trash: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
         'delete': '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>',
-        ellipsis: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>'
+        ellipsis: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>',
+        lock: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>'
       };
       return icons[name] || '';
     }
@@ -446,6 +461,7 @@ function renderPanels(readonlyData){
     card.querySelector('[data-act="refresh-inline"]').onclick=function(){loadPanel(p,src);};
     if(!isShared){
       card.querySelector('[data-act="edit"]').onclick=function(){openEditPanel(p);};
+      card.querySelector('[data-act="lock"]').onclick=function(){ togglePanelLock(p); };
       card.querySelector('[data-act="remove"]').onclick=async function(){
         if(await confirmModal('Удалить панель?','Удалить панель «'+p.title+'» с дашборда? (Д��нные останутся в базе)','Удалить')){
           if (refreshTimers[p.id]) {
@@ -1065,10 +1081,58 @@ function arrangeAndFitCanvas(){
   setTimeout(function(){ resetCanvasView(true); }, 500);
   toast('Графики выстроены');
 }
-function autoLayoutCanvas(panels){ var x=20,y=20,cw=380,rh=280,gap=16,mw=($('#panelGrid').clientWidth||1100)-40; panels.forEach(function(p){p.cx=x;p.cy=y;p.cw=cw;p.ch=rh;x+=cw+gap;if(x+cw>mw){x=20;y+=rh+gap;}}); }
+function autoLayoutCanvas(panels){
+  var x=20,y=20,cw=380,rh=280,gap=16,mw=($('#panelGrid').clientWidth||1100)-40;
+  panels.forEach(function(p){
+    if(p.locked) return;
+    p.cx=x;p.cy=y;p.cw=cw;p.ch=rh;
+    x+=cw+gap;
+    if(x+cw>mw){x=20;y+=rh+gap;}
+  });
+}
 function applyCanvasPosition(card,p){ card.style.left=(p.cx||20)+'px'; card.style.top=(p.cy||20)+'px'; card.style.width=(p.cw||380)+'px'; card.style.height=(p.ch||280)+'px'; card.style.zIndex=Math.min(Math.max(p.cz || CANVAS_Z_MIN, CANVAS_Z_MIN), CANVAS_Z_MAX); }
-function initCanvasDrag(card,p){ var head=card.querySelector('.panel-head'); head.addEventListener('mousedown',function(e){ card.classList.add('canvas-dragging'); canvasZCounter = canvasZCounter >= CANVAS_Z_MAX ? CANVAS_Z_MIN : canvasZCounter + 1; card.style.zIndex=canvasZCounter; p.cz=canvasZCounter; var scale = interactiveCanvas ? interactiveCanvas.scale : 1; canvasDragState={ card:card, p:p, startX:e.clientX, startY:e.clientY, origX:p.cx||0, origY:p.cy||0, scale:scale }; e.preventDefault(); }); }
-function initCanvasResize(card,p){ var h=document.createElement('div'); h.className='canvas-resize-handle'; card.appendChild(h); h.addEventListener('mousedown',function(e){e.stopPropagation();e.preventDefault(); var scale = interactiveCanvas ? interactiveCanvas.scale : 1; canvasResizeState={ card:card, p:p, startX:e.clientX, startY:e.clientY, origW:p.cw||380, origH:p.ch||280, scale:scale }; }); }
+/* ── Dead zone threshold (px) — prevents accidental drags ── */
+var DRAG_DEAD_ZONE = 5;
+
+function initCanvasDrag(card,p){
+  if(p.locked) return;
+  var head = card.querySelector('.panel-head');
+  head.style.cursor = 'grab';
+  head.addEventListener('pointerdown', function(e){
+    if(e.button !== 0) return;
+    e.preventDefault();
+    try { head.setPointerCapture(e.pointerId); } catch(_){}
+    var scale = interactiveCanvas ? interactiveCanvas.scale : 1;
+    canvasDragState = {
+      card:card, p:p,
+      startX:e.clientX, startY:e.clientY,
+      origX:p.cx||0, origY:p.cy||0,
+      scale:scale, pointerId:e.pointerId,
+      _started:false, _cancelled:false,
+      _origCx:p.cx||0, _origCy:p.cy||0
+    };
+  });
+}
+
+function initCanvasResize(card,p){
+  if(p.locked) return;
+  var h = document.createElement('div');
+  h.className = 'canvas-resize-handle';
+  card.appendChild(h);
+  h.style.touchAction = 'none';
+  h.addEventListener('pointerdown', function(e){
+    e.stopPropagation(); e.preventDefault();
+    try { h.setPointerCapture(e.pointerId); } catch(_){}
+    var scale = interactiveCanvas ? interactiveCanvas.scale : 1;
+    canvasResizeState = {
+      card:card, p:p,
+      startX:e.clientX, startY:e.clientY,
+      origW:p.cw||380, origH:p.ch||280,
+      scale:scale, pointerId:e.pointerId,
+      _started:false
+    };
+  });
+}
 
 /* ── Canvas global drag/resize state (single document listener) ── */
 var canvasDragState = null;   // { card, p, startX, startY, origX, origY }
@@ -1079,49 +1143,91 @@ function _bindCanvasGlobalHandlers(){
   if (_canvasGlobalHandlersBound) return;
   _canvasGlobalHandlersBound = true;
 
-  document.addEventListener('mousemove', function(e){
+  /* ── Pointer move: drag with dead zone ──────────── */
+  document.addEventListener('pointermove', function(e){
     if (canvasDragState) {
       var d = canvasDragState;
-      var GRID_SIZE = 20;
-      var scale = d.scale || 1;
-      d.p.cx = Math.round((d.origX + (e.clientX - d.startX) / scale) / GRID_SIZE) * GRID_SIZE;
-      d.p.cy = Math.round((d.origY + (e.clientY - d.startY) / scale) / GRID_SIZE) * GRID_SIZE;
+      if (d._cancelled) return;
+      var dx = e.clientX - d.startX;
+      var dy = e.clientY - d.startY;
+      if (!d._started) {
+        if (Math.abs(dx) < DRAG_DEAD_ZONE && Math.abs(dy) < DRAG_DEAD_ZONE) return;
+        d._started = true;
+        d.card.classList.add('canvas-dragging');
+        document.body.classList.add('canvas-dragging');
+        canvasZCounter = canvasZCounter >= CANVAS_Z_MAX ? CANVAS_Z_MIN : canvasZCounter + 1;
+        d.card.style.zIndex = canvasZCounter;
+        d.p.cz = canvasZCounter;
+      }
+      var GRID_SIZE = 20, scale = d.scale || 1;
+      d.p.cx = Math.round((d.origX + dx / scale) / GRID_SIZE) * GRID_SIZE;
+      d.p.cy = Math.round((d.origY + dy / scale) / GRID_SIZE) * GRID_SIZE;
       d.card.style.left = d.p.cx + 'px';
       d.card.style.top  = d.p.cy + 'px';
     }
     if (canvasResizeState) {
       var r = canvasResizeState;
-      var GRID_SIZE = 20;
-      var scale = r.scale || 1;
-      r.p.cw = Math.max(200, Math.round((r.origW + (e.clientX - r.startX) / scale) / GRID_SIZE) * GRID_SIZE);
-      r.p.ch = Math.max(150, Math.round((r.origH + (e.clientY - r.startY) / scale) / GRID_SIZE) * GRID_SIZE);
+      var dx2 = e.clientX - r.startX, dy2 = e.clientY - r.startY;
+      if (!r._started) {
+        if (Math.abs(dx2) < DRAG_DEAD_ZONE && Math.abs(dy2) < DRAG_DEAD_ZONE) return;
+        r._started = true;
+      }
+      var GRID_SIZE = 20, scale = r.scale || 1;
+      r.p.cw = Math.max(200, Math.round((r.origW + dx2 / scale) / GRID_SIZE) * GRID_SIZE);
+      r.p.ch = Math.max(150, Math.round((r.origH + dy2 / scale) / GRID_SIZE) * GRID_SIZE);
       r.card.style.width  = r.p.cw + 'px';
       r.card.style.height = r.p.ch + 'px';
       if (charts[r.p.id]) charts[r.p.id].resize();
     }
   });
 
-  document.addEventListener('mouseup', async function(){
+  /* ── Unified end-drag / end-resize function ─────── */
+  function endCanvasDrag(save){
     if (canvasDragState) {
       var d = canvasDragState;
       d.card.classList.remove('canvas-dragging');
-      var db = getActiveDashboard();
-      if (db) {
-        var pp = db.panels.find(function(x){ return x.id === d.p.id; });
-        if (pp) { pp.cx = d.p.cx; pp.cy = d.p.cy; pp.cz = d.p.cz; }
-        try { await updateDashboardOnServer(db); } catch(_){}
+      document.body.classList.remove('canvas-dragging');
+      if (save && d._started && !d._cancelled) {
+        var db = getActiveDashboard();
+        if (db) {
+          var pp = db.panels.find(function(x){ return x.id === d.p.id; });
+          if (pp) { pp.cx = d.p.cx; pp.cy = d.p.cy; pp.cz = d.p.cz; }
+          updateDashboardOnServer(db).catch(function(){});
+        }
+      } else {
+        d.p.cx = d._origCx; d.p.cy = d._origCy;
+        d.card.style.left = d.p.cx + 'px';
+        d.card.style.top  = d.p.cy + 'px';
       }
       canvasDragState = null;
     }
     if (canvasResizeState) {
       var r = canvasResizeState;
-      var db2 = getActiveDashboard();
-      if (db2) {
-        var pp2 = db2.panels.find(function(x){ return x.id === r.p.id; });
-        if (pp2) { pp2.cw = r.p.cw; pp2.ch = r.p.ch; }
-        try { await updateDashboardOnServer(db2); } catch(_){}
+      document.body.classList.remove('canvas-dragging');
+      if (save && r._started) {
+        var db2 = getActiveDashboard();
+        if (db2) {
+          var pp2 = db2.panels.find(function(x){ return x.id === r.p.id; });
+          if (pp2) { pp2.cw = r.p.cw; pp2.ch = r.p.ch; }
+          updateDashboardOnServer(db2).catch(function(){});
+        }
       }
       canvasResizeState = null;
+    }
+  }
+  window._endCanvasDrag = endCanvasDrag;
+
+  document.addEventListener('pointerup', function(){ endCanvasDrag(true); });
+  document.addEventListener('pointercancel', function(){ endCanvasDrag(false); });
+  window.addEventListener('blur', function(){ endCanvasDrag(false); });
+  document.addEventListener('visibilitychange', function(){ if (document.hidden) endCanvasDrag(false); });
+  document.addEventListener('mouseleave', function(e){
+    if (canvasDragState && canvasDragState._started && e.buttons === 0) endCanvasDrag(true);
+  });
+  document.addEventListener('keydown', function(e){
+    if ((e.key === 'Escape' || e.code === 'Escape') && (canvasDragState || canvasResizeState)) {
+      endCanvasDrag(false);
+      e.preventDefault();
     }
   });
 }
