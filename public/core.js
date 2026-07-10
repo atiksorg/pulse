@@ -297,9 +297,23 @@ function describeMeta(p){
       parts.push(esc(f.field)+({'eq':'=','neq':'≠','gt':'>','lt':'<','in':'∈','contains':'~'}[f.op]||esc(f.op))+esc(fval));
     });
   }
+  if(p.breakdownfield) parts.push('разбивка:'+esc(p.breakdownfield));
   parts.push(({'24h':'24ч','7d':'7д','30d':'30д','all':'всё время','custom':'выбран'})[p.range] || esc(p.range));
   if(p.unit) parts.push('ед.:'+esc(p.unit));
   return parts.map(function(s){ return '<span class="meta-tag">'+s+'</span>'; }).join('');
+}
+
+/* ── formatCompact — авто-сокращение больших чисел ── */
+function formatCompact(n){
+  if(n===null||n===undefined) return '—';
+  var num = Number(n);
+  if(isNaN(num)) return '—';
+  var abs = Math.abs(num);
+  if(abs >= 1e12) return (num/1e12).toFixed(1)+'T';
+  if(abs >= 1e9)  return (num/1e9).toFixed(1)+'B';
+  if(abs >= 1e6)  return (num/1e6).toFixed(1)+'M';
+  if(abs >= 1e3)  return (num/1e3).toFixed(1)+'K';
+  return Number.isInteger(num) ? String(num) : num.toFixed(1);
 }
 
 /* ── panelKey ────────────────────────────────────── */
