@@ -303,6 +303,10 @@ function describeMeta(p){
   if(p.breakdownfield) parts.push('разбивка:'+esc(p.breakdownfield));
   parts.push(({'24h':'24ч','7d':'7д','30d':'30д','all':'всё время','custom':'выбран'})[p.range] || esc(p.range));
   if(p.unit) parts.push('ед.:'+esc(p.unit));
+  // Tension — только если задан и не дефолт (0.35)
+  if(typeof p.tension === 'number' && p.viz === 'line' && Math.abs(p.tension - 0.35) > 0.01){
+    parts.push('tension:'+p.tension.toFixed(2));
+  }
   return parts.map(function(s){ return '<span class="meta-tag">'+s+'</span>'; }).join('');
 }
 
@@ -336,7 +340,7 @@ function sanitizePanelForSave(p){
   var keepKeys = [
     'id','title','viz','type','group','field','agg','aggfield',
     'range','from','to','width','height','autorefresh',
-    'sort','limit','key','unit','color','lineStyle','formatType',
+    'sort','limit','key','unit','color','lineStyle','tension','formatType',
     'filters','breakdownfield',
     'cx','cy','cw','ch','cz','locked'
   ];
