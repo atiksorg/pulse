@@ -344,7 +344,44 @@ function createShare(db, dashboardId, src) {
   if (!db1) return { ok: false, code: 404, error: 'not_found' };
   if (db1.src !== src) return { ok: false, code: 403, error: 'forbidden' };
 
+  // Если уже есть активная (не отозванная) ссылка на этот дашборд — возвращаем её
+  const existing = db.prepare(
+    'SELECT share_id FROM public_shares WHERE dashboard_id = ? AND revoked = 0'
+  ).get(dashboardId);
+  if (existing) {
+    return { ok: true, code: 200, shareId: existing.share_id, dashboard: db1, reused: true };
+  }
+
   // Генерируем уникальный share_id (с защитой от коллизий)
+  let shareId;
+  for (let i = 0; i < 5; i++) {
+    shareId = genShareId();
+    const exists = db.prepare('SELECT 1 FROM public_shares WHERE share_id = ?').get(shareId);
+    if (!exists) break;
+    shareId = null;
+  }
+  if (!shareId) return { ok: false, code: 500, error: 'share_id_collision' };
+
+  const now = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO public_shares (share_id, dashboard_id, src, created_at, revoked)
+    VALUES (?, ?, ?, ?, 0)
+  `).run(shareId, dashboardId, src, now);
+
+  return { ok: true, code: 200, shareId, dashboard: db1, reused: false };
+}
+
+// ── Перегенерация ссылки: отзывает все старые, создаёт новую ──
+function regenerateShare(db, dashboardId, src) {
+  const db1 = getDashboard(db, dashboardId);
+  if (!db1) return { ok: false, code: 404, error: 'not_found' };
+  if (db1.src !== src) return { ok: false, code: 403, error: 'forbidden' };
+
+  // Отзываем все существующие ссылки на этот дашборд
+  db.prepare('UPDATE public_shares SET revoked = 1 WHERE dashboard_id = ? AND revoked = 0')
+    .run(dashboardId);
+
+  // Создаём новую
   let shareId;
   for (let i = 0; i < 5; i++) {
     shareId = genShareId();
@@ -465,7 +502,7 @@ module.exports = {
   // dashboards
   listDashboards, getDashboard, createDashboard, updateDashboard, deleteDashboard,
   // shares
-  createShare, revokeShare, resolveShare,
+  createShare, regenerateShare, revokeShare, resolveShare,
   // http helpers
   json, readJsonBody,
   // реекспорт регексов для удобства
