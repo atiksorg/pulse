@@ -519,6 +519,11 @@ function renderViz(p, data, body){
   if(p.viz==='kpi'){
     var val=data.total!==null&&data.total!==undefined?data.total:(groups[0]?groups[0].value:0);
     body.className = isFocus ? 'panel-body kpi-body focus-body' : 'panel-body kpi-body';
+    var palette = (typeof getChartPalette === 'function') ? getChartPalette() : ['#4DECC7'];
+    var kpiColor = p.color || palette[0];
+    body.style.color = kpiColor;
+    // Мягкое свечение: text-shadow на полупрозрачный цвет
+    body.style.textShadow = '0 0 20px ' + kpiColor + '33';
     var compact = (fmtType === 'number' || !fmtType) ? formatCompact(val) : formatNum(val, fmtType);
     var unitSuffix = p.unit ? ' <span style="font-size:18px;color:var(--muted);">'+escapeHtml(p.unit)+'</span>' : '';
     body.innerHTML='<div class="kpi-value" title="'+escapeHtml(String(val))+'">'+compact+unitSuffix+'</div>'+(p.group?'<div class="kpi-sub">'+groups.length+' групп(а)</div>':'');
