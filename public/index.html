@@ -914,16 +914,13 @@ GET https://events.atiks.org/s?src=my_app&type=purchase&group=day&from=2026-06-0
 
 <!-- ══════════════════ MODAL: SHARE ══════════════════ -->
 <div class="overlay" id="shareModal">
-  <div class="modal">
+  <div class="modal" style="max-width:520px;">
     <h2>Поделиться дашбордом</h2>
-    <p class="sub">Создайте публичную ссылку на текущий дашборд. Получатель увидит графики в режиме чтения — он не сможет менять или удалять ваши данные.</p>
-    <div class="share-box">
-      <input id="shareUrl" readonly>
-      <button class="btn btn-ghost" id="btnCopyShare">Скопировать</button>
+    <p class="sub">Публичная ссылка на текущий дашборд. Получатель увидит графики в режиме чтения.</p>
+    <div id="shareContent" style="margin-top:16px;"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btnCloseShare">Закрыть</button>
     </div>
-    <p class="sub" style="margin-top:14px;">Ссылка закрытая: её не видно нигде публично. В любой момент её можно отозвать.</p>
-    <div id="shareExisting" style="margin-top:18px;"></div>
-    <div class="modal-actions"><button class="btn btn-ghost" id="btnCloseShare">Готово</button></div>
   </div>
 </div>
 
