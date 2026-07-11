@@ -59,38 +59,143 @@ function arrangeAndFitCanvas(){
   if(!db || !Array.isArray(db.panels) || !db.panels.length){ toast('Нет панелей для выравнивания'); return; }
   autoLayoutCanvas(db.panels);
   updateDashboardOnServer(db).catch(function(){});
+  _saveCanvasViewport();
   renderPanels();
-  setTimeout(function(){ resetCanvasView(true); }, 500);
+  // resetCanvasView НЕ вызываем — сохраняем текущий viewport
   toast('Графики выстроены');
 }
-function autoLayoutCanvas(panels){
-  var x=20,y=20,gap=16,mw=($('#panelGrid').clientWidth||1100)-40;
 
-  // ── Сначала определяем нижнюю границу закреплённых блоков,
-  //    чтобы свободные блоки не наезжали на них ──
-  var maxYLocked = 0;
-  panels.forEach(function(p){
-    if(p.locked){
-      var pr = getVizPreset(p.viz);
-      var ch = p.ch || pr.ch;
-      var bottom = (p.cy||0) + ch;
-      if(bottom > maxYLocked) maxYLocked = bottom;
-    }
-  });
-  // Если есть закреплённые блоки — начинаем ниже них с отступом
-  if(maxYLocked > 0){
-    y = maxYLocked + gap;
+/* ── Auto-layout: красивая сетка по типу визуализации ──
+ *  - KPI:  4 в ряд  (≈420px × 200px)
+ *  - Charts (line/bar/pie): 3 в ряд  (≈420px × 280px)
+ *  - Table/Logs: на всю ширину
+ * ─────────────────────────────────────────────────── */
+function autoLayoutCanvas(panels){
+  var gap = 16;
+  var startX = 20;
+  var mw = ($('#panelGrid').clientWidth || 1100) - 40;
+  var y = startY = 20;
+
+  // Закреплённые панели не трогаем
+  var free = panels.filter(function(p){ return !p.locked; });
+
+  // ── Группируем свободные панели по трем секциям ──
+  var kpis = [], charts2 = [], fulls = [];
+  for(var i=0; i<free.length; i++){
+    var p = free[i];
+    var v = p.viz;
+    if(v === 'kpi') kpis.push(p);
+    else if(v === 'table' || v === 'logs') fulls.push(p);
+    else charts2.push(p);  // line, bar, pie
   }
 
-  panels.forEach(function(p){
-    if(p.locked) return;   // закреплённые не трогаем
-    var pr = getVizPreset(p.viz);
-    var cw = pr.cw;
-    var rh = pr.ch;
-    p.cx=x;p.cy=y;p.cw=cw;p.ch=rh;
-    x+=cw+gap;
-    if(x+cw>mw){x=20;y+=rh+gap;}
-  });
+  var y = 20;
+
+  // ── Вспомогательная: расставить ряд карточек ──
+  function layRow(items, cols, cw, rh){
+    var x = startX;
+    for(var i=0; i<items.length; i++){
+      var p = items[i];
+      p.cx = x; p.cy = y;
+      p.cw = p.cw || cw; p.ch = p.ch || rh;
+      x += (p.cw || cw) + gap;
+      // Заполнили строку?
+      if((i+1) % cols === 0){
+        y += (p.ch || rh) + gap;
+        x = startX;
+      }
+    }
+    // Остаток: последняя неполная строка
+    if(items.length % cols !== 0) y += (items[items.length-1].ch || rh) + gap;
+  }
+
+  // ── Вспомогательная: расставить с растяжением последнего ──
+  function layRowStretch(items, cols, cw, rh){
+    var x = startX;
+    var rowStart = 0;
+    for(var i=0; i<=items.length; i++){
+      // Конец строки: последний элемент или заполнили строку
+      var isEnd = (i === items.length) || ((i - rowStart) === cols);
+      if(!isEnd) continue;
+
+      // Позиционируем элементы текущей строки
+      var used = 0;
+      for(var j=rowStart; j<i; j++){
+        var p = items[j];
+        p.cx = startX + used; p.cy = y;
+        p.cw = p.cw || cw; p.ch = p.ch || rh;
+        used += (p.cw || cw) + gap;
+      }
+      // Растягиваем последний карточку в ряду, чтобы заполнить пустое место
+      var last = items[i-1];
+      if(last){
+        var leftover = mw - used + (last.cw || cw);
+        if(leftover > (last.cw || cw) + 40) last.cw = leftover;
+      }
+
+      y += (items[i-1].ch || rh) + gap;
+      rowStart = i;
+      // Сбрасываем счётчик для случая items.length > cols
+      if(i < items.length) i--; // переобработаем этот элемент как начало строки
+    }
+  }
+
+  // ── 1) KPI: большие карточки по 4 в ряд ──
+  if(kpis.length){
+    var kpiW = 360, kpiH = 200;
+    layRowStretch(kpis, 4, kpiW, kpiH);
+  }
+
+  // ── 2) Charts: по 3 в ряд ──
+  if(charts2.length){
+    var chW = 420, chH = 300;
+    layRowStretch(charts2, 3, chW, chH);
+  }
+
+  // ── 3) Table / Logs: на всю ширину ──
+  if(fulls.length){
+    for(var i=0; i<fulls.length; i++){
+      var p = fulls[i];
+      var pr = getVizPreset(p.viz);
+      p.cx = startX; p.cy = y;
+      p.cw = mw; p.ch = p.ch || pr.ch;
+      y += (p.ch) + gap;
+    }
+  }
+}
+
+/* ── Find max cz among all panels in dashboard ───── */
+function getMaxPanelZ(panels){
+  var max = CANVAS_Z_MIN;
+  if(!Array.isArray(panels)) return max;
+  for(var i=0; i<panels.length; i++){
+    var cz = panels[i].cz;
+    if(typeof cz === 'number' && cz > max) max = cz;
+  }
+  return max;
+}
+
+/* ── Save / Restore canvas viewport (scale + offset) ── */
+var _savedCanvasViewport = null;
+
+function _saveCanvasViewport(){
+  if(interactiveCanvas && !interactiveCanvas._destroyed){
+    _savedCanvasViewport = {
+      scale: interactiveCanvas.scale,
+      offsetX: interactiveCanvas.offsetX,
+      offsetY: interactiveCanvas.offsetY
+    };
+  }
+}
+function _restoreCanvasViewport(){
+  if(_savedCanvasViewport && interactiveCanvas && !interactiveCanvas._destroyed){
+    interactiveCanvas.setView(
+      _savedCanvasViewport.scale,
+      _savedCanvasViewport.offsetX,
+      _savedCanvasViewport.offsetY
+    );
+    _savedCanvasViewport = null;
+  }
 }
 function applyCanvasPosition(card,p){
   var pr = getVizPreset(p.viz);
