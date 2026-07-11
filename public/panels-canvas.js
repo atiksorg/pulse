@@ -3,6 +3,9 @@
    Вынесен из dashboard.js при разбиении на модули.
    ═══════════════════════════════════════════════════ */
 
+/* ── Canvas state (живёт в одном месте — panels-canvas.js) ─── */
+var interactiveCanvas = null;
+
 /* ── Canvas mode ─────────────────────────────────── */
 function resetCanvasView(silent){
   if(interactiveCanvas){
