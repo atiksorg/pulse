@@ -887,6 +887,14 @@ GET https://events.atiks.org/s?src=my_app&type=purchase&group=day&from=2026-06-0
         </div>
       </div>
 
+      <!-- Слайдер tension (только для line) -->
+      <div class="field-row" id="tensionWrap" style="display:none;">
+        <div class="field">
+          <label>Плавность линии (tension): <span id="f_tension_val" style="color:var(--teal);font-family:var(--mono);">0.35</span></label>
+          <input id="f_tension" type="range" min="0" max="1" step="0.05" value="0.35" style="padding:0;cursor:pointer;">
+        </div>
+      </div>
+
       <!-- Фильтры -->
       <div class="filters-section">
         <div class="filters-header">
@@ -1028,7 +1036,11 @@ GET https://events.atiks.org/s?src=my_app&type=purchase&group=day&from=2026-06-0
 <script src="https://cdn.jsdelivr.net/npm/p5@1.9.4/lib/p5.min.js"></script>
 <script src="core.js"></script>
 <script src="interactive-canvas.js"></script>
-<script src="dashboard.js"></script>
+<script src="themes.js"></script>
+<script src="panels-render.js"></script>
+<script src="panels-canvas.js"></script>
+<script src="panels-edit.js"></script>
+<script src="dashboard-init.js"></script>
 <script src="cases.js"></script>
 <script src="share.js"></script>
 <script src="extras.js"></script>
