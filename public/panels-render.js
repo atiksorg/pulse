@@ -130,6 +130,11 @@ function renderPanels(readonlyData){
     });
   }
 
+  // Запоминаем viewport ПЕРЕД уничтожением, если не был сохранён заранее
+  if(canvasMode && !_savedCanvasViewport && interactiveCanvas && !interactiveCanvas._destroyed){
+    _saveCanvasViewport();
+  }
+
   if(interactiveCanvas){
     interactiveCanvas.destroy();
     interactiveCanvas = null;
@@ -279,6 +284,11 @@ function renderPanels(readonlyData){
     loadPanel(p,src);
     if(p.autorefresh && Number(p.autorefresh)>0 && !isShared) refreshTimers[p.id]=setInterval(function(){loadPanel(p,src);},Number(p.autorefresh)*1000 + Math.floor(Math.random()*3000));
   });
+
+  // ── Восстанавливаем viewport после пересоздания холста ──
+  if(canvasMode && !isMobile() && !isShared){
+    _restoreCanvasViewport();
+  }
 }
 
 /* ── loadPanel / renderViz / renderLogs ──────────── */
