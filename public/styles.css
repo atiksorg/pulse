@@ -31,6 +31,94 @@
   --zi-overlay: 900;
   --zi-toast: 1000;
 }
+
+/* ═══ Тема: светлая ═══ */
+[data-theme="light"]{
+  --bg: #F4F6FA;
+  --bg-grid: #E5E9F1;
+  --panel: #FFFFFF;
+  --panel-2: #F4F6FA;
+  --border: #D8DEE8;
+  --border-soft: #E5E9F1;
+  --teal: #0A7A66;
+  --teal-dim: #6FD8C2;
+  --amber: #C66A18;
+  --coral: #C4442F;
+  --text: #1A2130;
+  --muted: #4E5768;
+  --muted-2: #8A93A4;
+}
+[data-theme="light"] body{
+  background:
+    linear-gradient(var(--bg-grid) 1px, transparent 1px) 0 0/100% 28px,
+    linear-gradient(90deg, var(--bg-grid) 1px, transparent 1px) 0 0/28px 100%,
+    var(--bg);
+  background-attachment: fixed;
+}
+[data-theme="light"] .topbar{
+  background:rgba(255,255,255,0.92);
+  border-bottom:1px solid var(--border);
+}
+[data-theme="light"] .canvas-mode #panelGrid{
+  background:
+    radial-gradient(circle at 1px 1px, var(--border) 1px, transparent 0) 0 0/20px 20px;
+}
+[data-theme="light"] .panel-skeleton{background:rgba(255,255,255,0.7);}
+[data-theme="light"] .logs-table th{background:var(--panel);}
+[data-theme="light"] .pg-terminal{background:#FFFFFF;border:1px solid var(--border);}
+[data-theme="light"] .pg-term-body pre{color:#1A2130;}
+[data-theme="light"] .pg-term-body pre .c1{color:var(--muted);}
+[data-theme="light"] .pg-term-header{background:var(--bg-grid);}
+
+/* ═══ Тема: высокий контраст (для дальтоников / a11y) ═══ */
+[data-theme="high-contrast"]{
+  --bg: #000000;
+  --bg-grid: #1A1A1A;
+  --panel: #0F0F0F;
+  --panel-2: #1A1A1A;
+  --border: #FFFFFF;
+  --border-soft: #555555;
+  --teal: #00FFD1;
+  --teal-dim: #00B894;
+  --amber: #FFD000;
+  --coral: #FF4040;
+  --text: #FFFFFF;
+  --muted: #DDDDDD;
+  --muted-2: #999999;
+}
+[data-theme="high-contrast"] body{
+  background:
+    linear-gradient(var(--bg-grid) 1px, transparent 1px) 0 0/100% 28px,
+    linear-gradient(90deg, var(--bg-grid) 1px, transparent 1px) 0 0/28px 100%,
+    var(--bg);
+  background-attachment: fixed;
+}
+[data-theme="high-contrast"] .topbar{
+  background:rgba(0,0,0,0.95);
+  border-bottom:2px solid var(--teal);
+}
+[data-theme="high-contrast"] .brand .dot{
+  background:var(--teal);
+  box-shadow:0 0 0 4px var(--teal);
+  animation:none;
+}
+[data-theme="high-contrast"] .canvas-mode #panelGrid{
+  background:
+    radial-gradient(circle at 1px 1px, var(--border) 1px, transparent 0) 0 0/20px 20px;
+}
+[data-theme="high-contrast"] .panel-card{
+  border:2px solid var(--border);
+}
+[data-theme="high-contrast"] .panel-card.locked{
+  border:3px solid var(--teal);
+  background:var(--panel);
+}
+[data-theme="high-contrast"] .btn-primary{
+  background:var(--teal);
+  color:#000;
+  font-weight:700;
+}
+[data-theme="high-contrast"] .topbar-clock .tc-time{color:var(--text);}
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;}
 body{
@@ -370,6 +458,13 @@ pre .k1{color:var(--amber);}
   border-color:rgba(242,169,80,0.3);
 }
 .ft-help-btn:hover{border-color:var(--amber);}
+
+.ft-theme-btn{
+  color:var(--teal);
+  border-color:rgba(77,236,199,0.3);
+  font-size:18px;
+}
+.ft-theme-btn:hover{border-color:var(--teal);}
 
 .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px;padding:8px 0 60px;}
 .panel-card{
@@ -1267,6 +1362,33 @@ body.canvas-dragging *{cursor:grabbing !important;}
 }
 .field input[type="color"]::-webkit-color-swatch-wrapper{padding:3px;}
 .field input[type="color"]::-webkit-color-swatch{border:none;border-radius:5px;}
+
+/* ── Slider (tension) styling ──────────────────── */
+.field input[type="range"]{
+  -webkit-appearance:none;appearance:none;
+  width:100%;height:6px;
+  background:var(--bg);border:1px solid var(--border);border-radius:3px;
+  outline:none;padding:0;
+}
+.field input[type="range"]::-webkit-slider-thumb{
+  -webkit-appearance:none;appearance:none;
+  width:16px;height:16px;
+  border-radius:50%;
+  background:var(--teal);
+  border:2px solid var(--bg);
+  cursor:pointer;
+  box-shadow:0 0 0 1px var(--teal-dim);
+}
+.field input[type="range"]::-moz-range-thumb{
+  width:16px;height:16px;
+  border-radius:50%;
+  background:var(--teal);
+  border:2px solid var(--bg);
+  cursor:pointer;
+  box-shadow:0 0 0 1px var(--teal-dim);
+}
+.field input[type="range"]:hover::-webkit-slider-thumb{background:#63f0d1;}
+.field input[type="range"]:active::-webkit-slider-thumb{background:var(--teal-dim);}
 
 /* ── Copy src button (session indicator) ─────────── */
 .btn-copy-src{
