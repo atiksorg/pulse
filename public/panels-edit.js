@@ -364,7 +364,7 @@ $('#btnSavePanel') && ($('#btnSavePanel').onclick=async function(){
     await updateDashboardOnServer(db);
     renderPanels();
     if(!editingPanelId && canvasMode && !isMobile()){
-      setTimeout(function(){ resetCanvasView(true); }, 300);
+      setTimeout(function(){ centerPanelInViewport(pNew); }, 300);
     }
     closePanelModal();
   } catch(e) { toast('Ошибка сохранения: ' + e.message); }
@@ -467,7 +467,7 @@ async function addPanelFromConfig(cfg){
     await updateDashboardOnServer(db);
     renderPanels();
     if(canvasMode && !isMobile()){
-      setTimeout(function(){ resetCanvasView(true); }, 300);
+      setTimeout(function(){ centerPanelInViewport(p); }, 300);
     }
   } catch(e) { toast('Ошибка сохранения: ' + e.message); }
 }
