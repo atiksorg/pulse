@@ -28,6 +28,8 @@ function bindPanelMenuActions(card, p, src){
         clearInterval(refreshTimers[p.id]);
         delete refreshTimers[p.id];
       }
+      // Запоминаем viewport ПЕРЕД удалением
+      _saveCanvasViewport();
       var db2 = getActiveDashboard();
       if (db2) {
         db2.panels = db2.panels.filter(function(x){return x.id!==p.id;});
@@ -138,9 +140,12 @@ async function duplicatePanel(p){
   var db = getActiveDashboard();
   if(!db) return;
   var clone = Object.assign({}, p, { id: uid('panel'), title: (p.title||'Копия')+' (копия)' });
-  canvasZCounter = canvasZCounter >= CANVAS_Z_MAX ? CANVAS_Z_MIN : canvasZCounter + 1;
-  clone.cz = canvasZCounter;
+  var maxZ = getMaxPanelZ(db.panels);
+  clone.cz = maxZ >= CANVAS_Z_MAX ? CANVAS_Z_MAX : maxZ + 1;
+  canvasZCounter = clone.cz;
   if(typeof clone.cx === 'number'){ clone.cx += 40; clone.cy += 40; }
+  // Запоминаем viewport ПЕРЕД перерисовкой
+  _saveCanvasViewport();
   db.panels.push(clone);
   try {
     await updateDashboardOnServer(db);
@@ -344,9 +349,13 @@ $('#btnSavePanel') && ($('#btnSavePanel').onclick=async function(){
     if (p) Object.assign(p,cfg);
   } else {
     var pNew = Object.assign({ id: uid('panel') }, cfg);
-    canvasZCounter = canvasZCounter >= CANVAS_Z_MAX ? CANVAS_Z_MIN : canvasZCounter + 1;
-    pNew.cz = canvasZCounter;
+    // Получаем максимальный Z-index среди ВСЕХ панелей
+    var maxZ = getMaxPanelZ(db.panels);
+    pNew.cz = maxZ >= CANVAS_Z_MAX ? CANVAS_Z_MAX : maxZ + 1;
+    canvasZCounter = pNew.cz;
     if(canvasMode && !isMobile() && interactiveCanvas){
+      // Запоминаем viewport ПЕРЕД перерисовкой
+      _saveCanvasViewport();
       var vp = interactiveCanvas.viewport.getBoundingClientRect();
       var cw = pNew.cw || 380;
       var ch = pNew.ch || 280;
@@ -363,9 +372,7 @@ $('#btnSavePanel') && ($('#btnSavePanel').onclick=async function(){
   try {
     await updateDashboardOnServer(db);
     renderPanels();
-    if(!editingPanelId && canvasMode && !isMobile()){
-      setTimeout(function(){ centerPanelInViewport(pNew); }, 300);
-    }
+    // centerPanelInViewport НЕ вызываем — viewport восстанавливается из _savedCanvasViewport
     closePanelModal();
   } catch(e) { toast('Ошибка сохранения: ' + e.message); }
 });
@@ -447,10 +454,15 @@ async function addPanelFromConfig(cfg){
   if (!db) return;
   var p = Object.assign({ id: uid('panel') }, cfg);
 
-  canvasZCounter = canvasZCounter >= CANVAS_Z_MAX ? CANVAS_Z_MIN : canvasZCounter + 1;
-  p.cz = canvasZCounter;
+  // Получаем максимальный Z-index среди ВСЕХ панелей дашборда,
+  // чтобы новая панель всегда была поверх существующих
+  var maxZ = getMaxPanelZ(db.panels);
+  p.cz = maxZ >= CANVAS_Z_MAX ? CANVAS_Z_MAX : maxZ + 1;
+  canvasZCounter = p.cz;
 
   if(canvasMode && !isMobile() && interactiveCanvas){
+    // Запоминаем текущий viewport ПЕРЕД перерисовкой
+    _saveCanvasViewport();
     var vp = interactiveCanvas.viewport.getBoundingClientRect();
     var cw = p.cw || 380;
     var ch = p.ch || 280;
@@ -466,9 +478,7 @@ async function addPanelFromConfig(cfg){
   try {
     await updateDashboardOnServer(db);
     renderPanels();
-    if(canvasMode && !isMobile()){
-      setTimeout(function(){ centerPanelInViewport(p); }, 300);
-    }
+    // centerPanelInViewport НЕ вызываем — восстанавливаем viewport вместо прыжка
   } catch(e) { toast('Ошибка сохранения: ' + e.message); }
 }
 
