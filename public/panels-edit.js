@@ -494,95 +494,108 @@ function publicUrlForShare(shareId){
 }
 
 async function showShareModal(){
-  var db=getActiveDashboard();
+  var db = getActiveDashboard();
   if(!db){ toast('Сначала откройте дашборд'); return; }
 
-  var sess = getSession();
-  $('#shareModal').classList.add('active');
-  $('#shareUrl').value = '';
-  $('#shareExisting').innerHTML = '<div style="color:var(--muted-2);font-family:var(--mono);font-size:12px;">загрузка…</div>';
+  var content = document.getElementById('shareContent');
+  if(!content) return;
 
-  if(sess && sess.src === getSrc() && db.id && !db.id.startsWith('temp_')){
-    try{
+  $('#shareModal').classList.add('active');
+  content.innerHTML = '<div style="color:var(--muted-2);font-family:var(--mono);font-size:12px;padding:12px 0;">загрузка…</div>';
+
+  var sess = getSession();
+
+  // Для авторизованных дашбордов — получаем серверную ссылку
+  if(sess && db.id && !db.id.startsWith('temp_')){
+    try {
       var r = await fetch(API + '/dashboards/' + encodeURIComponent(db.id) + '/share', {
         method:'POST', headers: authHeaders()
       });
-      if(r.status === 401){ clearSession(); showShareLocal(db); return; }
+      if(r.status === 401){ clearSession(); _renderShareLocal(content, db); return; }
       if(!r.ok){
-        var err = await r.json().catch(function(){return{error:'HTTP '+r.status};});
+        var err = await r.json().catch(function(){ return {error:'HTTP '+r.status}; });
         toast('Ошибка: ' + (err.error || r.status));
-        showShareLocal(db);
+        _renderShareLocal(content, db);
         return;
       }
       var data = await r.json();
-      var url = publicUrlForShare(data.shareId);
-      $('#shareUrl').value = url;
-      var sl = await fetch(API + '/shares', { headers: authHeaders() });
-      if(sl.ok){
-        var slData = await sl.json();
-        renderShareList(slData.shares || [], db.id);
-      } else {
-        $('#shareExisting').innerHTML = '';
-      }
+      _renderShareServer(content, publicUrlForShare(data.shareId), db.id);
     } catch(e){
       toast('Сеть недоступна');
-      showShareLocal(db);
+      _renderShareLocal(content, db);
     }
   } else {
-    showShareLocal(db);
+    _renderShareLocal(content, db);
   }
 }
 
-function showShareLocal(db){
+/* Отрисовка серверной ссылки: одна ссылка + Копировать + Перегенерировать */
+function _renderShareServer(content, url, dbId){
+  var esc = escapeHtml;
+  var html = '';
+  html += '<div class="share-box">';
+  html += '  <input id="shareUrl" readonly value="' + esc(url) + '">';
+  html += '  <button class="btn btn-ghost" id="btnCopyShare">Копировать</button>';
+  html += '</div>';
+  html += '<p class="sub" style="margin-top:14px;">Ссылка закрытая. Получатель увидит графики в режиме чтения.</p>';
+  html += '<div style="margin-top:16px;display:flex;gap:10px;">';
+  html += '  <button class="btn btn-ghost" id="btnRegenerateShare">🔄 Перегенерировать</button>';
+  html += '</div>';
+  html += '<p class="sub" style="margin-top:8px;font-size:11px;">Перегенерация отзывает текущую ссылку и создаёт новую. Старая перестанет работать.</p>';
+  content.innerHTML = html;
+
+  document.getElementById('btnCopyShare').onclick = function(){
+    navigator.clipboard.writeText(url).then(function(){ toast('Скопировано'); });
+  };
+  document.getElementById('btnRegenerateShare').onclick = async function(){
+    if(!await confirmModal('Перегенерировать ссылку?', 'Текущая ссылка перестанет работать. Все, кто открыл её, увидят ошибку.', 'Перегенерировать')) return;
+    var btn = document.getElementById('btnRegenerateShare');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="qs-spinner"></span> Генерация…';
+    try {
+      var r = await fetch(API + '/dashboards/' + encodeURIComponent(dbId) + '/share/regenerate', {
+        method:'POST', headers: authHeaders()
+      });
+      if(r.status === 401){ clearSession(); toast('Сессия истекла'); return; }
+      if(!r.ok){
+        var e = await r.json().catch(function(){ return {error:'HTTP '+r.status}; });
+        toast('Ошибка: ' + (e.error || r.status));
+        btn.disabled = false;
+        btn.innerHTML = '🔄 Перегенерировать';
+        return;
+      }
+      var data = await r.json();
+      var newUrl = publicUrlForShare(data.shareId);
+      _renderShareServer(content, newUrl, dbId);
+      toast('Новая ссылка создана');
+    } catch(e){
+      toast('Сеть недоступна');
+      btn.disabled = false;
+      btn.innerHTML = '🔄 Перегенерировать';
+    }
+  };
+}
+
+/* Локальная (не серверная) ссылка для неавторизованных / temp-дашбордов */
+function _renderShareLocal(content, db){
   var src = getSrc();
   var encoded = encodeDashboard(db, src);
   var url = location.origin + location.pathname + '#view?d=' + encodeURIComponent(encoded);
-  $('#shareUrl').value = url;
-  $('#shareExisting').innerHTML = '<div style="color:var(--muted-2);font-family:var(--mono);font-size:12px;">локальная ссылка (только в этом браузере)</div>';
-}
+  var esc = escapeHtml;
+  var html = '';
+  html += '<div class="share-box">';
+  html += '  <input id="shareUrl" readonly value="' + esc(url) + '">';
+  html += '  <button class="btn btn-ghost" id="btnCopyShare">Копировать</button>';
+  html += '</div>';
+  html += '<p class="sub" style="margin-top:14px;color:var(--muted-2);font-family:var(--mono);font-size:12px;">локальная ссылка (данные в URL, не на сервере)</p>';
+  content.innerHTML = html;
 
-function renderShareList(shares, currentDbId){
-  if(!shares.length){ $('#shareExisting').innerHTML = '<div style="color:var(--muted-2);font-family:var(--mono);font-size:12px;">публичных ссылок нет</div>'; return; }
-  var html = '<div style="font-size:12px;color:var(--muted-2);margin-bottom:8px;font-family:var(--mono);">Активные ссылки:</div>';
-  shares.forEach(function(s){
-    var url = publicUrlForShare(s.share_id);
-    var isCurrent = s.dashboard_id === currentDbId;
-    var revoked = s.revoked;
-    html += '<div class="share-row'+(revoked?' revoked':'')+'">';
-    html += '<div class="share-row-info">';
-    html += '<div class="share-row-name">'+escapeHtml(s.name || 'без имени')+'</div>';
-    html += '<div class="share-row-id">#'+escapeHtml(s.share_id)+' · '+(revoked ? '<span style="color:var(--coral);">отозвана</span>' : 'активна')+'</div>';
-    html += '</div>';
-    if(!revoked){
-      html += '<button class="btn btn-ghost share-copy-btn" data-url="'+escapeHtml(url)+'">Копировать</button>';
-      html += '<button class="btn btn-danger share-revoke-btn" data-id="'+escapeHtml(s.share_id)+'">Отозвать</button>';
-    }
-    html += '</div>';
-  });
-  $('#shareExisting').innerHTML = html;
-  $$('.share-copy-btn', $('#shareExisting')).forEach(function(b){
-    b.onclick = function(){ navigator.clipboard.writeText(b.dataset.url).then(function(){toast('Скопировано');}); };
-  });
-  $$('.share-revoke-btn', $('#shareExisting')).forEach(function(b){
-    b.onclick = async function(){
-      if(!await confirmModal('Отозвать ссылку?', 'После отзыва все, кто открыл её, увидят ошибку.','Да, отозвать')) return;
-      try{
-        var r = await fetch(API + '/shares/' + encodeURIComponent(b.dataset.id) + '/revoke', {
-          method:'POST', headers: authHeaders()
-        });
-        if(r.ok){ toast('Ссылка отозвана'); showShareModal(); }
-        else { var e = await r.json().catch(function(){return{error:'HTTP '+r.status};}); toast('Ошибка: '+(e.error||r.status)); }
-      } catch(e){ toast('Сеть недоступна'); }
-    };
-  });
+  document.getElementById('btnCopyShare').onclick = function(){
+    navigator.clipboard.writeText(url).then(function(){ toast('Скопировано'); });
+  };
 }
 
 $('#btnCloseShare') && ($('#btnCloseShare').onclick=function(){$('#shareModal').classList.remove('active');});
-$('#btnCopyShare') && ($('#btnCopyShare').onclick=function(){
-  var url = $('#shareUrl').value;
-  if(!url){ toast('Нечего копировать'); return; }
-  navigator.clipboard.writeText(url).then(function(){toast('Скопировано');});
-});
 
 /* ── AI Assistant (UI скрыт, функции сохранены) ── */
 var lastAiPanel = null;
