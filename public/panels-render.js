@@ -121,6 +121,15 @@ function renderPanels(readonlyData){
   var panels = db.panels;
   if(canvasMode && panels.length && !panels[0].cx){ autoLayoutCanvas(panels); if(!isShared) updateDashboardOnServer(db).catch(function(){}); }
 
+  // ── Заполняем cw/ch из пресетов если не заданы ──
+  if(canvasMode){
+    panels.forEach(function(p){
+      var pr = getVizPreset(p.viz);
+      if(!p.cw) p.cw = pr.cw;
+      if(!p.ch) p.ch = pr.ch;
+    });
+  }
+
   if(interactiveCanvas){
     interactiveCanvas.destroy();
     interactiveCanvas = null;
@@ -146,6 +155,17 @@ function renderPanels(readonlyData){
       maxScale: 3.0,
       zoomSensitivity: 0.0015
     });
+
+    // ── Crosshair: осевые линии в центре viewport ──
+    var chH = document.createElement('div');
+    chH.className = 'canvas-crosshair-h';
+    grid.appendChild(chH);
+    var chV = document.createElement('div');
+    chV.className = 'canvas-crosshair-v';
+    grid.appendChild(chV);
+    var chDot = document.createElement('div');
+    chDot.className = 'canvas-crosshair-dot';
+    grid.appendChild(chDot);
   }
 
   panels.forEach(function(p){
