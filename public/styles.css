@@ -972,6 +972,34 @@ body.canvas-dragging *{cursor:grabbing !important;}
   opacity:0.95;
 }
 
+/* ── Canvas crosshair (ориентир — центр viewport) ── */
+.canvas-crosshair-h,
+.canvas-crosshair-v{
+  position:absolute;
+  pointer-events:none;
+  z-index:1;
+  opacity:0.15;
+}
+.canvas-crosshair-h{
+  top:50%;left:0;right:0;height:0;
+  border-top:1px dashed var(--teal-dim);
+}
+.canvas-crosshair-v{
+  left:50%;top:0;bottom:0;width:0;
+  border-left:1px dashed var(--teal-dim);
+}
+.canvas-crosshair-dot{
+  position:absolute;
+  top:50%;left:50%;
+  width:8px;height:8px;
+  margin:-4px 0 0 -4px;
+  border:1.5px solid var(--teal-dim);
+  border-radius:50%;
+  pointer-events:none;
+  z-index:2;
+  opacity:0.2;
+}
+
 /* ── Drag & Drop ───────────────────────────────── */
 .panel-card.dragging{opacity:0.4;cursor:grabbing;}
 .panel-card.drag-over{border-color:var(--teal);box-shadow:0 0 0 2px rgba(77,236,199,0.2);}
