@@ -19,13 +19,15 @@
   /* ── z-index layers (non-overlapping ranges) ────
      Layer 0  — Background / decoration:    0       (p5 canvas, dot grids)
      Layer 1  — Page content:               1–49    (cards, docs, blocks)
-     Layer 2  — Sticky UI:                  50–99   (topbar, sticky headers)
-     Layer 3  — Canvas panels:              100–899 (draggable cards; counter wraps)
+     Layer 2  — Sticky UI:                  50–897  (topbar, sticky headers)
+     Layer 2.5— Floating toolbar:           898     (always below modals)
+     Layer 3  — Canvas panels:              100–890 (draggable cards; counter wraps)
      Layer 4  — Modals / overlays:          900–999 (all .overlay elements)
      Layer 5  — Toast / notifications:      1000+   (always visible above modals)
      ─────────────────────────────────────────────── */
   --zi-content: 1;
-  --zi-sticky: 895;
+  --zi-sticky: 50;
+  --zi-floating-toolbar: 898;
   --zi-canvas-min: 100;
   --zi-canvas-max: 890;
   --zi-overlay: 900;
@@ -387,7 +389,7 @@ pre .k1{color:var(--amber);}
   top:62px;
   left:50%;
   transform:translateX(-50%) translateY(0);
-  z-index:950;
+  z-index:var(--zi-floating-toolbar);
   display:flex;
   align-items:center;
   gap:8px;
@@ -1576,7 +1578,7 @@ body.canvas-dragging *{cursor:grabbing !important;}
     align-items:center;
     justify-content:center;
     box-shadow:0 4px 20px rgba(77,236,199,0.4);
-    z-index:var(--zi-sticky);
+    z-index:calc(var(--zi-floating-toolbar) + 1);
     cursor:pointer;
     transition:transform .15s ease, box-shadow .15s ease;
   }
