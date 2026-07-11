@@ -13,6 +13,33 @@ function resetCanvasView(silent){
     if(!silent) toast('Холст выровнен');
   }
 }
+
+/* ── Center viewport on a specific panel ─────────── */
+function centerPanelInViewport(p){
+  if(!interactiveCanvas || !p) return;
+  var vp = interactiveCanvas.viewport;
+  if(!vp) return;
+  var vpRect = vp.getBoundingClientRect();
+  var panelW = p.cw || 380;
+  var panelH = p.ch || 280;
+  // Центр панели в canvas-координатах
+  var panelCenterX = (p.cx || 0) + panelW / 2;
+  var panelCenterY = (p.cy || 0) + panelH / 2;
+  // Смещение, чтобы центр панели оказался в центре viewport
+  var newOffsetX = vpRect.width / 2 - panelCenterX * interactiveCanvas.scale;
+  var newOffsetY = vpRect.height / 2 - panelCenterY * interactiveCanvas.scale;
+  // Плавная анимация через transition на surface
+  var surface = interactiveCanvas.surface;
+  if(surface){
+    surface.style.transition = 'transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+    interactiveCanvas.offsetX = newOffsetX;
+    interactiveCanvas.offsetY = newOffsetY;
+    surface.style.transform = 'translate(' + newOffsetX + 'px,' + newOffsetY + 'px) scale(' + interactiveCanvas.scale + ')';
+    setTimeout(function(){
+      surface.style.transition = '';
+    }, 450);
+  }
+}
 function arrangeAndFitCanvas(){
   var db = getActiveDashboard();
   if(!db || !Array.isArray(db.panels) || !db.panels.length){ toast('Нет панелей для выравнивания'); return; }
