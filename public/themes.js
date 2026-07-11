@@ -25,12 +25,13 @@ function applyTheme(theme){
       }
     });
   }
-  // Обновим UI индикатор на кнопке (если есть)
+  // Обновим иконку кнопки (только символ, название — в title)
   var btn = document.getElementById('btnThemeToggle');
   if(btn){
-    var labels = { 'dark':'◑ Тёмная', 'light':'☀ Светлая', 'high-contrast':'◐ Контраст' };
-    btn.textContent = labels[theme] || '◐';
-    btn.title = 'Тема: ' + theme + ' (клик — переключить)';
+    var icons = { 'dark':'◑', 'light':'☀', 'high-contrast':'◐' };
+    var names = { 'dark':'Тёмная', 'light':'Светлая', 'high-contrast':'Высокий контраст' };
+    btn.textContent = icons[theme] || '◐';
+    btn.title = 'Тема: ' + (names[theme] || theme) + ' (клик — переключить)';
   }
 }
 
