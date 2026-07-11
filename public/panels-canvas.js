@@ -6,6 +6,20 @@
 /* ── Canvas state (живёт в одном месте — panels-canvas.js) ─── */
 var interactiveCanvas = null;
 
+/* ── Viz size presets for canvas layout ──────────── */
+var CANVAS_VIZ_PRESETS = {
+  line:  { cw: 380, ch: 280 },
+  bar:   { cw: 380, ch: 280 },
+  pie:   { cw: 340, ch: 300 },
+  kpi:   { cw: 300, ch: 200 },
+  table: { cw: 480, ch: 420 },
+  logs:  { cw: 520, ch: 480 }
+};
+
+function getVizPreset(viz){
+  return CANVAS_VIZ_PRESETS[viz] || CANVAS_VIZ_PRESETS.line;
+}
+
 /* ── Canvas mode ─────────────────────────────────── */
 function resetCanvasView(silent){
   if(interactiveCanvas){
@@ -50,14 +64,16 @@ function arrangeAndFitCanvas(){
   toast('Графики выстроены');
 }
 function autoLayoutCanvas(panels){
-  var x=20,y=20,cw=380,rh=280,gap=16,mw=($('#panelGrid').clientWidth||1100)-40;
+  var x=20,y=20,gap=16,mw=($('#panelGrid').clientWidth||1100)-40;
 
   // ── Сначала определяем нижнюю границу закреплённых блоков,
   //    чтобы свободные блоки не наезжали на них ──
   var maxYLocked = 0;
   panels.forEach(function(p){
     if(p.locked){
-      var bottom = (p.cy||0) + (p.ch||rh);
+      var pr = getVizPreset(p.viz);
+      var ch = p.ch || pr.ch;
+      var bottom = (p.cy||0) + ch;
       if(bottom > maxYLocked) maxYLocked = bottom;
     }
   });
@@ -68,12 +84,22 @@ function autoLayoutCanvas(panels){
 
   panels.forEach(function(p){
     if(p.locked) return;   // закреплённые не трогаем
+    var pr = getVizPreset(p.viz);
+    var cw = pr.cw;
+    var rh = pr.ch;
     p.cx=x;p.cy=y;p.cw=cw;p.ch=rh;
     x+=cw+gap;
     if(x+cw>mw){x=20;y+=rh+gap;}
   });
 }
-function applyCanvasPosition(card,p){ card.style.left=(p.cx||20)+'px'; card.style.top=(p.cy||20)+'px'; card.style.width=(p.cw||380)+'px'; card.style.height=(p.ch||280)+'px'; card.style.zIndex=Math.min(Math.max(p.cz || CANVAS_Z_MIN, CANVAS_Z_MIN), CANVAS_Z_MAX); }
+function applyCanvasPosition(card,p){
+  var pr = getVizPreset(p.viz);
+  card.style.left=(p.cx||20)+'px';
+  card.style.top=(p.cy||20)+'px';
+  card.style.width=(p.cw||pr.cw)+'px';
+  card.style.height=(p.ch||pr.ch)+'px';
+  card.style.zIndex=Math.min(Math.max(p.cz || CANVAS_Z_MIN, CANVAS_Z_MIN), CANVAS_Z_MAX);
+}
 
 /* ── Dead zone threshold (px) — prevents accidental drags ── */
 var DRAG_DEAD_ZONE = 5;
