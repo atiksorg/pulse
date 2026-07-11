@@ -136,10 +136,13 @@ async function createDashboardOnServer(name, panels){
 }
 
 async function updateDashboardOnServer(db){
+  // Очищаем панели от runtime-данных (_logsEvents, _tableData и т.д.),
+  // иначе JSON-пейлоад раздувается и превышает лимит body на сервере → 502
+  var cleanPanels = (db.panels || []).map(sanitizePanelForSave);
   var r = await fetch(API + '/dashboards/' + encodeURIComponent(db.id), {
     method:'PUT',
     headers: Object.assign({'Content-Type':'application/json'}, authHeaders()),
-    body: JSON.stringify({ name: db.name, panels: db.panels, layoutMode: 'canvas' })
+    body: JSON.stringify({ name: db.name, panels: cleanPanels, layoutMode: 'canvas' })
   });
   if (r.status === 401) { clearSession(); throw new Error('unauthorized'); }
   if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -320,6 +323,28 @@ function formatCompact(n){
 function panelKey(p){
   if(p.group==='__field') return p.field || 'bucket';
   return p.group || 'bucket';
+}
+
+/* ── Sanitize panel: strip runtime properties ────── */
+// Во время рендеринга на объекты панелей «налипают» тяжёлые runtime-данные:
+// _logsEvents (до 100 событий), _tableData (до 200 строк), _tableSort, _tableSearch, _currentPage.
+// Если отправить их на сервер — JSON-пейлоад раздувается и превышает лимит body на сервере,
+// что приводит к 502. Функция вырезает всё, что не нужно хранить.
+function sanitizePanelForSave(p){
+  if(!p || typeof p !== 'object') return p;
+  var clean = {};
+  var keepKeys = [
+    'id','title','viz','type','group','field','agg','aggfield',
+    'range','from','to','width','height','autorefresh',
+    'sort','limit','key','unit','color','lineStyle','formatType',
+    'filters','breakdownfield',
+    'cx','cy','cw','ch','cz','locked'
+  ];
+  for(var i=0;i<keepKeys.length;i++){
+    var k = keepKeys[i];
+    if(p[k] !== undefined) clean[k] = p[k];
+  }
+  return clean;
 }
 
 /* ── Public API: loadSharedDashboard ─────────────── */
