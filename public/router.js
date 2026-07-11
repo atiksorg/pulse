@@ -174,4 +174,5 @@ window.addEventListener('hashchange', render);
 })();
 
 /* ── INIT ────────────────────────────────────────── */
+if(typeof initTheme === 'function') initTheme();
 render();
