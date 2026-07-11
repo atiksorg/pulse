@@ -544,7 +544,7 @@ pre .k1{color:var(--amber);}
 .panel-body{flex:1;padding:14px 16px;position:relative;}
 .panel-body canvas{max-height:100%;}
 .panel-body.kpi-body{display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;}
-.kpi-value{font-family:var(--mono);font-size:44px;font-weight:700;color:var(--teal);line-height:1;margin-top:14px;}
+.kpi-value{font-family:var(--mono);font-size:44px;font-weight:700;color:inherit;line-height:1;margin-top:14px;}
 .kpi-sub{color:var(--muted);font-size:12.5px;margin-top:8px;}
 .mini-table{width:100%;font-size:12.5px;border-collapse:collapse;}
 .mini-table th{text-align:left;color:var(--muted-2);font-family:var(--mono);font-size:10.5px;text-transform:uppercase;padding:0 8px 8px 0;font-weight:500;}
