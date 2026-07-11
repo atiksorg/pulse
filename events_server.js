@@ -1424,15 +1424,25 @@ const server = http.createServer(async (req, res) => {
       if (!result.ok) return auth.json(res, result.code, { error: result.error });
       auth.json(res, 200, { ok: true });
       return;
-    }
-
-    // POST /dashboards/:id/share (auth) — создать публичную ссылку
+    }    // POST /dashboards/:id/share (auth) — создать/получить публичную ссылку
     if (url.pathname.match(/^\/dashboards\/[^/]+\/share$/) && req.method === 'POST') {
       const token = auth.extractToken(req);
       const session = auth.resolveSession(db, token);
       if (!session) return auth.json(res, 401, { error: 'unauthorized' });
       const id = url.pathname.slice('/dashboards/'.length, -'/share'.length);
       const result = auth.createShare(db, id, session.src);
+      if (!result.ok) return auth.json(res, result.code, { error: result.error });
+      auth.json(res, 200, { shareId: result.shareId, reused: !!result.reused });
+      return;
+    }
+
+    // POST /dashboards/:id/share/regenerate (auth) — перегенерировать ссылку
+    if (url.pathname.match(/^\/dashboards\/[^/]+\/share\/regenerate$/) && req.method === 'POST') {
+      const token = auth.extractToken(req);
+      const session = auth.resolveSession(db, token);
+      if (!session) return auth.json(res, 401, { error: 'unauthorized' });
+      const id = url.pathname.slice('/dashboards/'.length, -'/share/regenerate'.length);
+      const result = auth.regenerateShare(db, id, session.src);
       if (!result.ok) return auth.json(res, result.code, { error: result.error });
       auth.json(res, 200, { shareId: result.shareId });
       return;
