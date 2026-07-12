@@ -1736,3 +1736,16 @@ body.canvas-dragging *{cursor:grabbing !important;}
     bottom:60px;
   }
 }
+
+/* ── Heatmap ─────────────────────────────────── */
+.heatmap-wrap{max-width:100%;overflow-x:auto;}
+.heatmap-scroll{overflow-x:auto;}
+.heatmap-table{border-collapse:collapse;font-family:var(--mono);font-size:11px;}
+.heatmap-corner{width:80px;}
+.heatmap-th{padding:4px 6px;font-size:10px;color:var(--muted);white-space:nowrap;text-align:center;}
+.heatmap-label{padding:4px 8px;font-size:11px;color:var(--muted);white-space:nowrap;text-align:right;}
+.heatmap-cell{width:40px;height:28px;text-align:center;font-size:10px;cursor:pointer;transition:transform .1s;border-radius:2px;}
+.heatmap-cell:hover{transform:scale(1.15);z-index:2;position:relative;}
+.heatmap-legend{display:flex;align-items:center;gap:8px;margin-top:8px;padding:0 8px;}
+.heatmap-legend-label{font-family:var(--mono);font-size:10px;color:var(--muted-2);}
+.heatmap-legend-bar{flex:1;height:8px;border-radius:4px;}
