@@ -289,8 +289,13 @@ function describeMeta(p){
   var parts = [];
   parts.push(p.type ? 'type:'+esc(p.type) : 'все типы');
   if(p.group === '__field') parts.push('поле:'+(p.field ? esc(p.field) : '—'));
-  else if(p.group) parts.push('группа:'+esc(p.group));
+  else if(p.group) parts.push('группа:'+({'minute':'минуты','hour':'часы','day':'дни','week':'недели','month':'месяцы'}[p.group]||esc(p.group)));
   if(p.agg !== 'count') parts.push(esc(p.agg)+':'+(p.aggfield ? esc(p.aggfield) : '—'));
+  if(p.stacked) parts.push('stacked');
+  if(p.cumulative) parts.push('нараст.');
+  if(p.compare) parts.push('сравнение');
+  if(p.secondAxis) parts.push('2 оси Y');
+  if(p.thresholds && p.thresholds.length) parts.push('пороги: '+p.thresholds.length);
   if(p.sort && p.sort !== 'key') parts.push('сортировка:'+(p.sort==='value_desc'?'↓':'↑'));
   if(p.limit && Number(p.limit) > 0) parts.push('топ-'+Number(p.limit));
   if(Array.isArray(p.filters) && p.filters.length){
@@ -342,7 +347,9 @@ function sanitizePanelForSave(p){
     'range','from','to','width','height','autorefresh',
     'sort','limit','key','unit','color','lineStyle','tension','formatType',
     'filters','breakdownfield',
-    'cx','cy','cw','ch','cz','locked'
+    'cx','cy','cw','ch','cz','locked',
+    'thresholds','stacked','cumulative','secondAxis','compare',
+    'gaugeMin','gaugeMax','formula','derived'
   ];
   for(var i=0;i<keepKeys.length;i++){
     var k = keepKeys[i];
