@@ -12,6 +12,8 @@ var CANVAS_VIZ_PRESETS = {
   bar:   { cw: 380, ch: 280 },
   pie:   { cw: 340, ch: 300 },
   kpi:   { cw: 300, ch: 200 },
+  gauge: { cw: 280, ch: 200 },
+  heatmap: { cw: 500, ch: 350 },
   table: { cw: 480, ch: 420 },
   logs:  { cw: 520, ch: 480 }
 };
@@ -84,9 +86,9 @@ function autoLayoutCanvas(panels){
   for(var i=0; i<free.length; i++){
     var p = free[i];
     var v = p.viz;
-    if(v === 'kpi') kpis.push(p);
+    if(v === 'kpi' || v === 'gauge') kpis.push(p);
     else if(v === 'table' || v === 'logs') fulls.push(p);
-    else charts2.push(p);  // line, bar, pie
+    else charts2.push(p);  // line, bar, pie, heatmap
   }
 
   var y = 20;
