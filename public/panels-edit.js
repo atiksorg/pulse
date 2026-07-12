@@ -216,7 +216,14 @@ function resetAdvForm(){
   // tension: по умолчанию 0.35 (smooth) — соответствует lineStyle=smooth
   var tEl = $('#f_tension'); if(tEl) tEl.value = '0.35';
   var bw=$('#f_breakdownfield'); if(bw)bw.value='';
-  renderFilterRows([]); toggleCondFields();
+  // новые опции
+  var sEl=$('#f_stacked'); if(sEl) sEl.checked=false;
+  var cEl=$('#f_cumulative'); if(cEl) cEl.checked=false;
+  var cmpEl=$('#f_compare'); if(cmpEl) cmpEl.checked=false;
+  var saEl=$('#f_secondaxis'); if(saEl) saEl.checked=false;
+  var gmEl=$('#f_gaugeMin'); if(gmEl) gmEl.value='';
+  var gxEl=$('#f_gaugeMax'); if(gxEl) gxEl.value='';
+  renderThresholdRows([]); renderFilterRows([]); toggleCondFields();
 }
 
 function fillAdvForm(p){
@@ -245,24 +252,42 @@ function fillAdvForm(p){
   if(p.from)$('#f_from').value=p.from.slice(0,10);
   if(p.to)$('#f_to').value=p.to.slice(0,10);
   var dbf=$('#f_breakdownfield'); if(dbf)dbf.value=p.breakdownfield||'';
+  // новые опции
+  var sEl=$('#f_stacked'); if(sEl) sEl.checked=!!p.stacked;
+  var cEl=$('#f_cumulative'); if(cEl) cEl.checked=!!p.cumulative;
+  var cmpEl=$('#f_compare'); if(cmpEl) cmpEl.checked=!!p.compare;
+  var saEl=$('#f_secondaxis'); if(saEl) saEl.checked=!!p.secondAxis;
+  var gmEl=$('#f_gaugeMin'); if(gmEl) gmEl.value=p.gaugeMin!==undefined?String(p.gaugeMin):'';
+  var gxEl=$('#f_gaugeMax'); if(gxEl) gxEl.value=p.gaugeMax!==undefined?String(p.gaugeMax):'';
+  renderThresholdRows(p.thresholds||[]);
   toggleCondFields();
 }
 
 function toggleCondFields(){
   $('#fieldNameWrap').style.display=$('#f_group').value==='__field'?'flex':'none';
+  // aggFieldWrap нужен для count НЕ нужен, а для всех остальных — нужен
   $('#aggFieldWrap').style.display=$('#f_agg').value!=='count'?'flex':'none';
   var cr=$('#customRangeWrap'); if(cr)cr.style.display=$('#f_range').value==='custom'?'flex':'none';
   var viz=$('#f_viz').value;
   var bw=$('#breakdownWrap');
   if(bw){
-    var showBreakdown = (viz==='line'||viz==='bar');
+    var showBreakdown = (viz==='line'||viz==='bar'||viz==='heatmap');
     bw.style.display=showBreakdown?'flex':'none';
     if(!showBreakdown){
       var dbf=$('#f_breakdownfield');
       if(dbf) dbf.value='';
     }
   }
-  // tension имеет смысл только для line-графиков
+  // chart options: stacked, cumulative, compare, secondAxis — для line/bar
+  var cow=$('#chartOptsWrap');
+  if(cow) cow.style.display=(viz==='line'||viz==='bar')?'flex':'none';
+  // gauge min/max — только для gauge
+  var gw=$('#gaugeWrap');
+  if(gw) gw.style.display=(viz==='gauge')?'flex':'none';
+  // thresholds — для line/bar
+  var tw=$('#thresholdsWrap');
+  if(tw) tw.style.display=(viz==='line'||viz==='bar')?'flex':'none';
+  // tension — только для line
   var ts=$('#tensionWrap');
   if(ts) ts.style.display = (viz==='line') ? 'flex' : 'none';
 }
@@ -336,6 +361,14 @@ function readAdvForm(){
   var bw=$('#f_breakdownfield');
   c.breakdownfield=bw?bw.value.trim():'';
   if(c.viz !== 'line' && c.viz !== 'bar') c.breakdownfield = '';
+  // новые опции
+  var sEl=$('#f_stacked'); c.stacked=sEl?sEl.checked:false;
+  var cEl=$('#f_cumulative'); c.cumulative=cEl?cEl.checked:false;
+  var cmpEl=$('#f_compare'); c.compare=cmpEl?cmpEl.checked:false;
+  var saEl=$('#f_secondaxis'); c.secondAxis=saEl?saEl.checked:false;
+  var gmEl=$('#f_gaugeMin'); c.gaugeMin=(gmEl&&gmEl.value!=='')?Number(gmEl.value):undefined;
+  var gxEl=$('#f_gaugeMax'); c.gaugeMax=(gxEl&&gxEl.value!=='')?Number(gxEl.value):undefined;
+  c.thresholds=readThresholdRows();
   return c;
 }
 
@@ -448,6 +481,59 @@ function readFilterRows(){
   });
   return result;
 }
+
+/* ── Threshold rows UI ─────────────────────────── */
+function renderThresholdRows(thresholds){
+  var container = $('#thresholdRows');
+  if(!container) return;
+  container.innerHTML = '';
+  (thresholds || []).forEach(function(t){ addThresholdRow(t.value, t.color, t.label); });
+}
+function addThresholdRow(value, color, label){
+  var container = $('#thresholdRows');
+  if(!container) return;
+  var row = document.createElement('div');
+  row.className = 'filter-row';
+  var valInput = document.createElement('input');
+  valInput.className = 'filter-field';
+  valInput.type = 'number';
+  valInput.placeholder = 'значение';
+  valInput.value = value !== undefined ? value : '';
+  var colorInput = document.createElement('input');
+  colorInput.type = 'color';
+  colorInput.className = 'filter-value';
+  colorInput.style = 'width:50px;height:32px;padding:2px;cursor:pointer;';
+  colorInput.value = color || '#FF6B6B';
+  var labelInput = document.createElement('input');
+  labelInput.className = 'filter-value';
+  labelInput.placeholder = 'подпись';
+  labelInput.value = label || '';
+  var delBtn = document.createElement('button');
+  delBtn.type = 'button';
+  delBtn.className = 'filter-del';
+  delBtn.textContent = '×';
+  delBtn.title = 'Удалить';
+  delBtn.onclick = function(){ row.remove(); };
+  row.appendChild(valInput);
+  row.appendChild(colorInput);
+  row.appendChild(labelInput);
+  row.appendChild(delBtn);
+  container.appendChild(row);
+}
+function readThresholdRows(){
+  var container = $('#thresholdRows');
+  if(!container) return [];
+  var result = [];
+  container.querySelectorAll('.filter-row').forEach(function(row){
+    var inputs = row.querySelectorAll('input');
+    var val = parseFloat(inputs[0].value);
+    if(isNaN(val)) return;
+    result.push({ value: val, color: inputs[1].value || '#FF6B6B', label: inputs[2].value || '' });
+  });
+  return result;
+}
+
+$('#btnAddThreshold') && $('#btnAddThreshold').addEventListener('click',function(){ addThresholdRow('','#FF6B6B',''); });
 
 async function addPanelFromConfig(cfg){
   var db = getActiveDashboard();
