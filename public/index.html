@@ -774,6 +774,8 @@ GET https://events.atiks.org/s?src=my_app&type=purchase&group=day&from=2026-06-0
             <option value="bar">Столбчатая диаграмма</option>
             <option value="pie">Круговая диаграмма</option>
             <option value="kpi">Число (KPI)</option>
+            <option value="gauge">Индикатор (gauge)</option>
+            <option value="heatmap">Тепловая карта</option>
             <option value="table">Таблица (агрегация)</option>
             <option value="logs">Логи (события)</option>
           </select>
@@ -787,6 +789,9 @@ GET https://events.atiks.org/s?src=my_app&type=purchase&group=day&from=2026-06-0
             <option value="">Без группировки (итого)</option>
             <option value="day">По дням</option>
             <option value="hour">По часам</option>
+            <option value="minute">По минутам</option>
+            <option value="week">По неделям</option>
+            <option value="month">По месяцам</option>
             <option value="__field">По полю payload…</option>
           </select>
         </div>
@@ -799,6 +804,11 @@ GET https://events.atiks.org/s?src=my_app&type=purchase&group=day&from=2026-06-0
             <option value="count">Количество (count)</option>
             <option value="sum">Сумма поля (sum)</option>
             <option value="avg">Среднее по полю (avg)</option>
+            <option value="min">Минимум (min)</option>
+            <option value="max">Максимум (max)</option>
+            <option value="median">Медиана (median)</option>
+            <option value="p95">Перцентиль 95 (p95)</option>
+            <option value="p99">Перцентиль 99 (p99)</option>
           </select>
         </div>
       </div>
@@ -902,6 +912,37 @@ GET https://events.atiks.org/s?src=my_app&type=purchase&group=day&from=2026-06-0
           <button type="button" class="btn btn-ghost" id="btnAddFilter" style="font-size:11px;padding:5px 10px;">+ условие</button>
         </div>
         <div id="filterRows" class="filter-rows"></div>
+      </div>
+
+      <!-- Опции графиков: stacked, cumulative, compare, secondAxis -->
+      <div class="field-row" id="chartOptsWrap" style="display:none;">
+        <div class="field"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="f_stacked"> Stacked (суммировать серии)
+        </label></div>
+        <div class="field"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="f_cumulative"> Нарастающий итог
+        </label></div>
+        <div class="field"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="f_compare"> Сравнить с пред. периодом
+        </label></div>
+        <div class="field"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="f_secondaxis"> Вторая ось Y
+        </label></div>
+      </div>
+
+      <!-- Gauge: min/max диапазон -->
+      <div class="field-row" id="gaugeWrap" style="display:none;">
+        <div class="field"><label>Минимум gauge</label><input id="f_gaugeMin" type="number" placeholder="0"></div>
+        <div class="field"><label>Максимум gauge</label><input id="f_gaugeMax" type="number" placeholder="100"></div>
+      </div>
+
+      <!-- Thresholds: пороговые линии -->
+      <div class="field-row" id="thresholdsWrap" style="display:none;">
+        <div class="field" style="flex:1;">
+          <label>Пороговые линии (thresholds)</label>
+          <div id="thresholdRows" style="display:flex;flex-direction:column;gap:6px;"></div>
+          <button type="button" class="btn btn-ghost" id="btnAddThreshold" style="font-size:11px;padding:5px 10px;margin-top:4px;">+ линия</button>
+        </div>
       </div>
     </div>
 
@@ -1034,6 +1075,9 @@ GET https://events.atiks.org/s?src=my_app&type=purchase&group=day&from=2026-06-0
 <script src="core.js"></script>
 <script src="interactive-canvas.js"></script>
 <script src="themes.js"></script>
+<script src="chart-plugins.js"></script>
+<script src="chart-gauge.js"></script>
+<script src="chart-heatmap.js"></script>
 <script src="panels-render.js"></script>
 <script src="panels-canvas.js"></script>
 <script src="panels-edit.js"></script>
