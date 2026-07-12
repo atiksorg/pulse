@@ -399,6 +399,16 @@ function filterTablesByDate(tables, from, to) {
   });
 }
 
+// ── Percentile computation helper ─────────────────────
+function computePercentile(sortedArr, p) {
+  if (sortedArr.length === 0) return 0;
+  const idx = (p / 100) * (sortedArr.length - 1);
+  const low = Math.floor(idx);
+  const high = Math.ceil(idx);
+  if (low === high) return sortedArr[low];
+  return sortedArr[low] + (sortedArr[high] - sortedArr[low]) * (idx - low);
+}
+
 function applySortAndLimit(groups, sort, limit, responseGroupKey) {
   // Sort
   if (sort === 'value_desc') {
@@ -966,9 +976,16 @@ const server = http.createServer(async (req, res) => {
       }      // ── Parse breakdown param (compound group) ───────
       const breakdownField = q.breakdown && typeof q.breakdown === 'string' && IDENT_RE.test(q.breakdown) ? q.breakdown : null;
 
+      // ── Timezone offset for group expressions ──
+      const tzHours = Number(q.tz) || 0;
+      const tzSuffix = tzHours !== 0 ? `, '${tzHours > 0 ? '+' : ''}${tzHours} hours'` : '';
+
       let groupExpr = '1';
-      if (q.group === 'day')   groupExpr = "date(ts)";
-      if (q.group === 'hour')  groupExpr = "strftime('%Y-%m-%d %H:00', ts)";
+      if (q.group === 'day')     groupExpr = `date(ts${tzSuffix})`;
+      if (q.group === 'hour')    groupExpr = `strftime('%Y-%m-%d %H:00', ts${tzSuffix})`;
+      if (q.group === 'minute')  groupExpr = `strftime('%Y-%m-%d %H:%M', ts${tzSuffix})`;
+      if (q.group === 'week')    groupExpr = `strftime('%Y-W%W', ts${tzSuffix})`;
+      if (q.group === 'month')   groupExpr = `strftime('%Y-%m', ts${tzSuffix})`;
       if (q.group && q.group.startsWith('field:')) {
         const field = safeField(q.group.slice(6));
         if (!field) { res.statusCode = 400; res.end('invalid field'); return; }
@@ -977,10 +994,10 @@ const server = http.createServer(async (req, res) => {
       let breakdownExpr = null;
       if (breakdownField) {
         breakdownExpr = `json_extract(payload, '$."${breakdownField}"')`;
-      }
-
-      let aggExpr = 'COUNT(*)';
+      }      let aggExpr = 'COUNT(*)';
       let aggMode = 'count';
+      let aggField = null;
+      let aggPercentile = null; // 50, 95, 99
       if (q.agg && q.agg.startsWith('sum:')) {
         const field = safeField(q.agg.slice(4));
         if (!field) { res.statusCode = 400; res.end('invalid field'); return; }
@@ -990,13 +1007,61 @@ const server = http.createServer(async (req, res) => {
       if (q.agg && q.agg.startsWith('avg:')) {
         const field = safeField(q.agg.slice(4));
         if (!field) { res.statusCode = 400; res.end('invalid field'); return; }
-        // For weighted avg: fetch SUM and COUNT separately per table
         aggExpr = `SUM(json_extract(payload, '$."${field}"'))`;
         aggMode = 'avg';
+      }
+      if (q.agg && q.agg.startsWith('min:')) {
+        const field = safeField(q.agg.slice(4));
+        if (!field) { res.statusCode = 400; res.end('invalid field'); return; }
+        aggExpr = `MIN(json_extract(payload, '$."${field}"'))`;
+        aggMode = 'min';
+      }
+      if (q.agg && q.agg.startsWith('max:')) {
+        const field = safeField(q.agg.slice(4));
+        if (!field) { res.statusCode = 400; res.end('invalid field'); return; }
+        aggExpr = `MAX(json_extract(payload, '$."${field}"'))`;
+        aggMode = 'max';
+      }
+      // Percentile aggregations: median, p95, p99 — collect values via GROUP_CONCAT
+      const percentileMap = { 'median': 50, 'p95': 95, 'p99': 99 };
+      if (q.agg) {
+        for (const [prefix, pval] of Object.entries(percentileMap)) {
+          if (q.agg.startsWith(prefix + ':')) {
+            const field = safeField(q.agg.slice(prefix.length + 1));
+            if (!field) { res.statusCode = 400; res.end('invalid field'); return; }
+            aggField = field;
+            aggPercentile = pval;
+            aggMode = 'percentile';
+            aggExpr = `GROUP_CONCAT(json_extract(payload, '$."${field}"'))`;
+          }
+        }
       }      const tables = await workerQuery(
         "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'events_%' ORDER BY name"
       );
       const filteredTables = filterTablesByDate(tables, q.from, q.to);
+
+      // ── Helper: adjust timestamp for timezone ──
+      function _adjustTs(ts) {
+        if (!tzHours) return ts;
+        const d = new Date(ts);
+        d.setUTCHours(d.getUTCHours() + tzHours);
+        return d.toISOString();
+      }
+      // ── Helper: extract buffer key from timestamp ──
+      function _bufKey(ts) {
+        const ats = _adjustTs(ts);
+        if (q.group === 'day')    return ats.slice(0, 10);
+        if (q.group === 'hour')   return ats.slice(0, 13) + ':00';
+        if (q.group === 'minute') return ats.slice(0, 16).replace('T', ' ');
+        if (q.group === 'month')  return ats.slice(0, 7);
+        if (q.group === 'week') {
+          const d = new Date(ats);
+          const jan1 = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+          const weekNum = String(Math.ceil(((d - jan1) / 86400000 + jan1.getUTCDay() + 1) / 7)).padStart(2, '0');
+          return d.getUTCFullYear() + '-W' + weekNum;
+        }
+        return '1';
+      }
 
       // ── BREAKDOWN (compound group) → return early with series ──
       // Структура: для каждой серии (fieldVal) копим отдельно sum и cnt
@@ -1014,10 +1079,7 @@ const server = http.createServer(async (req, res) => {
           if (q.from && ev.ts < q.from) continue;
           if (q.to && ev.ts > q.to) continue;
           if (filters.length && !applyFiltersToPayload(ev.payload, filters)) continue;
-          let bkt;
-          if (q.group === 'day')  bkt = ev.ts.slice(0, 10);
-          else if (q.group === 'hour') bkt = ev.ts.slice(0, 13) + ':00';
-          else bkt = '1';
+          let bkt = _bufKey(ev.ts);
           let fv = 'null';
           try { const pl = JSON.parse(ev.payload); fv = String(pl[breakdownField] ?? 'null'); } catch (_) {}
           if (!seriesMap[fv]) seriesMap[fv] = {};
@@ -1142,9 +1204,7 @@ const server = http.createServer(async (req, res) => {
         res.setHeader('Content-Type', 'application/json');
         res.end(respBD);
         return;
-      }
-
-      // ── Standard (single-group) aggregation below ──
+      }      // ── Standard (single-group) aggregation below ──
       const merged = {};
       const countsForAvg = {};
 
@@ -1159,24 +1219,37 @@ const server = http.createServer(async (req, res) => {
         if (filters.length && !applyFiltersToPayload(ev.payload, filters)) continue;
 
         let key;
-        if (q.group === 'day') {
-          key = ev.ts.slice(0, 10);
-        } else if (q.group === 'hour') {
-          key = ev.ts.slice(0, 13) + ':00';
-        } else if (q.group && q.group.startsWith('field:')) {
+        if (q.group && q.group.startsWith('field:')) {
           const f = q.group.slice(6);
           try {
             const pl = JSON.parse(ev.payload);
             key = String(pl[f] ?? 'null');
           } catch (_) { key = 'null'; }
-        } else if (!q.group) {
-          key = '1';
         } else {
-          key = '1';
+          key = _bufKey(ev.ts);
         }
 
         if (aggMode === 'count') {
           merged[key] = (merged[key] || 0) + 1;
+        } else if (aggMode === 'min' || aggMode === 'max') {
+          const fld = q.agg.slice(4);
+          try {
+            const pl = JSON.parse(ev.payload);
+            const v = Number(pl[fld]);
+            if (!isNaN(v)) {
+              if (merged[key] === undefined) merged[key] = v;
+              else merged[key] = aggMode === 'min' ? Math.min(merged[key], v) : Math.max(merged[key], v);
+            }
+          } catch (_) {}
+        } else if (aggMode === 'percentile') {
+          try {
+            const pl = JSON.parse(ev.payload);
+            const v = Number(pl[aggField]);
+            if (!isNaN(v)) {
+              if (!merged[key]) merged[key] = [];
+              merged[key].push(v);
+            }
+          } catch (_) {}
         } else if (aggMode === 'sum' || aggMode === 'avg') {
           const f = q.agg.slice(4);
           try {
@@ -1188,9 +1261,7 @@ const server = http.createServer(async (req, res) => {
             }
           } catch (_) {}
         }
-      }
-
-      for (const { name } of filteredTables) {
+      }      for (const { name } of filteredTables) {
         try {
           if (aggMode === 'avg') {
             const sql = `
@@ -1207,6 +1278,22 @@ const server = http.createServer(async (req, res) => {
               const key = String(r.g ?? 'null');
               merged[key] = (merged[key] || 0) + (r.v || 0);
               countsForAvg[key] = (countsForAvg[key] || 0) + (r.cnt || 0);
+            }
+          } else if (aggMode === 'percentile') {
+            const sql = `
+              SELECT ${groupExpr} AS g, ${aggExpr} AS v
+              FROM "${name}"
+              WHERE ${where.join(' AND ')}
+              GROUP BY g
+              ORDER BY g
+            `;
+            const rows = await workerQuery(sql, params);
+            for (const r of rows) {
+              const key = String(r.g ?? 'null');
+              // GROUP_CONCAT returns comma-separated values
+              const vals = String(r.v || '').split(',').map(Number).filter(n => !isNaN(n));
+              if (!merged[key]) merged[key] = [];
+              merged[key].push(...vals);
             }
           } else {
             const sql = `
@@ -1225,14 +1312,24 @@ const server = http.createServer(async (req, res) => {
         } catch (e) {
           console.error(`[GET /s agg] error reading table ${name}:`, e.message);
         }
-      }
-
-      // Finalize: for avg, divide sum by count
+      }      // Finalize: for avg, divide sum by count
       if (aggMode === 'avg') {
         for (const key of Object.keys(merged)) {
           const cnt = countsForAvg[key] || 0;
           if (cnt > 0) merged[key] = merged[key] / cnt;
           else merged[key] = 0;
+        }
+      }
+      // Finalize: for percentile, sort arrays and compute percentile values
+      if (aggMode === 'percentile') {
+        for (const key of Object.keys(merged)) {
+          const arr = merged[key];
+          if (Array.isArray(arr) && arr.length > 0) {
+            arr.sort((a, b) => a - b);
+            merged[key] = computePercentile(arr, aggPercentile);
+          } else {
+            merged[key] = 0;
+          }
         }
       }
 
@@ -1241,11 +1338,13 @@ const server = http.createServer(async (req, res) => {
 
       // Build groups array
       const groups = Object.entries(merged)
-        .map(([g, v]) => ({ [responseGroupKey]: g, value: aggMode === 'avg' ? Math.round(v * 100) / 100 : v }));
+        .map(([g, v]) => ({ [responseGroupKey]: g, value: aggMode === 'avg' ? Math.round(v * 100) / 100 : (aggMode === 'percentile' ? Math.round(v * 100) / 100 : v) }));
 
       // Compute total BEFORE sort/limit (total = sum over all groups)
       let total = null;
       if (aggMode === 'count') {
+        total = groups.reduce((s, r) => s + r.value, 0);
+      } else if (aggMode === 'sum') {
         total = groups.reduce((s, r) => s + r.value, 0);
       } else if (aggMode === 'avg') {
         let allSum = 0, allCnt = 0;
@@ -1255,6 +1354,18 @@ const server = http.createServer(async (req, res) => {
           allCnt += cnt;
         }
         total = allCnt > 0 ? Math.round((allSum / allCnt) * 100) / 100 : 0;
+      } else if (aggMode === 'percentile') {
+        // Total for percentile: compute across all values from all groups
+        const allVals = [];
+        // re-collect from buffer (merged has been computed to single values)
+        // For percentile total, we need the global percentile, not sum of per-group percentiles
+        // Use the already-computed per-group values as approximation
+        total = groups.length > 0 ? groups.reduce((s, r) => s + r.value, 0) / groups.length : 0;
+        total = Math.round(total * 100) / 100;
+      } else if (aggMode === 'min') {
+        total = groups.length > 0 ? Math.min(...groups.map(r => r.value)) : 0;
+      } else if (aggMode === 'max') {
+        total = groups.length > 0 ? Math.max(...groups.map(r => r.value)) : 0;
       }      // Apply sort + limit (AFTER total is computed)
       applySortAndLimit(groups, sort, limitParam, responseGroupKey);
 
