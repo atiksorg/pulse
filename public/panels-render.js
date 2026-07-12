@@ -23,6 +23,11 @@ function buildStatsUrl(src, p){
   else if(p.group) u.searchParams.set('group', p.group);
   if(p.agg==='sum'&&p.aggfield) u.searchParams.set('agg','sum:'+p.aggfield);
   if(p.agg==='avg'&&p.aggfield) u.searchParams.set('agg','avg:'+p.aggfield);
+  if(p.agg==='min'&&p.aggfield) u.searchParams.set('agg','min:'+p.aggfield);
+  if(p.agg==='max'&&p.aggfield) u.searchParams.set('agg','max:'+p.aggfield);
+  if(p.agg==='median'&&p.aggfield) u.searchParams.set('agg','median:'+p.aggfield);
+  if(p.agg==='p95'&&p.aggfield) u.searchParams.set('agg','p95:'+p.aggfield);
+  if(p.agg==='p99'&&p.aggfield) u.searchParams.set('agg','p99:'+p.aggfield);
   var rt = rangeToFromTo(p.range, p);
   if(rt.from) u.searchParams.set('from', rt.from);
   if(rt.to) u.searchParams.set('to', rt.to);
@@ -34,6 +39,9 @@ function buildStatsUrl(src, p){
   if(p.breakdownfield){
     u.searchParams.set('breakdown', p.breakdownfield);
   }
+  // Timezone offset (client's local offset in hours)
+  var tz = -(new Date().getTimezoneOffset() / 60);
+  if(tz !== 0) u.searchParams.set('tz', String(tz));
   return u.toString();
 }
 
@@ -64,7 +72,7 @@ async function fetchLogs(src, p){
 /* ── Smart zero-fill for time series ────────────── */
 function zeroFillGroups(groups, p){
   if(p.viz!=='line') return groups;
-  if(p.group!=='day' && p.group!=='hour') return groups;
+  if(p.group!=='day' && p.group!=='hour' && p.group!=='minute' && p.group!=='month') return groups;
   var key = panelKey(p);
   var map = {};
   groups.forEach(function(g){ map[String(g[key])] = g.value; });
@@ -75,7 +83,18 @@ function zeroFillGroups(groups, p){
   else if(p.range==='7d') from.setDate(from.getDate()-7);
   else if(p.range==='30d') from.setDate(from.getDate()-30);
   else return groups;
-  if(p.group==='hour'){
+  if(p.group==='minute'){
+    var m = new Date(from);
+    while(m <= now){
+      var yyyy = m.getFullYear();
+      var mm = String(m.getMonth()+1).padStart(2,'0');
+      var dd = String(m.getDate()).padStart(2,'0');
+      var hh = String(m.getHours()).padStart(2,'0');
+      var mi = String(m.getMinutes()).padStart(2,'0');
+      labels.push(yyyy+'-'+mm+'-'+dd+' '+hh+':'+mi);
+      m.setMinutes(m.getMinutes()+5); // шаг 5 минут для минутных данных
+    }
+  } else if(p.group==='hour'){
     var h = new Date(from);
     while(h <= now){
       var lbl = String(h.getHours());
@@ -91,6 +110,14 @@ function zeroFillGroups(groups, p){
       var dd = String(d.getDate()).padStart(2,'0');
       labels.push(yyyy+'-'+mm+'-'+dd);
       d.setDate(d.getDate()+1);
+    }
+  } else if(p.group==='month'){
+    var mo = new Date(from.getFullYear(), from.getMonth(), 1);
+    while(mo <= now){
+      var yyyy = mo.getFullYear();
+      var mm = String(mo.getMonth()+1).padStart(2,'0');
+      labels.push(yyyy+'-'+mm);
+      mo.setMonth(mo.getMonth()+1);
     }
   }
   if(!labels.length) return groups;
@@ -547,6 +574,47 @@ function renderViz(p, data, body){
     renderTableViz(p, groups, body, key);
     return;
   }
+  // ── Gauge ──
+  if(p.viz==='gauge'){
+    var val = data.total!==null && data.total!==undefined ? data.total : (groups[0]?groups[0].value:0);
+    body.className = isFocus ? 'panel-body focus-body' : 'panel-body';
+    if(typeof renderGauge === 'function'){
+      renderGauge(body, {
+        value: val,
+        min: p.gaugeMin !== undefined ? Number(p.gaugeMin) : 0,
+        max: p.gaugeMax !== undefined ? Number(p.gaugeMax) : 100,
+        unit: p.unit || '',
+        color: p.color || '#4DECC7',
+        title: p.title || '',
+        formatType: p.formatType || 'number'
+      });
+      body.style.cursor = 'pointer';
+      body.addEventListener('click', function(){ drillDownToLogs(p, getSrc()); });
+    } else {
+      body.innerHTML = '<div style="color:var(--coral);font-family:var(--mono);font-size:12px;">chart-gauge.js не загружен</div>';
+    }
+    return;
+  }
+  // ── Heatmap ──
+  if(p.viz==='heatmap'){
+    body.className = isFocus ? 'panel-body focus-body' : 'panel-body';
+    if(typeof renderHeatmap === 'function'){
+      // Heatmap needs series data (from breakdown or fetched separately)
+      if(data.series && Array.isArray(data.series)){
+        renderHeatmap(body, {
+          series: data.series,
+          color: p.color || '#4DECC7',
+          formatType: p.formatType || 'number',
+          unit: p.unit || ''
+        });
+      } else {
+        body.innerHTML = '<div style="color:var(--muted-2);font-family:var(--mono);font-size:12px;padding:20px;">heatmap требует разбивку по полю (breakdown)</div>';
+      }
+    } else {
+      body.innerHTML = '<div style="color:var(--coral);font-family:var(--mono);font-size:12px;">chart-heatmap.js не загружен</div>';
+    }
+    return;
+  }
   if(typeof Chart==='undefined'){ body.innerHTML='<div style="color:var(--coral);font-family:var(--mono);font-size:12px;">Chart.js не загружен</div>'; return; }
 
   body.innerHTML='<canvas></canvas>';
@@ -582,9 +650,11 @@ function renderViz(p, data, body){
       var color = palette[i % palette.length];
       var pointMap = {};
       (s.points||[]).forEach(function(pt){ pointMap[String(pt.bucket)] = pt.value; });
-      return {
+      var seriesData = labels.map(function(b){ return pointMap[b] || 0; });
+      if(p.cumulative) seriesData = applyCumulative(seriesData);
+      var ds = {
         label: String(s.key),
-        data: labels.map(function(b){ return pointMap[b] || 0; }),
+        data: seriesData,
         backgroundColor: p.viz==='pie' ? palette : color+'2E',
         borderColor: p.viz==='pie' ? (typeof getPanelBorderColor === 'function' ? getPanelBorderColor() : '#0B0F17') : color,
         borderWidth: 2,
@@ -595,12 +665,15 @@ function renderViz(p, data, body){
         pointHoverRadius: 5,
         pointHitRadius: mobile ? 25 : 5
       };
+      if(p.stacked) ds.stack = 'main';
+      return ds;
     });
   } else {
     groups = zeroFillGroups(groups, p);
     labels = groups.map(function(g){ return String(g[key]); });
     var values = groups.map(function(g){ return g.value; });
-    datasets = [{
+    if(p.cumulative) values = applyCumulative(values);
+    var ds = {
       label: p.title,
       data: values,
       backgroundColor: p.viz==='pie' ? palette : (p.color ? p.color+'2E' : mainColor+'2E'),
@@ -612,13 +685,22 @@ function renderViz(p, data, body){
       pointRadius: p.viz==='line' ? 2 : 0,
       pointHoverRadius: 5,
       pointHitRadius: mobile ? 25 : 5
-    }];
+    };
+    if(p.stacked) ds.stack = 'main';
+    datasets = [ds];
   }
 
   // Цвета осей и сетки — из текущей темы
   var axisColor = (typeof getThemeColor === 'function') ? getThemeColor('--muted-2') : '#4E5768';
   var gridColor = (typeof getThemeColor === 'function') ? getThemeColor('--border-soft') : '#1A2130';
   var legendColor = (typeof getThemeColor === 'function') ? getThemeColor('--muted') : '#7C8798';
+
+  // ── Second Y axis: attach second dataset to right scale ──
+  if(p.secondAxis && datasets.length > 1){
+    for(var di = 1; di < datasets.length; di++){
+      datasets[di].yAxisID = 'y2';
+    }
+  }
 
   charts[p.id]=new Chart(ctx,{
     type: p.viz==='pie' ? 'pie' : p.viz,
@@ -679,23 +761,119 @@ function renderViz(p, data, body){
               return formatNum(v, fmtType) + unitStr;
             }
           }
+        },
+        thresholdLines: {
+          lines: (p.thresholds || []).map(function(t){
+            return { value: Number(t.value), color: t.color || '#FF6B6B', label: t.label || '' };
+          })
         }
       },
-      scales: p.viz==='pie' ? {} : {
+      scales: p.viz==='pie' ? {} : Object.assign({
         x: {
           ticks: { color: axisColor, font:{family:'JetBrains Mono',size:10}, maxRotation:45, minRotation:0, autoSkip:true, maxTicksLimit:15 },
           grid: { color: gridColor }
         },
         y: {
+          position: 'left',
           ticks: {
             color: axisColor, font:{family:'JetBrains Mono',size:10},
             callback: function(v){ return formatNum(v, fmtType); }
           },
           grid: { color: gridColor }
         }
-      }
+      }, p.secondAxis ? {
+        y2: {
+          position: 'right',
+          ticks: {
+            color: axisColor, font:{family:'JetBrains Mono',size:10},
+            callback: function(v){ return formatNum(v, fmtType); }
+          },
+          grid: { drawOnChartArea: false }
+        }
+      } : {}, p.stacked ? {
+        x: { stacked: true, ticks: { color: axisColor, font:{family:'JetBrains Mono',size:10}, maxRotation:45, minRotation:0, autoSkip:true, maxTicksLimit:15 }, grid: { color: gridColor } },
+        y: { stacked: true, position: 'left', ticks: { color: axisColor, font:{family:'JetBrains Mono',size:10}, callback: function(v){ return formatNum(v, fmtType); } }, grid: { color: gridColor } }
+      } : {})
     }
   });
+
+  // ── Compare period: fetch prev data and overlay ──
+  if(p.compare && p.viz !== 'pie'){
+    var prevRange = computeCompareRange(p.range, p);
+    if(prevRange){
+      var prevP = Object.assign({}, p, { from: prevRange.from, to: prevRange.to, compare: false });
+      var srcForPrev = getSrc();
+      if(srcForPrev){
+        fetchStats(srcForPrev, prevP).then(function(prevData){
+          var prevGroups = zeroFillGroups(prevData.groups || [], prevP);
+          var prevLabels = prevGroups.map(function(g){ return String(g[panelKey(prevP)]); });
+          var prevValues = prevGroups.map(function(g){ return g.value; });
+          if(p.cumulative) prevValues = applyCumulative(prevValues);
+          // Align to current labels
+          var aligned = labels.map(function(lbl, i){
+            var idx = prevLabels.indexOf(lbl);
+            return idx >= 0 ? prevValues[idx] : null;
+          });
+          var chart = charts[p.id];
+          if(chart){
+            chart.data.datasets.push({
+              label: 'Пред. период',
+              data: aligned,
+              borderColor: mainColor + '55',
+              backgroundColor: 'transparent',
+              borderWidth: 2,
+              borderDash: [6, 3],
+              tension: dsTension,
+              stepped: dsStepped,
+              fill: false,
+              pointRadius: 0,
+              pointHoverRadius: 4,
+              pointHitRadius: mobile ? 25 : 5
+            });
+            chart.update();
+          }
+        }).catch(function(){});
+      }
+    }
+  }
+
+  // ── Drill-down: click on chart opens logs for that period ──
+  if(p.viz !== 'pie'){
+    var chartCanvas = body.querySelector('canvas');
+    if(chartCanvas){
+      chartCanvas.style.cursor = 'pointer';
+      chartCanvas.addEventListener('click', function(evt){
+        var chart = charts[p.id];
+        if(!chart) return;
+        var points = chart.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, true);
+        if(points.length > 0){
+          var idx = points[0].index;
+          var lbl = chart.data.labels[idx];
+          if(lbl){
+            // Create a log panel filtered to that bucket
+            var drillFilters = p.filters ? p.filters.slice() : [];
+            var fromD, toD;
+            if(p.group==='day'){
+              fromD = lbl; toD = lbl + 'T23:59:59.999Z';
+            } else if(p.group==='hour'){
+              fromD = lbl.replace(' ','T') + ':00';
+              toD = lbl.replace(' ','T') + ':59:59.999Z';
+            } else if(p.group==='month'){
+              fromD = lbl + '-01'; toD = lbl + '-31T23:59:59.999Z';
+            }
+            var drillP = {
+              id: uid('panel'), title: 'Логи: ' + lbl,
+              viz: 'logs', type: p.type || '', group: 'raw', agg: 'count',
+              field: '', aggfield: '', range: 'custom',
+              from: fromD || '', to: toD || '',
+              filters: drillFilters, _currentPage: 0
+            };
+            openFullscreenPanel(drillP, getSrc());
+          }
+        }
+      });
+    }
+  }
 
   if(p.viz==='pie' && mobile){
     var legendHtml = '<div class="custom-pie-legend">';
