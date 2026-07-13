@@ -67,103 +67,224 @@ function arrangeAndFitCanvas(){
   toast('Графики выстроены');
 }
 
-/* ── Auto-layout: красивая сетка по типу визуализации ──
- *  - KPI:  4 в ряд  (≈420px × 200px)
- *  - Charts (line/bar/pie): 3 в ряд  (≈420px × 280px)
- *  - Table/Logs: на всю ширину
+/* ── Smooth layout animation: плавное перемещение карточек ── */
+function applyLayoutTransitions(cards, panels, duration){
+  if(!cards || !panels) return;
+  duration = duration || 400;
+  cards.forEach(function(card, i){
+    var p = panels[i];
+    if(!card || !p) return;
+    card.style.transition = 'left ' + duration + 'ms cubic-bezier(0.25,0.46,0.45,0.94),'
+      + 'top ' + duration + 'ms cubic-bezier(0.25,0.46,0.45,0.94),'
+      + 'width ' + duration + 'ms cubic-bezier(0.25,0.46,0.45,0.94),'
+      + 'height ' + duration + 'ms cubic-bezier(0.25,0.46,0.45,0.94)';
+  });
+}
+function removeLayoutTransitions(cards){
+  if(!cards) return;
+  cards.forEach(function(card){
+    if(card) card.style.transition = '';
+  });
+}
+
+/* ── Auto-layout v2: адаптивная сетка с коллизиями ──
+ *  • Адаптивное число колонок по ширине экрана
+ *  • Учёт заблокированных панелей (коллизии)
+ *  • Умное растяжение последнего элемента в строке
+ *  • Минимальные размеры для каждого типа
  * ─────────────────────────────────────────────────── */
 function autoLayoutCanvas(panels){
   var gap = 16;
-  var startX = 20;
-  var mw = ($('#panelGrid').clientWidth || 1100) - 40;
-  var y = startY = 20;
+  var padX = 20;
+  // Используем viewportWidth если canvas создан, иначе clientWidth, иначе разумный дефолт
+  var gridEl = $('#panelGrid');
+  var mw = 1100;
+  if(interactiveCanvas && interactiveCanvas.viewport){
+    mw = interactiveCanvas.viewport.clientWidth || 1100;
+  } else if(gridEl) {
+    mw = gridEl.clientWidth || 1100;
+  }
+  mw = Math.max(mw - padX * 2, 400);
 
-  // Закреплённые панели не трогаем
-  var free = panels.filter(function(p){ return !p.locked; });
+  // ── Минимальные / предпочтительные размеры ──
+  var MIN_W = 220, MIN_H = 160;
+  var SIZE_MAP = {
+    kpi:     { prefW: 260, prefH: 180, minW: 200, minH: 150 },
+    gauge:   { prefW: 260, prefH: 200, minW: 200, minH: 160 },
+    line:    { prefW: 380, prefH: 280, minW: 260, minH: 200 },
+    bar:     { prefW: 380, prefH: 280, minW: 260, minH: 200 },
+    pie:     { prefW: 320, prefH: 280, minW: 240, minH: 220 },
+    heatmap: { prefW: 480, prefH: 320, minW: 360, minH: 260 },
+    table:   { prefW: mw,  prefH: 380, minW: 320, minH: 240 },
+    logs:    { prefW: mw,  prefH: 420, minW: 320, minH: 280 }
+  };
 
-  // ── Группируем свободные панели по трем секциям ──
-  var kpis = [], charts2 = [], fulls = [];
-  for(var i=0; i<free.length; i++){
-    var p = free[i];
+  function getSize(viz){
+    return SIZE_MAP[viz] || SIZE_MAP.line;
+  }
+
+  // ── Разделяем на locked и free ──
+  var locked = panels.filter(function(p){ return !!p.locked; });
+  var free   = panels.filter(function(p){ return !p.locked; });
+
+  // ── Заполняем cw/ch если не заданы ──
+  panels.forEach(function(p){
+    var sz = getSize(p.viz);
+    if(!p.cw || p.cw < sz.minW) p.cw = sz.prefW;
+    if(!p.ch || p.ch < sz.minH) p.ch = sz.prefH;
+    if(p.cw < sz.minW) p.cw = sz.minW;
+    if(p.ch < sz.minH) p.ch = sz.minH;
+  });
+
+  // ── Категории свободных панелей ──
+  var kpis = [], charts = [], fulls = [];
+  free.forEach(function(p){
     var v = p.viz;
     if(v === 'kpi' || v === 'gauge') kpis.push(p);
     else if(v === 'table' || v === 'logs') fulls.push(p);
-    else charts2.push(p);  // line, bar, pie, heatmap
+    else charts.push(p);
+  });
+
+  // ── Bounding box для коллизий с locked ──
+  function getLockedRects(){
+    return locked.map(function(p){
+      return { x: p.cx||0, y: p.cy||0, w: p.cw||300, h: p.ch||200 };
+    });
   }
 
-  var y = 20;
-
-  // ── Вспомогательная: расставить ряд карточек ──
-  function layRow(items, cols, cw, rh){
-    var x = startX;
-    for(var i=0; i<items.length; i++){
-      var p = items[i];
-      p.cx = x; p.cy = y;
-      p.cw = p.cw || cw; p.ch = p.ch || rh;
-      x += (p.cw || cw) + gap;
-      // Заполнили строку?
-      if((i+1) % cols === 0){
-        y += (p.ch || rh) + gap;
-        x = startX;
+  function collidesWithAny(rx, ry, rw, rh, rects){
+    for(var i=0; i<rects.length; i++){
+      var r = rects[i];
+      if(rx < r.x + r.w && rx + rw > r.x && ry < r.y + r.h && ry + rh > r.y){
+        return true;
       }
     }
-    // Остаток: последняя неполная строка
-    if(items.length % cols !== 0) y += (items[items.length-1].ch || rh) + gap;
+    return false;
   }
 
-  // ── Вспомогательная: расставить с растяжением последнего ──
-  function layRowStretch(items, cols, cw, rh){
-    var x = startX;
-    var rowStart = 0;
-    for(var i=0; i<=items.length; i++){
-      // Конец строки: последний элемент или заполнили строку
-      var isEnd = (i === items.length) || ((i - rowStart) === cols);
-      if(!isEnd) continue;
-
-      // Позиционируем элементы текущей строки
-      var used = 0;
-      for(var j=rowStart; j<i; j++){
-        var p = items[j];
-        p.cx = startX + used; p.cy = y;
-        p.cw = p.cw || cw; p.ch = p.ch || rh;
-        used += (p.cw || cw) + gap;
+  // Найти Y ниже всех locked-панелей в данном X-диапазоне
+  function findClearY(x, w, rects, startY){
+    var y = startY;
+    // Итеративно проверяем коллизии и сдвигаем вниз
+    for(var iter=0; iter<20; iter++){
+      var blocked = false;
+      for(var i=0; i<rects.length; i++){
+        var r = rects[i];
+        // Проверяем горизонтальное пересечение
+        if(x < r.x + r.w && x + w > r.x){
+          if(y < r.y + r.h && y + 200 > r.y){
+            y = r.y + r.h + gap;
+            blocked = true;
+            break;
+          }
+        }
       }
-      // Растягиваем последний карточку в ряду, чтобы заполнить пустое место
-      var last = items[i-1];
-      if(last){
-        var leftover = mw - used + (last.cw || cw);
-        if(leftover > (last.cw || cw) + 40) last.cw = leftover;
-      }
-
-      y += (items[i-1].ch || rh) + gap;
-      rowStart = i;
-      // Сбрасываем счётчик для случая items.length > cols
-      if(i < items.length) i--; // переобработаем этот элемент как начало строки
+      if(!blocked) break;
     }
+    return y;
   }
 
-  // ── 1) KPI: большие карточки по 4 в ряд ──
+  // ── Адаптивные колонки ──
+  function calcCols(items, preferredCols, cellW){
+    if(!items.length) return preferredCols;
+    var maxW = mw;
+    // Пробуем от preferredCols до 1
+    for(var cols = preferredCols; cols >= 1; cols--){
+      var rowWidth = cols * cellW + (cols - 1) * gap;
+      if(rowWidth <= maxW + 20) return cols;  // +20 — допуск на растяжение
+    }
+    return 1;
+  }
+
+  // ── Умная расстановка строк ──
+  var curY = padX;  // начинаем сверху с отступом
+  var lockedRects = getLockedRects();
+
+  // 1) KPI / Gauge
   if(kpis.length){
-    var kpiW = 360, kpiH = 200;
-    layRowStretch(kpis, 4, kpiW, kpiH);
+    var kpiCells = kpis.map(function(p){
+      var sz = getSize(p.viz);
+      return { w: Math.min(sz.prefW, mw), h: sz.prefH };
+    });
+    var kpiAvgW = kpiCells.reduce(function(s,c){ return s+c.w; }, 0) / kpiCells.length;
+    var kpiCols = calcCols(kpis, 4, kpiAvgW);
+    var kpiCellW = Math.floor((mw - (kpiCols-1)*gap) / kpiCols);
+
+    var rowIdx = 0;
+    kpis.forEach(function(p){
+      var col = rowIdx % kpiCols;
+      var row = Math.floor(rowIdx / kpiCols);
+      var x = padX + col * (kpiCellW + gap);
+      var y = curY + row * (p.ch + gap);
+      y = findClearY(x, kpiCellW, lockedRects, y);
+      p.cx = x;
+      p.cy = y;
+      p.cw = kpiCellW;
+      rowIdx++;
+    });
+    // Вычисляем высоту занятую KPI
+    var kpiRows = Math.ceil(kpis.length / kpiCols);
+    var lastKpiH = kpis.length ? kpis[kpis.length-1].ch : 0;
+    curY += kpiRows * (lastKpiH + gap);
   }
 
-  // ── 2) Charts: по 3 в ряд ──
-  if(charts2.length){
-    var chW = 420, chH = 300;
-    layRowStretch(charts2, 3, chW, chH);
-  }
+  // 2) Charts (line, bar, pie, heatmap)
+  if(charts.length){
+    var chartCells = charts.map(function(p){
+      var sz = getSize(p.viz);
+      return { w: Math.min(sz.prefW, mw), h: sz.prefH };
+    });
+    var chartAvgW = chartCells.reduce(function(s,c){ return s+c.w; }, 0) / chartCells.length;
+    var chartCols = calcCols(charts, 3, chartAvgW);
+    var chartCellW = Math.floor((mw - (chartCols-1)*gap) / chartCols);
 
-  // ── 3) Table / Logs: на всю ширину ──
-  if(fulls.length){
-    for(var i=0; i<fulls.length; i++){
-      var p = fulls[i];
-      var pr = getVizPreset(p.viz);
-      p.cx = startX; p.cy = y;
-      p.cw = mw; p.ch = p.ch || pr.ch;
-      y += (p.ch) + gap;
+    // Разбиваем на строки и растягиваем последний элемент
+    var rowStart = 0;
+    while(rowStart < charts.length){
+      var rowEnd = Math.min(rowStart + chartCols, charts.length);
+      var rowItems = charts.slice(rowStart, rowEnd);
+
+      // Определяем максимальную высоту в строке
+      var maxRowH = 0;
+      rowItems.forEach(function(p){ if(p.ch > maxRowH) maxRowH = p.ch; });
+
+      // Вычисляем X для каждого элемента
+      var xCursor = padX;
+      rowItems.forEach(function(p, idx){
+        // Растягиваем последний элемент если он один в строке или есть место
+        var cellW = chartCellW;
+        if(idx === rowItems.length - 1 && rowItems.length < chartCols){
+          // Последний элемент в неполной строке — растягиваем
+          cellW = mw - xCursor + padX;
+          cellW = Math.max(cellW, p.cw);
+        }
+
+        var y = findClearY(xCursor, cellW, lockedRects, curY);
+        p.cx = xCursor;
+        p.cy = y;
+        p.cw = cellW;
+        p.ch = maxRowH;  // выравниваем высоту в строке
+        xCursor += cellW + gap;
+      });
+
+      curY += maxRowH + gap;
+      rowStart = rowEnd;
     }
   }
+
+  // 3) Table / Logs — на всю ширину, каждый на отдельной полосе
+  fulls.forEach(function(p){
+    var pr = getVizPreset(p.viz);
+    var y = findClearY(padX, mw, lockedRects, curY);
+    p.cx = padX;
+    p.cy = y;
+    p.cw = mw;
+    p.ch = p.ch || pr.ch;
+    curY += p.ch + gap;
+  });
+
+  // ── Обновляем lockedRects после расстановки free ──
+  // (не нужно — locked не двигаем, а free не перекрываем)
 }
 
 /* ── Find max cz among all panels in dashboard ───── */
