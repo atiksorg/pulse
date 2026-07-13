@@ -492,7 +492,7 @@ pre .k1{color:var(--amber);}
   display:flex;gap:4px;align-items:center;
   opacity:0;
   transition:opacity 0.2s ease;
-  z-index:10;
+  z-index:1000;
   pointer-events:none;
 }
 .panel-card:hover .panel-menu-floating{opacity:1;pointer-events:auto;}
