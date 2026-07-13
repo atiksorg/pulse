@@ -1664,8 +1664,49 @@ const server = http.createServer(async (req, res) => {
         auth.json(res, 500, { error: 'internal', message: msg });
       }
       return;
+      return;
     }
 
+    // POST /ai/optimize-panel (auth) — AI-оптимизация существующей панели
+    if (url.pathname === '/ai/optimize-panel' && req.method === 'POST') {
+      const token = auth.extractToken(req);
+      const session = auth.resolveSession(db, token);
+      if (!session) return auth.json(res, 401, { error: 'unauthorized' });
+
+      // Rate-limit per src (тот же пул что и suggest-panel)
+      const rl = ai.checkRateLimit(session.src);
+      if (!rl.ok) {
+        res.setHeader('Retry-After', String(rl.remainSec || 60));
+        return auth.json(res, 429, { error: 'rate_limited', remainSec: rl.remainSec });
+      }
+
+      let body;
+      try { body = await auth.readJsonBody(req); }
+      catch (_) { return auth.json(res, 400, { error: 'invalid json' }); }
+
+      const config = body && typeof body.config === 'object' ? body.config : null;
+      if (!config) return auth.json(res, 400, { error: 'missing_config' });
+
+      const dataSample = body && typeof body.dataSample === 'object' ? body.dataSample : null;
+
+      // Собираем существующие типы событий НА СЕРВЕРЕ
+      const existingTypes = ai.collectExistingTypes(db, session.src);
+
+      try {
+        const result = await ai.optimizePanel(config, dataSample, existingTypes);
+        auth.json(res, 200, result);
+      } catch (e) {
+        const code = (e && e.code) ? e.code : 'unknown';
+        const msg = (e && e.message) ? e.message : 'unknown';
+        if (msg.startsWith('ai_') || msg === 'timeout' || msg === 'fetch_failed') {
+          return auth.json(res, 502, { error: 'ai_invalid_response', code, message: msg });
+        }
+        auth.json(res, 500, { error: 'internal', message: msg });
+      }
+      return;
+    }
+
+    // GET /public/:share_id (без auth) — read-only конфиг дашборда
     // GET /public/:share_id (без auth) — read-only конфиг дашборда
     if (url.pathname.startsWith('/public/') && req.method === 'GET') {
       const sid = url.pathname.slice('/public/'.length);
