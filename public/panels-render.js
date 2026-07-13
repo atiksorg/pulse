@@ -324,6 +324,8 @@ function renderPanels(readonlyData){
 async function loadPanel(p, src){
   var body = document.getElementById('body-'+p.id);
   if(!body) return;
+  // Если AI-оптимизация в процессе — не перезаписываем содержимое панели
+  if(panelAiActive[p.id]) return;
   showSkeleton(body);
   try{
     if(p.viz==='logs'){ var d=await fetchLogs(src,p); hideSkeleton(body); renderLogs(p,d,body); }
