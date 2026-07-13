@@ -28,6 +28,7 @@ var AppState = {
 /* ── Shared mutable state (UI-only) ───────────────── */
 var charts = {};
 var refreshTimers = {};
+var panelAiActive = {};       // { panelId: true } — AI-оптимизация в процессе, не обновлять
 var editingPanelId = null;
 var canvasMode = true;
 var demoPulseTimer = null;
