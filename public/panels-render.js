@@ -281,7 +281,16 @@ function renderPanels(readonlyData){
         e.stopPropagation();
         var isOpen = menuDropdown.classList.contains('show');
         document.querySelectorAll('.panel-menu-dropdown.show').forEach(function(d){ d.classList.remove('show'); });
-        if(!isOpen) menuDropdown.classList.add('show');
+        if(!isOpen){
+          menuDropdown.classList.add('show');
+          // Поднимаем карточку наверх, чтобы dropdown гарантированно был
+          // поверх всех соседних панелей (stacking context)
+          if(canvasMode){
+            canvasZCounter = canvasZCounter >= CANVAS_Z_MAX ? CANVAS_Z_MIN : canvasZCounter + 1;
+            card.style.zIndex = canvasZCounter;
+            p.cz = canvasZCounter;
+          }
+        }
       };
     }
     if(!isShared){
