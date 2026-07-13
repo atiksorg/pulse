@@ -165,6 +165,8 @@
     // Средняя кнопка мыши (колесико) — всегда пан
     if (e.button === 1) {
       e.preventDefault();
+      // Предотвращаем автоскролл браузера при middle-click
+      if (e.stopPropagation) e.stopPropagation();
       this._startPan(e.clientX, e.clientY);
       return;
     }
@@ -175,6 +177,44 @@
       this._startPan(e.clientX, e.clientY);
       return;
     }
+
+    // Левая кнопка без Space — панорамирование на пустом пространстве
+    // (если клик НЕ по заголовку панели и НЕ по интерактивному элементу)
+    if (e.button === 0 && !this._spaceDown) {
+      var target = e.target;
+      // Проверяем, что клик не по заголовку панели или интерактивному элементу
+      if (!this._isOverPanelHead(target) && !this._isOverInteractiveElement(target)) {
+        e.preventDefault();
+        this._startPan(e.clientX, e.clientY);
+        return;
+      }
+    }
+  };
+
+  InteractiveCanvas.prototype._isOverPanelHead = function(el) {
+    var node = el;
+    while (node && node !== this.viewport) {
+      if (node.nodeType !== 1) { node = node.parentNode; continue; }
+      if (node.classList && node.classList.contains('panel-head')) return true;
+      node = node.parentNode;
+    }
+    return false;
+  };
+
+  InteractiveCanvas.prototype._isOverInteractiveElement = function(el) {
+    var node = el;
+    while (node && node !== this.viewport) {
+      if (node.nodeType !== 1) { node = node.parentNode; continue; }
+      var tag = node.tagName;
+      // Проверяем интерактивные элементы
+      if (tag === 'BUTTON' || tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || tag === 'A') return true;
+      if (node.classList && (node.classList.contains('panel-menu-item') || 
+          node.classList.contains('pmbtn') || 
+          node.classList.contains('panel-code-toggle') ||
+          node.classList.contains('canvas-resize-handle'))) return true;
+      node = node.parentNode;
+    }
+    return false;
   };
 
   InteractiveCanvas.prototype._startPan = function(clientX, clientY) {
@@ -191,6 +231,14 @@
   InteractiveCanvas.prototype._onMouseMove = function(e) {
     if (!this.isPanning || !this._panState) return;
 
+    // Dead zone: не начинаем движение пока не пройдём порог
+    if (!this._panState._started) {
+      var dx = e.clientX - this._panState.startX;
+      var dy = e.clientY - this._panState.startY;
+      if (Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
+      this._panState._started = true;
+    }
+
     var dx = e.clientX - this._panState.startX;
     var dy = e.clientY - this._panState.startY;
 
@@ -202,6 +250,14 @@
 
   InteractiveCanvas.prototype._onMouseUp = function(e) {
     if (this.isPanning) {
+      // Предотвращаем middle-click auto-scroll при завершении
+      if (e.button === 1) {
+        e.preventDefault();
+        // Принудительно снимаем фокус с body, чтобы остановить автоскролл
+        if (document.activeElement) {
+          try { document.activeElement.blur(); } catch(_) {}
+        }
+      }
       this.isPanning = false;
       this._panState = null;
       this.viewport.classList.remove('ic-panning');
