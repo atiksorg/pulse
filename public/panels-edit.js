@@ -754,8 +754,8 @@ async function optimizePanelWithAI(p, src){
     }
 
     if(data.status === 'optimized' && data.panel){
-      // Восстанавливаем оригинал перед показом модалки
-      if(body) body.innerHTML = origContent;
+      // НЕ восстанавливаем содержимое панели — оставляем спиннер
+      // пока пользователь не примет решение в модалке
 
       // Показываем модалку с предложением
       var reason = data.reason || 'AI предлагает изменения';
@@ -792,28 +792,37 @@ async function optimizePanelWithAI(p, src){
       overlay.appendChild(box);
       document.body.appendChild(overlay);
 
-      function closeOverlay(){ overlay.remove(); }
+      // closeOverlay восстанавливает содержимое панели
+      function closeOverlay(){
+        overlay.remove();
+        if(body) body.innerHTML = origContent;
+      }
 
       box.querySelector('#aiOptCancel').onclick = closeOverlay;
       overlay.addEventListener('click', function(e){ if(e.target === overlay) closeOverlay(); });
 
       box.querySelector('#aiOptApply').onclick = async function(){
+        overlay.remove();
         var db = getActiveDashboard();
-        if(!db){ closeOverlay(); return; }
+        if(!db){ if(body) body.innerHTML = origContent; return; }
         var pp = db.panels.find(function(x){ return x.id === p.id; });
-        if(!pp){ closeOverlay(); return; }
+        if(!pp){ if(body) body.innerHTML = origContent; return; }
         Object.assign(pp, newPanel);
         try {
           await updateDashboardOnServer(db);
           _saveCanvasViewport();
           renderPanels();
           toast('✨ Панель оптимизирована AI');
-        } catch(err){ toast('Ошибка сохранения: '+err.message); }
-        closeOverlay();
+        } catch(err){
+          toast('Ошибка сохранения: '+err.message);
+          if(body) body.innerHTML = origContent;
+        }
       };
 
       box.querySelector('#aiOptEdit').onclick = function(){
-        closeOverlay();
+        overlay.remove();
+        // Восстанавливаем содержимое панели перед открытием редактора
+        if(body) body.innerHTML = origContent;
         editingPanelId = p.id;
         $('#modalTitle').textContent = 'Оптимизация (AI)';
         $('#tplGrid').innerHTML = '';
