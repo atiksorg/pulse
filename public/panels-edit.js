@@ -720,6 +720,8 @@ async function optimizePanelWithAI(p, src){
   // Показываем спиннер в body панели
   var body = document.getElementById('body-' + p.id);
   var origContent = body ? body.innerHTML : '';
+  // Блокируем auto-refresh для этой панели, пока AI думает
+  panelAiActive[p.id] = true;
   if(body){
     body.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:20px;color:var(--muted-2);font-family:var(--mono);font-size:12px;"><span class="qs-spinner"></span> AI анализирует график…</div>';
   }
@@ -731,16 +733,18 @@ async function optimizePanelWithAI(p, src){
       body: JSON.stringify({ config: config, dataSample: dataSample })
     });
 
-    if(r.status === 401){ clearSession(); toast('Сессия истекла'); if(body) body.innerHTML = origContent; return; }
+    if(r.status === 401){ clearSession(); toast('Сессия истекла'); delete panelAiActive[p.id]; if(body) body.innerHTML = origContent; return; }
     if(r.status === 429){
       var d = await r.json().catch(function(){ return {}; });
       toast('Слишком много запросов. Подождите '+(d.remainSec||60)+' сек.');
+      delete panelAiActive[p.id];
       if(body) body.innerHTML = origContent;
       return;
     }
     if(!r.ok){
       var e = await r.json().catch(function(){ return {error:'HTTP '+r.status}; });
       toast('Ошибка AI: '+(e.error||e.message||r.status));
+      delete panelAiActive[p.id];
       if(body) body.innerHTML = origContent;
       return;
     }
@@ -749,6 +753,7 @@ async function optimizePanelWithAI(p, src){
 
     if(data.status === 'ok'){
       toast('👌 График оптимален: '+(data.reason || 'изменения не требуются'));
+      delete panelAiActive[p.id];
       if(body) body.innerHTML = origContent;
       return;
     }
@@ -795,6 +800,7 @@ async function optimizePanelWithAI(p, src){
       // closeOverlay восстанавливает содержимое панели
       function closeOverlay(){
         overlay.remove();
+        delete panelAiActive[p.id];
         if(body) body.innerHTML = origContent;
       }
 
@@ -803,6 +809,7 @@ async function optimizePanelWithAI(p, src){
 
       box.querySelector('#aiOptApply').onclick = async function(){
         overlay.remove();
+        delete panelAiActive[p.id];
         var db = getActiveDashboard();
         if(!db){ if(body) body.innerHTML = origContent; return; }
         var pp = db.panels.find(function(x){ return x.id === p.id; });
@@ -821,6 +828,7 @@ async function optimizePanelWithAI(p, src){
 
       box.querySelector('#aiOptEdit').onclick = function(){
         overlay.remove();
+        delete panelAiActive[p.id];
         // Восстанавливаем содержимое панели перед открытием редактора
         if(body) body.innerHTML = origContent;
         editingPanelId = p.id;
@@ -836,10 +844,12 @@ async function optimizePanelWithAI(p, src){
     }
 
     toast('AI вернул неожиданный ответ');
+    delete panelAiActive[p.id];
     if(body) body.innerHTML = origContent;
 
   } catch(err){
     toast('Ошибка: '+err.message);
+    delete panelAiActive[p.id];
     if(body) body.innerHTML = origContent;
   }
 }
