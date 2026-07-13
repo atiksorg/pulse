@@ -64,6 +64,7 @@ function bindPanelMenuActions(card, p, src){
   card.querySelector('[data-act="smooth"]') && (card.querySelector('[data-act="smooth"]').onclick=function(){ toggleSmoothing(p); });
   card.querySelector('[data-act="duplicate"]') && (card.querySelector('[data-act="duplicate"]').onclick=async function(){ duplicatePanel(p); });
   card.querySelector('[data-act="example"]') && (card.querySelector('[data-act="example"]').onclick=function(){ showExampleToast(p, src); });
+  card.querySelector('[data-act="ai-optimize"]') && (card.querySelector('[data-act="ai-optimize"]').onclick=function(){ optimizePanelWithAI(p, src); });
 }
 
 /* ── Toggle panel lock (pin) — in-place, no full re-render ── */
@@ -682,6 +683,157 @@ function _renderShareLocal(content, db){
 }
 
 $('#btnCloseShare') && ($('#btnCloseShare').onclick=function(){$('#shareModal').classList.remove('active');});
+
+/* ── AI Optimize: оптимизация существующей панели ── */
+async function optimizePanelWithAI(p, src){
+  var sess = getSession();
+  if(!sess){ toast('Войдите в кабинет — AI работает только для авторизованных'); return; }
+
+  // Собираем данные с текущего графика
+  var chart = charts[p.id];
+  var dataSample = { labels:[], values:[], totalPoints:0 };
+  if(chart && chart.data){
+    dataSample.labels = (chart.data.labels || []).slice(0, 20);
+    var ds0 = chart.data.datasets[0];
+    dataSample.values = ds0 ? (ds0.data || []).slice(0, 20) : [];
+    dataSample.totalPoints = (chart.data.labels || []).length;
+  }
+
+  // Текущий конфиг (только стандартные поля)
+  var config = {
+    viz: p.viz || '',
+    type: p.type || '',
+    group: p.group || '',
+    field: p.field || '',
+    agg: p.agg || 'count',
+    aggfield: p.aggfield || '',
+    range: p.range || '7d',
+    width: p.width || 6,
+    sort: p.sort || 'key',
+    limit: p.limit || null,
+    filters: p.filters || []
+  };
+
+  // Закрываем dropdown menu
+  document.querySelectorAll('.panel-menu-dropdown.show').forEach(function(d){ d.classList.remove('show'); });
+
+  // Показываем спиннер в body панели
+  var body = document.getElementById('body-' + p.id);
+  var origContent = body ? body.innerHTML : '';
+  if(body){
+    body.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:20px;color:var(--muted-2);font-family:var(--mono);font-size:12px;"><span class="qs-spinner"></span> AI анализирует график…</div>';
+  }
+
+  try{
+    var r = await fetch(API + '/ai/optimize-panel', {
+      method:'POST',
+      headers: Object.assign({'Content-Type':'application/json'}, authHeaders()),
+      body: JSON.stringify({ config: config, dataSample: dataSample })
+    });
+
+    if(r.status === 401){ clearSession(); toast('Сессия истекла'); if(body) body.innerHTML = origContent; return; }
+    if(r.status === 429){
+      var d = await r.json().catch(function(){ return {}; });
+      toast('Слишком много запросов. Подождите '+(d.remainSec||60)+' сек.');
+      if(body) body.innerHTML = origContent;
+      return;
+    }
+    if(!r.ok){
+      var e = await r.json().catch(function(){ return {error:'HTTP '+r.status}; });
+      toast('Ошибка AI: '+(e.error||e.message||r.status));
+      if(body) body.innerHTML = origContent;
+      return;
+    }
+
+    var data = await r.json();
+
+    if(data.status === 'ok'){
+      toast('👌 График оптимален: '+(data.reason || 'изменения не требуются'));
+      if(body) body.innerHTML = origContent;
+      return;
+    }
+
+    if(data.status === 'optimized' && data.panel){
+      // Восстанавливаем оригинал перед показом модалки
+      if(body) body.innerHTML = origContent;
+
+      // Показываем модалку с предложением
+      var reason = data.reason || 'AI предлагает изменения';
+      var newPanel = data.panel;
+      var changes = [];
+      if(newPanel.viz !== config.viz) changes.push('viz: '+config.viz+' → '+newPanel.viz);
+      if(newPanel.group !== config.group) changes.push('group: '+config.group+' → '+newPanel.group);
+      if(newPanel.range !== config.range) changes.push('range: '+config.range+' → '+newPanel.range);
+      if(newPanel.agg !== config.agg) changes.push('agg: '+config.agg+' → '+newPanel.agg);
+      if(newPanel.sort !== config.sort) changes.push('sort: '+config.sort+' → '+newPanel.sort);
+      if(String(newPanel.limit) !== String(config.limit)) changes.push('limit: '+(config.limit||'нет')+' → '+(newPanel.limit||'нет'));
+
+      var esc = escapeHtml;
+      var modalHtml = '<div style="margin-bottom:12px;font-size:13px;color:var(--text);">'+esc(reason)+'</div>';
+      if(changes.length){
+        modalHtml += '<div style="margin-bottom:16px;font-family:var(--mono);font-size:11px;color:var(--muted-2);">';
+        changes.forEach(function(c){ modalHtml += '<div style="padding:2px 0;">• '+esc(c)+'</div>'; });
+        modalHtml += '</div>';
+      }
+      modalHtml += '<div style="display:flex;gap:10px;justify-content:flex-end;">';
+      modalHtml += '<button class="btn btn-primary" id="aiOptApply">✓ Применить</button>';
+      modalHtml += '<button class="btn btn-ghost" id="aiOptEdit">Открыть в редакторе</button>';
+      modalHtml += '<button class="btn btn-ghost" id="aiOptCancel">Отмена</button>';
+      modalHtml += '</div>';
+
+      // Создаём overlay
+      var overlay = document.createElement('div');
+      overlay.className = 'modal-overlay active';
+      overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5);';
+      var box = document.createElement('div');
+      box.className = 'modal-box';
+      box.style.cssText = 'max-width:440px;width:90%;';
+      box.innerHTML = '<div class="modal-header"><h3>✨ AI предлагает оптимизацию</h3></div><div class="modal-body" style="padding:16px;">'+modalHtml+'</div>';
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+
+      function closeOverlay(){ overlay.remove(); }
+
+      box.querySelector('#aiOptCancel').onclick = closeOverlay;
+      overlay.addEventListener('click', function(e){ if(e.target === overlay) closeOverlay(); });
+
+      box.querySelector('#aiOptApply').onclick = async function(){
+        var db = getActiveDashboard();
+        if(!db){ closeOverlay(); return; }
+        var pp = db.panels.find(function(x){ return x.id === p.id; });
+        if(!pp){ closeOverlay(); return; }
+        Object.assign(pp, newPanel);
+        try {
+          await updateDashboardOnServer(db);
+          _saveCanvasViewport();
+          renderPanels();
+          toast('✨ Панель оптимизирована AI');
+        } catch(err){ toast('Ошибка сохранения: '+err.message); }
+        closeOverlay();
+      };
+
+      box.querySelector('#aiOptEdit').onclick = function(){
+        closeOverlay();
+        editingPanelId = p.id;
+        $('#modalTitle').textContent = 'Оптимизация (AI)';
+        $('#tplGrid').innerHTML = '';
+        $('#advToggle').style.display = 'none';
+        $('#advForm').classList.add('active');
+        populateSuggestions();
+        fillAdvForm(Object.assign({}, p, newPanel));
+        $('#panelModal').classList.add('active');
+      };
+      return;
+    }
+
+    toast('AI вернул неожиданный ответ');
+    if(body) body.innerHTML = origContent;
+
+  } catch(err){
+    toast('Ошибка: '+err.message);
+    if(body) body.innerHTML = origContent;
+  }
+}
 
 /* ── AI Assistant (UI скрыт, функции сохранены) ── */
 var lastAiPanel = null;
