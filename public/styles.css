@@ -966,6 +966,14 @@ body.canvas-dragging *{cursor:grabbing !important;}
   transform-origin:0 0;
 }
 
+/* ── Canvas mode: cursor для панорамирования ──── */
+.canvas-mode .ic-viewport{
+  cursor:grab;
+}
+.canvas-mode .ic-viewport.ic-panning{
+  cursor:grabbing;
+}
+
 /* ── Упрощение графиков при низком масштабе ────── */
 /* При scale < 0.5 скрываем подписи осей и сетку для чистоты интерфейса */
 .ic-viewport.ic-zoom-low .panel-body canvas{
