@@ -266,6 +266,226 @@ payload — произвольные поля события, переданны
 
 Ответ — ТОЛЬКО JSON.`;
 
+// ── Системный промпт для оптимизации существующих панелей ──
+const OPTIMIZE_SYSTEM_PROMPT = `Ты — AI-оптимизатор дашбордов для events.atiks.org.
+Тебе передают ТЕКУЩИЙ конфиг панели и СЭМПЛ ДАННЫХ (labels + values).
+Твоя задача: оценить, оптимален ли текущий конфиг, и если нет — предложить улучшения.
+
+═══ КРАТКИЙ СКИЛЛ ПО API ═══
+
+Тот же, что в suggestPanel:
+  viz: line|bar|pie|kpi|table|logs
+  group: day|hour|__field|"" (пустая строка = без группировки)
+  agg: count|sum|avg
+  range: 24h|7d|30d|all
+  filters: [{field,op,value}]
+  sort: key|value_desc|value_asc
+  limit: number|null
+  width: 4|6|8|12
+
+═══ ПРАВИЛА ОПТИМИЗАЦИИ ═══
+
+Оцени по следующим критериям:
+
+1. ТИП ГРАФИКА (viz):
+   - Если данных ≤ 2 точек → line неинформативен, лучше kpi или bar
+   - Если данные категориальные (field-based) и ≤ 8 категорий → pie подходит
+   - Если данных > 8 категорий → лучше bar, чем pie
+   - Если viz=line, а group="" (без группировки) → это бессмысленно, лучше kpi
+   - Если viz=bar + group=day → лучше line для временных рядов
+   - Если viz=kpi, а group задан → противоречие, kpi показывает одно число
+
+2. ГРУППИРОВКА (group):
+   - Если group=day, а данных ≤ 2 дня → group="" (итого) будет полезнее
+   - Если group=hour, а range=30d → слишком много точек, лучше group=day
+   - Если group=__field, а все значения одинаковые → бесполезная группировка
+
+3. ДИАПАЗОН (range):
+   - Если данных нет (все values = 0) → возможно range слишком мал
+   - Если точек > 100 → range можно сузить для лучшей читаемости
+
+4. АГРЕГАЦИЯ (agg):
+   - Если agg=sum/avg, а aggfield пуст → ошибка конфигурации
+   - Если agg=count с group=__field и есть числовое поле → возможно sum/avg полезнее
+
+5. ФИЛЬТРЫ И СОРТИРОВКА:
+   - Если данных очень много и нет limit → предложить limit
+   - Если sort=key при group=__field → value_desc обычно полезнее
+
+═══ ФОРМАТ ОТВЕТА ═══
+
+Верни ТОЛЬКО один JSON-объект (без markdown, без пояснений):
+
+Вариант 1 — всё оптимально:
+{
+  "status": "ok",
+  "reason": "Конфигурация оптимальна для текущих данных"
+}
+
+Вариант 2 — есть улучшения:
+{
+  "status": "optimized",
+  "reason": "Краткое объяснение на русском (1-2 предложения), почему текущий конфиг не оптимален и что именно меняешь",
+  "panel": {
+    "title": "Название на русском",
+    "viz": "line",
+    "type": "",
+    "group": "day",
+    "field": "",
+    "agg": "count",
+    "aggfield": "",
+    "range": "7d",
+    "width": 6,
+    "sort": "key",
+    "limit": null,
+    "filters": []
+  }
+}
+
+В поле "panel" — ТОЛЬКО стандартные поля конфига панели (те же, что и в suggestPanel).
+Не добавляй id, autorefresh, from, to, color, unit и прочие расширенные поля.
+Если меняешь только часть параметров — всё равно верни полный конфиг.
+
+ВАЖНО: Если ты считаешь, что текущий конфиг хорош — верни "ok". Не предлагай изменения ради изменений. Изменения оправданы только если текущий конфиг действительно неоптимален.
+
+Ответ — ТОЛЬКО JSON.`;
+
+// ── Валидация ответа optimizePanel ─────────────────
+function validateOptimizeResponse(parsed) {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { ok: false, error: 'not_an_object' };
+  }
+  const status = String(parsed.status || '').toLowerCase();
+  if (status !== 'ok' && status !== 'optimized') {
+    return { ok: false, error: 'invalid_status' };
+  }
+  if (status === 'ok') {
+    return { ok: true, status: 'ok', reason: String(parsed.reason || '').slice(0, 500) };
+  }
+  // status === 'optimized' → нужен panel
+  if (!parsed.panel || typeof parsed.panel !== 'object') {
+    return { ok: false, error: 'missing_panel' };
+  }
+  const validation = validatePanelConfig(parsed.panel);
+  if (!validation.ok) {
+    return { ok: false, error: 'invalid_panel:' + validation.error };
+  }
+  return {
+    ok: true,
+    status: 'optimized',
+    reason: String(parsed.reason || '').slice(0, 500),
+    panel: validation.panel,
+  };
+}
+
+// ── optimizePanel: запрос к LLM для оптимизации ───
+async function optimizePanel(config, dataSample, existingTypes, isRetry = false) {
+  if (!config || typeof config !== 'object') {
+    throw new Error('invalid_config');
+  }
+
+  // Собираем контекст: текущий конфиг + сэмпл данных
+  const configStr = JSON.stringify({
+    viz: config.viz || '',
+    type: config.type || '',
+    group: config.group || '',
+    field: config.field || '',
+    agg: config.agg || 'count',
+    aggfield: config.aggfield || '',
+    range: config.range || '7d',
+    width: config.width || 6,
+    sort: config.sort || 'key',
+    limit: config.limit || null,
+    filters: config.filters || [],
+  });
+
+  // dataSample: { labels:[], values:[], totalPoints:N }
+  const sample = dataSample || {};
+  const sampleStr = JSON.stringify({
+    labels: Array.isArray(sample.labels) ? sample.labels.slice(0, 20) : [],
+    values: Array.isArray(sample.values) ? sample.values.slice(0, 20) : [],
+    totalPoints: sample.totalPoints || 0,
+  });
+
+  const typesCtx = Array.isArray(existingTypes) && existingTypes.length
+    ? `\n\nСуществующие типы событий у пользователя: ${existingTypes.slice(0, AI_TYPES_CTX_MAX).join(', ')}`
+    : '';
+
+  const userContent = `Текущий конфиг панели:\n${configStr}\n\nСэмпл данных (первые точки):\n${sampleStr}${typesCtx}`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
+  const t0 = Date.now();
+
+  let res;
+  try {
+    res = await fetch(AI_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: AI_MODEL,
+        stream: false,
+        temperature: 0.2,
+        messages: [
+          { role: 'system', content: OPTIMIZE_SYSTEM_PROMPT },
+          { role: 'user',   content: userContent },
+        ],
+      }),
+    });
+  } catch (e) {
+    clearTimeout(timer);
+    const msg = (e && e.name === 'AbortError') ? 'timeout' : (e.message || 'fetch_failed');
+    recordAiFailure(msg);
+    throw new Error(msg);
+  }
+  clearTimeout(timer);
+
+  if (!res.ok) {
+    recordAiFailure('http_' + res.status);
+    throw new Error('ai_http_' + res.status);
+  }
+
+  let data;
+  try { data = await res.json(); }
+  catch (_) {
+    recordAiFailure('bad_json');
+    throw new Error('ai_bad_response');
+  }
+
+  const content = data && data.choices && data.choices[0] && data.choices[0].message
+    ? data.choices[0].message.content
+    : null;
+  if (!content) {
+    recordAiFailure('empty_content');
+    throw new Error('ai_empty_content');
+  }
+
+  const parsed = extractJson(content);
+  if (!parsed) {
+    if (!isRetry) {
+      return optimizePanel(config, dataSample, existingTypes, true);
+    }
+    recordAiFailure('parse_failed');
+    throw new Error('ai_parse_failed');
+  }
+
+  const validation = validateOptimizeResponse(parsed);
+  if (!validation.ok) {
+    if (!isRetry) {
+      return optimizePanel(config, dataSample, existingTypes, true);
+    }
+    recordAiFailure('invalid_optimize_' + validation.error);
+    const e = new Error('ai_invalid_response:' + validation.error);
+    e.code = validation.error;
+    throw e;
+  }
+
+  const ms = Date.now() - t0;
+  recordAiSuccess(ms);
+  return validation;
+}
+
 // ── Извлечение JSON из ответа модели ───────────────
 function extractJson(text) {
   if (!text || typeof text !== 'string') return null;
@@ -526,7 +746,8 @@ module.exports = {
   // типы
   collectExistingTypes,
   // ядро
-  extractJson, validatePanelConfig, suggestPanel,
+  // ядро
+  extractJson, validatePanelConfig, suggestPanel, optimizePanel, validateOptimizeResponse,
   // метрики
   getMetrics, recordAiSuccess, recordAiFailure,
   // реекспорт для тестов
