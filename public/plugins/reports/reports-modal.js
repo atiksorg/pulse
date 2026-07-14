@@ -341,17 +341,11 @@
     });
   }
 
-  // Запуск при DOM ready
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', _init);
-  } else {
-    _init();
-  }
-
-  // Экспорт
+  // Экспорт (инициализация — bindEvents — вызывается из reports-ui.js ПОСЛЕ инъекции HTML)
   window.ReportsModal = {
     open: openReportsModal,
     close: closeReportsModal,
+    bindEvents: _init
   };
 
 })();
