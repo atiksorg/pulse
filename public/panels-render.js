@@ -215,6 +215,7 @@ function renderPanels(readonlyData){
       { act:'smooth', icon:'wave', label:'Сглаживание', hidden: isShared },
       { act:'example', icon:'terminal', label:'Пример записи', hidden: isShared },
       { act:'ai-optimize', icon:'sparkles', label:'Оптимизировать (AI)', hidden: isShared },
+      { act:'ai-discover', icon:'sparkles', label:'AI: построить дашборд из логов', hidden: isShared || p.viz !== 'logs' },
       { act:'clear', icon:'trash', label:'Очистить данные', danger: true, hidden: isShared },
       { act:'remove', icon:'delete', label:'Удалить панель', danger: true, hidden: isShared }
     ].filter(function(m){ return !m.hidden; });
