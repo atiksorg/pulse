@@ -212,6 +212,10 @@
   /* ── Инициализация ── */
   function _init() {
     _injectModalHtml();
+    // Привязываем обработчики модалки ПОСЛЕ инъекции HTML
+    if (window.ReportsModal && typeof window.ReportsModal.bindEvents === 'function') {
+      window.ReportsModal.bindEvents();
+    }
     // Кнопку инжектим при смене вида на dashboard
     // Слушаем hashchange
     window.addEventListener('hashchange', function() {
