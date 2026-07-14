@@ -4,7 +4,8 @@
    Зависит от: core.js, panels-render.js
    ═══════════════════════════════════════════════════ */
 
-/* ── isMobile() определён в core.js ─────────────── */
+/* ── Mobile detection helper (duplicated для самодостаточности) ─── */
+function isMobile(){ return window.innerWidth < 860; }
 
 /* ── Panel templates ─────────────────────────────── */
 var templates = [
@@ -21,7 +22,6 @@ var templates = [
 function bindPanelMenuActions(card, p, src){
   card.querySelector('[data-act="edit"]') && (card.querySelector('[data-act="edit"]').onclick=function(){openEditPanel(p);});
   card.querySelector('[data-act="lock"]') && (card.querySelector('[data-act="lock"]').onclick=function(){ togglePanelLock(p); });
-  card.querySelector('[data-act="refresh"]') && (card.querySelector('[data-act="refresh"]').onclick=function(){ loadPanel(p, src); });
   card.querySelector('[data-act="remove"]') && (card.querySelector('[data-act="remove"]').onclick=async function(){
     if(await confirmModal('Удалить панель?','Удалить панель «'+p.title+'» с дашборда? (Данные останутся в базе)','Удалить')){
       if (refreshTimers[p.id]) {

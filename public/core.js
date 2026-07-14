@@ -17,14 +17,6 @@ const API = "https://events.atiks.org";
 const $ = (s,ctx)=> (ctx||document).querySelector(s);
 const $$ = (s,ctx)=> Array.from((ctx||document).querySelectorAll(s));
 
-/* ── Mobile / Touch detection (канонический хелпер) ── */
-function isMobile(){
-  return window.innerWidth < 860;
-}
-function isTouchDevice(){
-  return ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-}
-
 /* ── In-Memory State (единственное место хранения) ── */
 var AppState = {
   session: null,        // { src, token, expiresAt } | null

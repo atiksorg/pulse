@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Pulse — панель событий events.atiks.org</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -1070,35 +1070,6 @@ GET https://events.atiks.org/s?src=my_app&type=purchase&group=day&from=2026-06-0
 
 <!-- ═══ FAB: плавающая кнопка добавления панели (мобилки) ═══ -->
 <button class="fab-add-panel" id="fabAddPanel" style="display:none;" title="Добавить панель">+</button>
-
-<!-- ═══ MOBILE: Pull-to-refresh indicator ═══ -->
-<div class="ptr-indicator" id="ptrIndicator">
-  <span class="ptr-spinner"></span>
-  <span class="ptr-text">Обновление…</span>
-</div>
-
-<!-- ═══ MOBILE: Bottom Navigation Bar ═══ -->
-<nav class="mobile-bottom-nav" id="mobileBottomNav">
-  <button class="mbn-item mbn-active" data-mbn="dashboard" title="Дашборд">
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-    <span>Дашборд</span>
-  </button>
-  <button class="mbn-item" data-mbn="refresh" title="Обновить">
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-    <span>Обновить</span>
-  </button>
-  <button class="mbn-item mbn-fab" data-mbn="add" title="Добавить панель">
-    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-  </button>
-  <button class="mbn-item" data-mbn="share" title="Поделиться">
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-    <span>Поделиться</span>
-  </button>
-  <button class="mbn-item" data-mbn="more" title="Ещё">
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
-    <span>Ещё</span>
-  </button>
-</nav>
 
 <script src="https://cdn.jsdelivr.net/npm/p5@1.9.4/lib/p5.min.js"></script>
 <script src="core.js"></script>

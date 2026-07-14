@@ -65,8 +65,6 @@ var codeExamples = {
 /* ── P5 EFFECTS ──────────────────────────────────── */
 (function initP5Effects(){
   if(typeof p5==='undefined') return;
-  // На мобилке отключаем p5-частицы — они жрут батарею и CPU
-  if(window.innerWidth < 860) return;
   var sketch=function(p){
     var particles=[], COUNT=32, MAX_DIST=140, mouseTrail=[];
     p.setup=function(){

@@ -71,9 +71,6 @@ async function initDashboard(){
     fab.onclick = openAddPanel;
   }
 
-  // ── Bottom Navigation Bar (мобильная навигация) ──
-  _initMobileBottomNav();
-
   try {
     await loadDashboardsFromServer();
     await loadSuggestionsFromServer();
@@ -194,82 +191,6 @@ function _initFloatingToolbarAutoHide(){
       }
     }, { passive: true });
   }
-}
-
-/* ── Mobile Bottom Navigation Bar ─────────────────── */
-function _initMobileBottomNav(){
-  var nav = document.getElementById('mobileBottomNav');
-  if(!nav) return;
-  // Показываем только на мобилке и только в dashboard
-  var route = currentRoute();
-  if(!isMobile() || (route !== 'dashboard' && route !== 'view' && route !== 'public')){
-    nav.style.display = 'none';
-    return;
-  }
-  nav.style.display = '';
-
-  nav.querySelectorAll('.mbn-item').forEach(function(btn){
-    btn.onclick = function(){
-      var act = btn.dataset.mbn;
-      if(act === 'dashboard'){
-        resetCanvasView(true);
-        toast('Холст выровнен');
-      } else if(act === 'refresh'){
-        renderPanels();
-        toast('Обновлено');
-      } else if(act === 'add'){
-        openAddPanel();
-      } else if(act === 'share'){
-        showShareModal();
-      } else if(act === 'more'){
-        // Открываем help modal (справка + кейсы)
-        var m = document.getElementById('helpModal');
-        if(m) m.classList.add('active');
-      }
-      // Active state
-      nav.querySelectorAll('.mbn-item').forEach(function(b){ b.classList.remove('mbn-active'); });
-      btn.classList.add('mbn-active');
-    };
-  });
-
-  // Pull-to-refresh
-  _initPullToRefresh();
-}
-
-/* ── Pull-to-Refresh (мобильный жест) ────────────── */
-var _ptrStartY = 0;
-var _ptrActive = false;
-function _initPullToRefresh(){
-  if(!isMobile()) return;
-  var grid = document.getElementById('panelGrid');
-  var indicator = document.getElementById('ptrIndicator');
-  if(!grid || !indicator) return;
-
-  grid.addEventListener('touchstart', function(e){
-    if(window.scrollY === 0){
-      _ptrStartY = e.touches[0].clientY;
-      _ptrActive = true;
-    }
-  }, { passive: true });
-
-  grid.addEventListener('touchmove', function(e){
-    if(!_ptrActive) return;
-    var dy = e.touches[0].clientY - _ptrStartY;
-    if(dy > 60 && window.scrollY === 0){
-      indicator.classList.add('active');
-    }
-  }, { passive: true });
-
-  grid.addEventListener('touchend', function(){
-    if(indicator.classList.contains('active')){
-      renderPanels();
-      toast('Обновлено');
-    }
-    setTimeout(function(){
-      indicator.classList.remove('active');
-    }, 600);
-    _ptrActive = false;
-  }, { passive: true });
 }
 
 /* ── Dash tabs ───────────────────────────────────── */
