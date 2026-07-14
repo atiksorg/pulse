@@ -16,6 +16,7 @@ const fs = require('fs');
 const fsp = require('fs').promises;
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
 const { Worker } = require('worker_threads');
 const Database = require('better-sqlite3');
 const auth = require('./auth');
@@ -612,7 +613,38 @@ function recoverBufferWAL() {
 
 // ── Сервер ─────────────────────────────────────────────
 const server = http.createServer(async (req, res) => {
-  try {    // CORS
+  try {
+    // ── Request instrumentation (pulse self-analytics) ──
+    var _reqStartMs = Date.now();
+    var _reqTracked = false;
+    var _origResEnd = res.end;
+    res.end = function(){
+      if(!_reqTracked){
+        _reqTracked = true;
+        var _latency = Date.now() - _reqStartMs;
+        var _ip = getClientIp(req);
+        var _ua = req.headers['user-agent'] || null;
+        try {
+          var _u = new URL(req.url, 'http://localhost');
+          var _qs = {};
+          _u.searchParams.forEach(function(v,k){ _qs[k]=v; });
+          var _evSrc = _qs.src || '';
+          // Не трекаем запросы к pulse src (рекурсия)
+          if(_evSrc !== 'pulse'){
+            buffer.push({
+              ts: new Date().toISOString(), src:'pulse', type:'pulse_request',
+              payload: JSON.stringify({method:req.method,path:_u.pathname,status:res.statusCode,latency_ms:_latency,ua:_ua,src:_evSrc,type:_qs.type||''}),
+              ip:_ip, ua:_ua
+            });
+            eventsSinceLastCheck++;
+            if(buffer.length >= BATCH_SIZE) flush();
+          }
+        } catch(_){}
+      }
+      return _origResEnd.apply(res, arguments);
+    };
+
+    // CORS
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -1858,9 +1890,173 @@ auth.initAuthTables(db);
 initWorkerPool();
 initBufferWAL();
 recoverBufferWAL();
+
+// ── Pulse Self-Analytics: System Metrics ───────────────
+var _pulseLastSysTs = Date.now();
+
+function collectSysMetrics(){
+  try{
+    var mem = process.memoryUsage();
+    var heapUsed = Math.round(mem.heapUsed / 1024 / 1024);
+    var rss = Math.round(mem.rss / 1024 / 1024);
+    var diskRows = db.prepare('PRAGMA page_count').get();
+    var pageSizeRow = db.prepare('PRAGMA page_size').get();
+    var dbSizeMb = diskRows && pageSizeRow ? Math.round(diskRows.page_count * pageSizeRow.page_size / 1024 / 1024) : 0;
+    var aliveWorkers = workers.filter(function(w){ return w && !w._dead; }).length;
+    buffer.push({
+      ts: new Date().toISOString(), src:'pulse', type:'pulse_sys',
+      payload: JSON.stringify({heap_mb:heapUsed,rss_mb:rss,db_mb:dbSizeMb,buffer:buffer.length,workers:aliveWorkers,workers_total:WORKER_COUNT,wq:workerQueue.length}),
+      ip:null, ua:'pulse-internal'
+    });
+    eventsSinceLastCheck++;
+    if(buffer.length >= BATCH_SIZE) flush();
+  } catch(_){}
+}
+
+// ── Pulse Self-Analytics: Business Metrics ─────────────
+var _pulseLastBizCheck = Date.now();
+var _pulseLastSrcCount = 0;
+var _pulseLastDbCount = 0;
+var _pulseLastShareCount = 0;
+var _pulseLastAiTotal = 0;
+
+function collectBusinessMetrics(){
+  try{
+    var now = new Date().toISOString();
+    // Новые регистрации src
+    var srcCount = db.prepare('SELECT COUNT(*) as c FROM sources').get().c;
+    var newSrc = Math.max(0, srcCount - _pulseLastSrcCount);
+    if(newSrc > 0){
+      buffer.push({
+        ts: now, src:'pulse', type:'pulse_new_src',
+        payload: JSON.stringify({count:newSrc,total:srcCount}),
+        ip:null, ua:'pulse-internal'
+      });
+      eventsSinceLastCheck++;
+    }
+    _pulseLastSrcCount = srcCount;
+
+    // Новые дашборды
+    var dbCount = db.prepare('SELECT COUNT(*) as c FROM dashboards').get().c;
+    var newDb = Math.max(0, dbCount - _pulseLastDbCount);
+    if(newDb > 0){
+      buffer.push({
+        ts: now, src:'pulse', type:'pulse_new_dashboard',
+        payload: JSON.stringify({count:newDb,total:dbCount}),
+        ip:null, ua:'pulse-internal'
+      });
+      eventsSinceLastCheck++;
+    }
+    _pulseLastDbCount = dbCount;
+
+    // Новые публичные ссылки
+    var shareCount = db.prepare('SELECT COUNT(*) as c FROM public_shares WHERE revoked = 0').get().c;
+    var newShares = Math.max(0, shareCount - _pulseLastShareCount);
+    if(newShares > 0){
+      buffer.push({
+        ts: now, src:'pulse', type:'pulse_new_share',
+        payload: JSON.stringify({count:newShares,total:shareCount}),
+        ip:null, ua:'pulse-internal'
+      });
+      eventsSinceLastCheck++;
+    }
+    _pulseLastShareCount = shareCount;
+
+    // AI запросы (из ai.js in-memory метрик)
+    var aiMetrics = ai.getMetrics();
+    var aiTotal = aiMetrics.requests_total || 0;
+    var newAi = Math.max(0, aiTotal - _pulseLastAiTotal);
+    if(newAi > 0){
+      var aiFailed = aiMetrics.requests_failed || 0;
+      var aiAvgMs = aiMetrics.avg_latency_ms || 0;
+      buffer.push({
+        ts: now, src:'pulse', type:'pulse_ai_request',
+        payload: JSON.stringify({count:newAi,total:aiTotal,failed:aiFailed,avg_ms:aiAvgMs}),
+        ip:null, ua:'pulse-internal'
+      });
+      eventsSinceLastCheck++;
+    }
+    _pulseLastAiTotal = aiTotal;
+
+    // Общее число событий (оценка)
+    try{
+      var tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'events_%'").all();
+      var totalEvents = 0;
+      for(var ti=0; ti<tables.length; ti++){
+        var row = db.prepare('SELECT MAX(rowid) as m FROM "'+tables[ti].name+'"').get();
+        if(row && row.m) totalEvents += row.m;
+      }
+      if(totalEvents > 0){
+        buffer.push({
+          ts: now, src:'pulse', type:'pulse_events_total',
+          payload: JSON.stringify({total:totalEvents}),
+          ip:null, ua:'pulse-internal'
+        });
+        eventsSinceLastCheck++;
+      }
+    } catch(_){}
+
+    if(buffer.length >= BATCH_SIZE) flush();
+  } catch(_){}
+}
+
+// ── Pulse Self-Analytics: Auto-registration ─────────────
+function ensurePulseSrc(){
+  var existing = db.prepare('SELECT src FROM sources WHERE src = ?').get('pulse');
+  if(!existing){
+    try{
+      var salt = auth.genSalt();
+      var pinHash = auth.hashPin('0000', salt);
+      var now = new Date().toISOString();
+      db.prepare('INSERT OR IGNORE INTO sources (src, pin_hash, pin_salt, created_at) VALUES (?, ?, ?, ?)')
+        .run('pulse', pinHash, salt, now);
+      setupPulseDashboard();
+      console.log('[pulse] src=pulse auto-registered');
+    }catch(e){ console.error('[pulse] auto-register error:', e.message); }
+  } else {
+    // Проверяем наличие дашборда
+    var dash = db.prepare('SELECT id FROM dashboards WHERE src = ?').get('pulse');
+    if(!dash) setupPulseDashboard();
+  }
+  // Инициализируем счётчики бизнес-метрик текущими значениями
+  _pulseLastSrcCount = db.prepare('SELECT COUNT(*) as c FROM sources').get().c;
+  _pulseLastDbCount = db.prepare('SELECT COUNT(*) as c FROM dashboards').get().c;
+  _pulseLastShareCount = db.prepare('SELECT COUNT(*) as c FROM public_shares WHERE revoked = 0').get().c;
+  var aiM = ai.getMetrics();
+  _pulseLastAiTotal = aiM.requests_total || 0;
+}
+
+function setupPulseDashboard(){
+  var panels = [
+    {id:'p_rq_h',title:'Запросы по часам',viz:'line',type:'pulse_request',group:'hour',agg:'count',field:'',aggfield:'',range:'24h',width:8,autorefresh:30},
+    {id:'p_rq_k',title:'Запросов за 24ч',viz:'kpi',type:'pulse_request',group:'',agg:'count',field:'',aggfield:'',range:'24h',width:4,autorefresh:30},
+    {id:'p_ep',title:'Топ эндпоинтов',viz:'table',type:'pulse_request',group:'__field',agg:'count',field:'path',aggfield:'',range:'24h',width:6,autorefresh:60,sort:'value_desc',limit:10},
+    {id:'p_src',title:'Активные src',viz:'kpi',type:'pulse_new_src',group:'',agg:'sum',field:'',aggfield:'total',range:'all',width:4},
+    {id:'p_ev',title:'Событий в базе',viz:'kpi',type:'pulse_events_total',group:'',agg:'max',field:'',aggfield:'total',range:'all',width:4},
+    {id:'p_mem',title:'Память heap (MB)',viz:'line',type:'pulse_sys',group:'hour',agg:'avg',field:'',aggfield:'heap_mb',range:'24h',width:6,autorefresh:60},
+    {id:'p_db',title:'Размер БД (MB)',viz:'gauge',type:'pulse_sys',group:'',agg:'max',field:'',aggfield:'db_mb',range:'all',width:4,gaugeMin:0,gaugeMax:5000,unit:'MB'},
+    {id:'p_ai',title:'AI-запросов за 7д',viz:'kpi',type:'pulse_ai_request',group:'',agg:'sum',field:'',aggfield:'count',range:'7d',width:4},
+    {id:'p_dash',title:'Дашборды создано',viz:'kpi',type:'pulse_new_dashboard',group:'',agg:'sum',field:'',aggfield:'total',range:'all',width:4},
+    {id:'p_log',title:'Лог Pulse',viz:'logs',type:'',group:'raw',agg:'count',field:'',aggfield:'',range:'24h',width:12,autorefresh:10}
+  ];
+  var dashboardId = 'db_pulse_main';
+  var now = new Date().toISOString();
+  db.prepare('INSERT OR IGNORE INTO dashboards (id, src, name, panels_json, layout_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(dashboardId, 'pulse', 'Pulse Operations', JSON.stringify(panels), 'canvas', now, now);
+}
+
 setInterval(adaptiveFlush, 500);
 setInterval(cleanupOldTables, CLEANUP_INTERVAL_MS);
 cleanupOldTables();
+
+// ── Pulse Self-Analytics: Auto-registration ─────────────
+ensurePulseSrc();
+
+// ── Pulse Self-Analytics: Timers ───────────────────────
+setInterval(collectSysMetrics, 60 * 1000);     // раз в минуту — системные метрики
+setInterval(collectBusinessMetrics, 5 * 60 * 1000); // раз в 5 минут — бизнес-метрики
+collectSysMetrics();   // первый снимок сразу
+collectBusinessMetrics(); // первый снимок сразу
 
 // Периодический ANALYZE — обновляет статистику SQLite для query planner
 setInterval(() => {
