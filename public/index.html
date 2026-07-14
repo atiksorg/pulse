@@ -1086,5 +1086,41 @@ GET https://events.atiks.org/s?src=my_app&type=purchase&group=day&from=2026-06-0
 <script src="share.js"></script>
 <script src="extras.js"></script>
 <script src="router.js"></script>
+
+<!-- ═══ Mobile PWA: Device Detector (Progressive Enhancement) ═══ -->
+<!-- Загружает мобильные ресурсы ТОЛЬКО при width < 860px + touch -->
+<script>
+(function(){
+  function isMobileDevice(){
+    return window.innerWidth < 860 && (('ontouchstart' in window) || (navigator.maxTouchPoints > 0));
+  }
+  if(isMobileDevice()){
+    // Lazy-load mobile CSS
+    var css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = 'mobile-styles.css';
+    document.head.appendChild(css);
+    // Lazy-load mobile JS (after DOM is ready)
+    function loadMobileScripts(){
+      var scripts = ['mobile-core.js', 'mobile-pwa.js'];
+      scripts.forEach(function(src){
+        var s = document.createElement('script');
+        s.src = src;
+        document.body.appendChild(s);
+      });
+    }
+    if(document.readyState === 'loading'){
+      document.addEventListener('DOMContentLoaded', loadMobileScripts);
+    } else {
+      loadMobileScripts();
+    }
+    // PWA manifest
+    var manifest = document.createElement('link');
+    manifest.rel = 'manifest';
+    manifest.href = 'manifest.json';
+    document.head.appendChild(manifest);
+  }
+})();
+</script>
 </body>
 </html>
