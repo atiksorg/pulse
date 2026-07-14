@@ -587,6 +587,7 @@ function renderViz(p, data, body){
     body.style.color = kpiColor;
     // Мягкое свечение: text-shadow на полупрозрачный цвет
     body.style.textShadow = '0 0 20px ' + kpiColor + '33';
+    body.setAttribute('data-total', String(val));
     var compact = (fmtType === 'number' || !fmtType) ? formatCompact(val) : formatNum(val, fmtType);
     var unitSuffix = p.unit ? ' <span style="font-size:18px;color:var(--muted);">'+escapeHtml(p.unit)+'</span>' : '';
     body.innerHTML='<div class="kpi-value" title="'+escapeHtml(String(val))+'">'+compact+unitSuffix+'</div>'+(p.group?'<div class="kpi-sub">'+groups.length+' групп(а)</div>':'');
@@ -604,6 +605,7 @@ function renderViz(p, data, body){
   if(p.viz==='gauge'){
     var val = data.total!==null && data.total!==undefined ? data.total : (groups[0]?groups[0].value:0);
     body.className = isFocus ? 'panel-body focus-body' : 'panel-body';
+    body.setAttribute('data-total', String(val));
     if(typeof renderGauge === 'function'){
       renderGauge(body, {
         value: val,
