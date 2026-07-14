@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════
    public/plugins/reports/reports-modal.js — Модалка настройки отчётов
-   Зависит от: core.js (API, getSession, authHeaders, escapeHtml, toast, confirmModal)
+   Зависит от: core.js (API, getSession, authHeaders, escapeHtml, toast, confirmModal) 
    ═══════════════════════════════════════════════════ */
 'use strict';
 
