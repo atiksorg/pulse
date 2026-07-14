@@ -65,6 +65,20 @@ var cases = [
     ]
   },
   {
+    id:'pulse_ops', icon:'💓', title:'Самоаналитика Pulse',
+    desc:'Мониторинг самого сервиса — запросы, память, размер БД, пользователи',
+    type:'pulse_request',
+    spec:'type: <code>pulse_request</code> · payload: <code>{method, path, status, latency_ms}</code>',
+    generatePayload(){ var paths=['/e','/s','/dashboards','/auth/login','/health']; var methods=['GET','POST']; return { method:methods[Math.floor(Math.random()*methods.length)], path:paths[Math.floor(Math.random()*paths.length)], status:[200,200,200,204,400,401][Math.floor(Math.random()*6)], latency_ms:Math.floor(Math.random()*50)+1 }; },
+    buildUrl(src){ var p=this.generatePayload(); return { url:API+'/e?src='+encodeURIComponent(src)+'&type='+this.type+'&method='+p.method+'&path='+encodeURIComponent(p.path)+'&status='+p.status+'&latency_ms='+p.latency_ms, payload:p }; },
+    panels:[
+      { title:'Запросы по часам', viz:'line', type:'pulse_request', group:'hour', agg:'count', field:'', aggfield:'', range:'24h', width:8, autorefresh:0 },
+      { title:'Запросов за 24ч', viz:'kpi', type:'pulse_request', group:'', agg:'count', field:'', aggfield:'', range:'24h', width:4, autorefresh:0 },
+      { title:'Топ эндпоинтов', viz:'table', type:'pulse_request', group:'__field', agg:'count', field:'path', aggfield:'', range:'24h', width:6, autorefresh:0, sort:'value_desc', limit:10 },
+      { title:'Средняя задержка', viz:'kpi', type:'pulse_request', group:'', agg:'avg', field:'', aggfield:'latency_ms', range:'24h', width:4, autorefresh:0, unit:'мс' },
+    ]
+  },
+  {
     id:'feature_used', icon:'', title:'Использование фичи',
     desc:'Продуктовая аналитика — какие функции продукта востребованы',
     type:'feature_used',
