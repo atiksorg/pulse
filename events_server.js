@@ -520,6 +520,8 @@ function flush() {
     invalidateCacheForBatch(batch);
     _statsCacheGen++;
     truncateBufferWAL(); // Очищаем WAL-лог после успешной записи в БД
+    // Хук для плагинов (reports scheduler и т.д.)
+    if (typeof global._pluginOnFlush === 'function') global._pluginOnFlush();
   } catch (e) {
     console.error('[flush] error:', e.message);
     flushFailCount++;
@@ -2089,6 +2091,9 @@ cleanupOldTables();
 
 // ── Pulse Self-Analytics: Auto-registration ─────────────
 ensurePulseSrc();
+
+// ── Plugins: загрузка плагинов (отчёты, триггеры и т.д.) ──
+require('./plugins').loadPlugins(server, db);
 
 // ── Pulse Self-Analytics: Timers ───────────────────────
 setInterval(collectSysMetrics, 60 * 1000);     // раз в минуту — системные метрики
