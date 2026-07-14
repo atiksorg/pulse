@@ -646,6 +646,279 @@ function collectExistingTypes(db, src) {
   return Array.from(seen).slice(0, AI_TYPES_CTX_MAX);
 }
 
+// ═══════════════════════════════════════════════════
+// AI DISCOVER — автоматическое создание дашборда из логов
+// ═══════════════════════════════════════════════════
+
+// ── Извлечение JSON-массива из ответа модели ──────
+function extractJsonArray(text) {
+  if (!text || typeof text !== 'string') return null;
+  let s = text.trim();
+
+  // Снять markdown-обёртку ```json ... ``` или ``` ... ```
+  const fence = s.match(/^```(?:json)?\s*([\s\S]*?)\s*```\s*$/i);
+  if (fence) s = fence[1].trim();
+
+  const firstBracket = s.indexOf('[');
+  const lastBracket  = s.lastIndexOf(']');
+  if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
+    s = s.slice(firstBracket, lastBracket + 1);
+  }
+
+  try { return JSON.parse(s); }
+  catch (_) {
+    const fb = s.indexOf('['), lb = s.lastIndexOf(']');
+    if (fb !== -1 && lb !== -1 && lb > fb) {
+      try { return JSON.parse(s.slice(fb, lb + 1)); } catch (_) { return null; }
+    }
+    return null;
+  }
+}
+
+// ── Статический анализ сэмпла логов (без LLM) ────
+// Парсит 100 событий и возвращает компактную схему:
+// типы, поля, числовые/строковые, временной диапазон.
+function analyzeLogSample(events) {
+  const typeCounts = {};
+  const fieldTypes = {};
+  const fieldValues = {};
+  const numericFields = {};
+  let minTs = null, maxTs = null;
+
+  for (const ev of events) {
+    typeCounts[ev.type] = (typeCounts[ev.type] || 0) + 1;
+    if (!minTs || ev.ts < minTs) minTs = ev.ts;
+    if (!maxTs || ev.ts > maxTs) maxTs = ev.ts;
+
+    let payload;
+    try { payload = typeof ev.payload === 'string' ? JSON.parse(ev.payload) : ev.payload; } catch (_) { continue; }
+    if (!payload || typeof payload !== 'object') continue;
+
+    for (const [k, v] of Object.entries(payload)) {
+      if (v === null || v === undefined) continue;
+      if (!fieldTypes[k]) fieldTypes[k] = typeof v === 'number' ? 'number' : 'string';
+      if (!fieldValues[k]) fieldValues[k] = new Set();
+      if (fieldValues[k].size < 20) fieldValues[k].add(String(v));
+
+      const num = Number(v);
+      if (!isNaN(num) && v !== '' && v !== null) {
+        if (!numericFields[k]) numericFields[k] = { sum: 0, min: Infinity, max: -Infinity, count: 0 };
+        numericFields[k].sum += num;
+        numericFields[k].min = Math.min(numericFields[k].min, num);
+        numericFields[k].max = Math.max(numericFields[k].max, num);
+        numericFields[k].count++;
+      }
+    }
+  }
+
+  // Определяем длительность для подсказки range
+  let durationHint = '7d';
+  if (minTs && maxTs) {
+    const diffMs = new Date(maxTs) - new Date(minTs);
+    const diffHours = diffMs / 3600000;
+    if (diffHours < 2) durationHint = '24h';
+    else if (diffHours < 48) durationHint = '24h';
+    else if (diffHours < 24 * 14) durationHint = '7d';
+    else if (diffHours < 24 * 60) durationHint = '30d';
+    else durationHint = 'all';
+  }
+
+  return {
+    totalEvents: events.length,
+    uniqueTypes: Object.entries(typeCounts).sort((a, b) => b[1] - a[1]),
+    fields: Object.entries(fieldTypes).map(([name, type]) => ({
+      name, type,
+      uniqueValues: fieldValues[name] ? fieldValues[name].size : 0,
+      sampleValues: fieldValues[name] ? Array.from(fieldValues[name]).slice(0, 5) : [],
+      numeric: numericFields[name] || null
+    })),
+    timeRange: { from: minTs, to: maxTs },
+    durationHint
+  };
+}
+
+// ── Системный промпт для discover ─────────────────
+const DISCOVER_SYSTEM_PROMPT = `Ты — аналитик данных для дашборда events.atiks.org.
+Тебе передают СХЕМУ логов (типы событий, поля payload, числовые/строковые).
+Твоя задача: предложить 3–4 панели дашборда, которые дадут наибольшую ценность.
+
+═══ КРАТКИЙ СКИЛЛ ПО API ═══
+
+  viz: line|bar|pie|kpi|table|logs
+  group: day|hour|__field|"" (пустая строка = без группировки = итого)
+  agg: count|sum|avg
+  range: 24h|7d|30d|all
+  filters: [{field,op,value}]
+  sort: key|value_desc|value_asc
+  limit: number|null
+  width: 4|6|8|12
+
+group=__field → "field" обязательно (имя поля payload)
+agg=sum|avg   → "aggfield" обязательно (числовое поле)
+viz=pie       → group=__field с категориальным полем (≤8 уникальных значений)
+viz=kpi       → group="" (итого), agg=count или sum/avg
+viz=line      → group=day или hour (временные ряды)
+viz=bar       → group=__field или day/hour
+viz=table     → group=__field (агрегация по полю)
+
+═══ ПРАВИЛА ═══
+
+1. Используй РАЗНЫЕ viz — не повторяй один тип дважды.
+2. Если есть числовые поля — хотя бы одна панель с agg=sum или avg.
+3. Если данные охватывают >1 день — хотя бы одна панель с group=day или hour.
+4. Если есть категориальные поля (≤20 уникальных) — pie или bar с group=__field.
+5. Всегда включай одну KPI-панель с общим count.
+6. type подбирай по самым частым типам из uniqueTypes.
+7. range подбирай по durationHint из схемы.
+8. width: для KPI — 4, для линий/баров — 6 или 8, для таблиц — 8 или 12.
+9. title — конкретный и понятный ("Выручка по дням", а не "График 1").
+
+═══ ФОРМАТ ОТВЕТА ═══
+
+Только JSON-массив. Никакого текста, markdown, пояснений.
+[
+  {"title":"...","viz":"...","type":"...","group":"...","field":"","agg":"...","aggfield":"","range":"...","width":6,"sort":"key","limit":null,"filters":[]},
+  ...
+]
+
+Не добавляй id, autorefresh, from, to, color, unit.
+Все строковые значения в нижнем регистре (кроме title).
+Пустые строки вместо null.
+Фильтры — пустой массив [] если не нужны.
+sort: "key" по умолчанию, "value_desc" для топов.
+limit: null если не нужен, число если просят топ.
+
+Ответ — ТОЛЬКО JSON-массив.`;
+
+// ── Главная функция discover ──────────────────────
+async function discoverPanels(events, isRetry = false) {
+  if (!Array.isArray(events) || events.length === 0) {
+    throw new Error('no_events');
+  }
+
+  // 1. Статический анализ сэмпла
+  const schema = analyzeLogSample(events);
+
+  // 2. Формируем контекст для LLM
+  const typesStr = schema.uniqueTypes.map(([t, c]) => `${t}: ${c}`).join(', ');
+  const fieldsStr = schema.fields.map(f => {
+    let desc = `${f.name} (${f.type}`;
+    if (f.numeric) {
+      desc += `, числовой, min=${f.numeric.min}, max=${f.numeric.max}, ${f.numeric.count} значений`;
+    } else {
+      desc += `, ${f.uniqueValues} уникальных`;
+      if (f.sampleValues.length) desc += `: ${f.sampleValues.join(', ')}`;
+    }
+    desc += ')';
+    return desc;
+  }).join('\n  ');
+
+  const userContent = `ДАННЫЕ ЛОГОВ (${schema.totalEvents} событий):
+Временной диапазон: ${schema.timeRange.from || '?'} → ${schema.timeRange.to || '?'}
+Подходящий range: ${schema.durationHint}
+
+Типы событий (по популярности):
+  ${typesStr || 'нет данных'}
+
+Поля payload:
+  ${fieldsStr || 'нет полей'}`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
+  const t0 = Date.now();
+
+  let res;
+  try {
+    res = await fetch(AI_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: AI_MODEL,
+        stream: false,
+        temperature: 0.3,
+        messages: [
+          { role: 'system', content: DISCOVER_SYSTEM_PROMPT },
+          { role: 'user',   content: userContent },
+        ],
+      }),
+    });
+  } catch (e) {
+    clearTimeout(timer);
+    const msg = (e && e.name === 'AbortError') ? 'timeout' : (e.message || 'fetch_failed');
+    recordAiFailure(msg);
+    throw new Error(msg);
+  }
+  clearTimeout(timer);
+
+  if (!res.ok) {
+    recordAiFailure('http_' + res.status);
+    throw new Error('ai_http_' + res.status);
+  }
+
+  let data;
+  try { data = await res.json(); }
+  catch (_) {
+    recordAiFailure('bad_json');
+    throw new Error('ai_bad_response');
+  }
+
+  const content = data && data.choices && data.choices[0] && data.choices[0].message
+    ? data.choices[0].message.content
+    : null;
+  if (!content) {
+    recordAiFailure('empty_content');
+    throw new Error('ai_empty_content');
+  }
+
+  // 3. Парсим ответ — ожидаем JSON-массив
+  let parsed = extractJsonArray(content);
+  if (!parsed || !Array.isArray(parsed)) {
+    // Retry: попросим вернуть массив
+    if (!isRetry) {
+      return discoverPanels(events, true);
+    }
+    recordAiFailure('parse_failed');
+    throw new Error('ai_parse_failed');
+  }
+
+  // 4. Валидируем каждую панель
+  const validPanels = [];
+  for (const cfg of parsed) {
+    const v = validatePanelConfig(cfg);
+    if (v.ok) validPanels.push(v.panel);
+  }
+
+  if (validPanels.length < 1) {
+    if (!isRetry) {
+      return discoverPanels(events, true);
+    }
+    recordAiFailure('no_valid_panels');
+    throw new Error('ai_no_valid_panels');
+  }
+
+  // Ограничиваем до 4 панелей
+  const result = validPanels.slice(0, 4);
+
+  const ms = Date.now() - t0;
+  recordAiSuccess(ms);
+
+  // 5. Формируем summary
+  const summaryTypes = schema.uniqueTypes.slice(0, 4).map(([t]) => t).join(', ');
+  const numericFieldNames = schema.fields.filter(f => f.numeric).map(f => f.name);
+  const summary = `Найдено ${schema.uniqueTypes.length} тип(ов) событий (${summaryTypes}), ` +
+    schema.fields.length + ' полей payload' +
+    (numericFieldNames.length ? ', числовые: ' + numericFieldNames.join(', ') : '') +
+    '. Сгенерировано ' + result.length + ' панелей.';
+
+  return { panels: result, summary, schema: {
+    totalEvents: schema.totalEvents,
+    uniqueTypes: schema.uniqueTypes.length,
+    fields: schema.fields.length,
+    durationHint: schema.durationHint
+  }};
+}
+
 // ── Главная функция: запрос к LLM ──────────────────
 async function suggestPanel(prompt, existingTypes, isRetry = false) {
   const userPrompt = String(prompt || '').trim().slice(0, AI_PROMPT_MAX);
@@ -746,8 +1019,9 @@ module.exports = {
   // типы
   collectExistingTypes,
   // ядро
-  // ядро
   extractJson, validatePanelConfig, suggestPanel, optimizePanel, validateOptimizeResponse,
+  // discover
+  analyzeLogSample, extractJsonArray, discoverPanels,
   // метрики
   getMetrics, recordAiSuccess, recordAiFailure,
   // реекспорт для тестов
