@@ -65,6 +65,7 @@ function bindPanelMenuActions(card, p, src){
   card.querySelector('[data-act="duplicate"]') && (card.querySelector('[data-act="duplicate"]').onclick=async function(){ duplicatePanel(p); });
   card.querySelector('[data-act="example"]') && (card.querySelector('[data-act="example"]').onclick=function(){ showExampleToast(p, src); });
   card.querySelector('[data-act="ai-optimize"]') && (card.querySelector('[data-act="ai-optimize"]').onclick=function(){ optimizePanelWithAI(p, src); });
+  card.querySelector('[data-act="ai-discover"]') && (card.querySelector('[data-act="ai-discover"]').onclick=function(){ discoverPanelsFromLogs(p, src); });
 }
 
 /* ── Toggle panel lock (pin) — in-place, no full re-render ── */
@@ -851,6 +852,180 @@ async function optimizePanelWithAI(p, src){
     toast('Ошибка: '+err.message);
     delete panelAiActive[p.id];
     if(body) body.innerHTML = origContent;
+  }
+}
+
+/* ── AI Discover: построить дашборд из логов ───────── */
+async function discoverPanelsFromLogs(p, src){
+  var sess = getSession();
+  if(!sess){ toast('Войдите в кабинет — AI работает только для авторизованных'); return; }
+
+  var events = (p._logsEvents || []).slice(0, 100);
+  if(events.length < 3){ toast('Нужно минимум 3 события для анализа'); return; }
+
+  // Закрываем dropdown
+  document.querySelectorAll('.panel-menu-dropdown.show').forEach(function(d){ d.classList.remove('show'); });
+
+  // Показываем спиннер
+  var body = document.getElementById('body-' + p.id);
+  var origContent = body ? body.innerHTML : '';
+  panelAiActive[p.id] = true;
+  if(body){
+    body.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:20px;color:var(--muted-2);font-family:var(--mono);font-size:12px;"><span class="qs-spinner"></span> AI анализирует '+events.length+' событий…</div>';
+  }
+
+  try{
+    var r = await fetch(API + '/ai/discover-panels', {
+      method:'POST',
+      headers: Object.assign({'Content-Type':'application/json'}, authHeaders()),
+      body: JSON.stringify({ events: events, src: src })
+    });
+
+    if(r.status === 401){ clearSession(); toast('Сессия истекла'); delete panelAiActive[p.id]; if(body) body.innerHTML = origContent; return; }
+    if(r.status === 429){
+      var d = await r.json().catch(function(){ return {}; });
+      toast('Слишком много запросов. Подождите '+(d.remainSec||60)+' сек.');
+      delete panelAiActive[p.id]; if(body) body.innerHTML = origContent;
+      return;
+    }
+    if(!r.ok){
+      var e = await r.json().catch(function(){ return {error:'HTTP '+r.status}; });
+      toast('Ошибка AI: '+(e.error||e.message||r.status));
+      delete panelAiActive[p.id]; if(body) body.innerHTML = origContent;
+      return;
+    }
+
+    var data = await r.json();
+    if(!data || !data.panels || !data.panels.length){
+      toast('AI не смог проанализировать логи');
+      delete panelAiActive[p.id]; if(body) body.innerHTML = origContent;
+      return;
+    }
+
+    // Показываем модалку превью (body оставляем со спиннером)
+    showDiscoverPreview(data.panels, data.summary || '', p, src, origContent);
+
+  } catch(err){
+    toast('Ошибка: '+err.message);
+    delete panelAiActive[p.id]; if(body) body.innerHTML = origContent;
+  }
+}
+
+function showDiscoverPreview(panels, summary, sourcePanel, src, origContent){
+  var esc = escapeHtml;
+  var body = document.getElementById('body-' + sourcePanel.id);
+
+  var overlay = document.createElement('div');
+  overlay.className = 'modal-overlay active';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5);';
+  var box = document.createElement('div');
+  box.className = 'modal-box';
+  box.style.cssText = 'max-width:520px;width:90%;max-height:80vh;overflow-y:auto;';
+
+  var vizLabels = {line:'📈 Линия', bar:'📊 Столбцы', pie:'🥧 Круговая', kpi:'🔢 KPI', table:'📋 Таблица', logs:'📝 Логи', gauge:'⏲ Gauge'};
+
+  var panelsHtml = panels.map(function(panel){
+    var vizLabel = vizLabels[panel.viz] || panel.viz;
+    return '<div style="background:var(--card-bg,#141921);border:1px solid var(--border,#1A2130);border-radius:8px;padding:10px 12px;margin-bottom:6px;">'
+      + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">'
+      + '<span style="font-size:13px;font-weight:600;">'+vizLabel+'</span>'
+      + '<span style="font-size:12px;color:var(--text);">'+esc(panel.title)+'</span>'
+      + '</div>'
+      + '<div class="meta" style="font-size:10px;">'+describeMeta(panel)+'</div>'
+      + '</div>';
+  }).join('');
+
+  var html = '<div style="padding:20px;">'
+    + '<h3 style="margin:0 0 8px;">✨ AI нашёл '+panels.length+' график(а)</h3>'
+    + (summary ? '<p style="font-size:12px;color:var(--muted-2);margin:0 0 14px;">'+esc(summary)+'</p>' : '')
+    + panelsHtml
+    + '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">'
+    + '<button class="btn btn-primary" id="discApply">✓ Создать '+panels.length+' панели</button>'
+    + '<button class="btn btn-ghost" id="discEdit">Открыть в редакторе</button>'
+    + '<button class="btn btn-ghost" id="discCancel">Отмена</button>'
+    + '</div></div>';
+
+  box.innerHTML = html;
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+
+  function closeOverlay(){
+    overlay.remove();
+    delete panelAiActive[sourcePanel.id];
+    if(body) body.innerHTML = origContent;
+  }
+
+  box.querySelector('#discCancel').onclick = closeOverlay;
+  overlay.addEventListener('click', function(e){ if(e.target === overlay) closeOverlay(); });
+
+  box.querySelector('#discApply').onclick = async function(){
+    overlay.remove();
+    delete panelAiActive[sourcePanel.id];
+    await applyDiscoveredPanels(panels, sourcePanel);
+  };
+
+  box.querySelector('#discEdit').onclick = function(){
+    // Открываем первую панель в редакторе, остальные — через addPanelFromConfig
+    overlay.remove();
+    delete panelAiActive[sourcePanel.id];
+    if(body) body.innerHTML = origContent;
+    if(panels.length > 0){
+      var first = panels[0];
+      // Добавляем остальные панели сразу
+      for(var i = 1; i < panels.length; i++){
+        addPanelFromConfig(panels[i]);
+      }
+      // Первую открываем в редакторе
+      editingPanelId = null;
+      $('#modalTitle').textContent = 'AI: '+first.title;
+      $('#tplGrid').innerHTML = '';
+      $('#advToggle').style.display = 'none';
+      $('#advForm').classList.add('active');
+      populateSuggestions();
+      fillAdvForm(first);
+      $('#panelModal').classList.add('active');
+    }
+  };
+}
+
+async function applyDiscoveredPanels(panels, sourcePanel){
+  var db = getActiveDashboard();
+  if(!db) return;
+
+  _saveCanvasViewport();
+  var maxZ = getMaxPanelZ(db.panels);
+  var gap = 30;
+  var baseX = (sourcePanel.cx || 0) + (sourcePanel.cw || 480) + gap;
+  var baseY = sourcePanel.cy || 0;
+
+  // Размещаем панели в 2 колонки
+  var col = 0, currentY = baseY, maxRowH = 0;
+  panels.forEach(function(cfg){
+    var pNew = Object.assign({ id: uid('panel') }, cfg);
+    pNew.cz = Math.min(++maxZ, CANVAS_Z_MAX);
+    var pr = getVizPreset(pNew.viz);
+    pNew.cw = pr.cw;
+    pNew.ch = pr.ch;
+    pNew.cx = baseX + col * (pr.cw + gap);
+    pNew.cy = currentY;
+    maxRowH = Math.max(maxRowH, pr.ch);
+    db.panels.push(pNew);
+    col++;
+    if(col >= 2){
+      col = 0;
+      currentY += maxRowH + gap;
+      maxRowH = 0;
+    }
+  });
+
+  try{
+    await updateDashboardOnServer(db);
+    renderPanels();
+    toast('✨ Создано '+panels.length+' панелей из логов');
+  } catch(err){
+    toast('Ошибка сохранения: '+err.message);
+    // Восстанавливаем панель-источник при ошибке
+    loadPanel(sourcePanel, getSrc());
   }
 }
 
