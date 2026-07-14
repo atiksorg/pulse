@@ -1,13 +1,10 @@
-/**
- * plugins/index.js — Реестр плагинов
- *
- * Сканирует plugins/*/index.js и вызывает lifecycle-хуки:
- *   - schema(db)           — создание таблиц (миграции)
- *   - registerRoutes(server, db) — HTTP-маршруты
- *   - hooks(db)            — подписка на события (flush, event)
- *
- * Плагины загружаются в порядке PLUGIN_DIRS.
- */
+// plugins/index.js — Реестр плагинов
+// Сканирует plugins/*/index.js и вызывает lifecycle-хуки:
+//   - schema(db)           — создание таблиц (миграции)
+//   - registerRoutes(server, db) — HTTP-маршруты
+//   - hooks(db)            — подписка на события (flush, event)
+//
+// Плагины загружаются в порядке PLUGIN_DIRS.
 'use strict';
 
 const fs   = require('fs');
