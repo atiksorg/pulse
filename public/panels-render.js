@@ -140,6 +140,8 @@ function renderPanels(readonlyData){
   var isShared = !!readonlyData;
   canvasMode = getLayoutMode();
   if(isShared && readonlyData.layoutMode !== undefined) canvasMode = readonlyData.layoutMode;
+  // На мобилке — ВСЕГДА вертикальный стек, без canvas
+  if(isMobile()) canvasMode = false;
   document.body.classList.toggle('canvas-mode', canvasMode);
   var db = isShared ? readonlyData.dashboard : getActiveDashboard();
   var src = isShared ? readonlyData.src : getSrc();
