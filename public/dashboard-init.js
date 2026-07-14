@@ -21,6 +21,7 @@ async function initDashboard(){
       '<button class="icon-btn ft-btn ft-layout-btn" id="btnArrangeLayout" title="Выстроить графики">▦</button>' +
       '<button class="icon-btn ft-btn" id="btnRefreshAll" title="Обновить">↻</button>' +
       '<button class="icon-btn ft-btn" id="btnExport" title="Экспорт CSV">↓</button>' +
+      '<button class="icon-btn ft-btn" id="btnExportXml" title="Экспорт XML">⬡</button>' +
       '<button class="icon-btn ft-btn" id="btnShare" title="Поделиться">🔗</button>' +
       '<button class="icon-btn ft-btn ft-theme-btn" id="btnThemeToggle" title="Сменить тему">◐</button>' +
       '<button class="icon-btn ft-btn ft-help-btn" id="btnHelpModal" title="Справка">?</button>' +
@@ -35,6 +36,7 @@ async function initDashboard(){
   $('#btnArrangeLayout').onclick = function(){ arrangeAndFitCanvas(); };
   $('#btnRefreshAll').onclick = function(){ renderPanels(); };
   $('#btnExport').onclick = exportCsv;
+  $('#btnExportXml').onclick = exportXml;
   $('#btnShare').onclick = function(){ showShareModal(); };
   $('#btnAddPanel').onclick = openAddPanel;
 
