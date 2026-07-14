@@ -280,15 +280,27 @@ function renderPanels(readonlyData){
       menuTrigger.onclick = function(e){
         e.stopPropagation();
         var isOpen = menuDropdown.classList.contains('show');
-        document.querySelectorAll('.panel-menu-dropdown.show').forEach(function(d){ d.classList.remove('show'); });
+        // Закрываем ВСЕ открытые dropdown и восстанавливаем z-index
+        document.querySelectorAll('.panel-menu-dropdown.show').forEach(function(d){
+          d.classList.remove('show');
+        });
+        if(_activeDropdownCard && _activeDropdownCard !== card){
+          _restoreDropdownZIndex();
+        }
         if(!isOpen){
           menuDropdown.classList.add('show');
           // Поднимаем карточку наверх, чтобы dropdown гарантированно был
-          // поверх всех соседних панелей (stacking context)
+          // поверх ВСЕХ соседних панелей (stacking context).
+          // Используем CANVAS_Z_MAX напрямую — не wrap-around, не инкремент.
           if(canvasMode){
-            canvasZCounter = canvasZCounter >= CANVAS_Z_MAX ? CANVAS_Z_MIN : canvasZCounter + 1;
-            card.style.zIndex = canvasZCounter;
-            p.cz = canvasZCounter;
+            _saveDropdownZIndex(card, p);
+            card.style.zIndex = CANVAS_Z_MAX;
+            p.cz = CANVAS_Z_MAX;
+          }
+        } else {
+          // Меню закрывается — восстанавливаем z-index
+          if(canvasMode){
+            _restoreDropdownZIndex();
           }
         }
       };
