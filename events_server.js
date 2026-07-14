@@ -1738,6 +1738,44 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // POST /ai/discover-panels (auth) — AI Discover: автоматическое создание дашборда из логов
+    if (url.pathname === '/ai/discover-panels' && req.method === 'POST') {
+      const token = auth.extractToken(req);
+      const session = auth.resolveSession(db, token);
+      if (!session) return auth.json(res, 401, { error: 'unauthorized' });
+
+      // Rate-limit per src (тот же пул что и suggest-panel / optimize-panel)
+      const rl = ai.checkRateLimit(session.src);
+      if (!rl.ok) {
+        res.setHeader('Retry-After', String(rl.remainSec || 60));
+        return auth.json(res, 429, { error: 'rate_limited', remainSec: rl.remainSec });
+      }
+
+      let body;
+      try { body = await auth.readJsonBody(req); }
+      catch (_) { return auth.json(res, 400, { error: 'invalid json' }); }
+
+      const events = body && Array.isArray(body.events) ? body.events : [];
+      if (events.length === 0) return auth.json(res, 400, { error: 'empty_events' });
+
+      // Ограничиваем сэмпл до 200 событий
+      const sample = events.slice(0, 200);
+
+      try {
+        const result = await ai.discoverPanels(sample);
+        auth.json(res, 200, result);
+      } catch (e) {
+        const code = (e && e.code) ? e.code : 'unknown';
+        const msg = (e && e.message) ? e.message : 'unknown';
+        if (msg.startsWith('ai_') || msg === 'timeout' || msg === 'fetch_failed' ||
+            msg === 'parse_failed' || msg === 'no_valid_panels' || msg === 'no_events') {
+          return auth.json(res, 502, { error: 'ai_invalid_response', code, message: msg });
+        }
+        auth.json(res, 500, { error: 'internal', message: msg });
+      }
+      return;
+    }
+
     // GET /public/:share_id (без auth) — read-only конфиг дашборда
     // GET /public/:share_id (без auth) — read-only конфиг дашборда
     if (url.pathname.startsWith('/public/') && req.method === 'GET') {
