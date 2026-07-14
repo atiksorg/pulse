@@ -1757,3 +1757,22 @@ body.canvas-dragging *{cursor:grabbing !important;}
 .heatmap-legend{display:flex;align-items:center;gap:8px;margin-top:8px;padding:0 8px;}
 .heatmap-legend-label{font-family:var(--mono);font-size:10px;color:var(--muted-2);}
 .heatmap-legend-bar{flex:1;height:8px;border-radius:4px;}
+
+/* ── Reports modal tabs ────────────────────────── */
+.rtab{
+  font-family:var(--mono);font-size:11px;padding:6px 12px;
+  color:var(--muted);border:none;background:none;
+  border-bottom:2px solid transparent;cursor:pointer;
+  transition:color .15s ease,border-color .15s ease;
+}
+.rtab:hover{color:var(--text);}
+.rtab.active{color:var(--teal);border-bottom-color:var(--teal);}
+.rtab-pane{display:none;}
+.rtab-pane.active{display:block;}
+.r-history-table{width:100%;border-collapse:collapse;font-size:11.5px;font-family:var(--mono);}
+.r-history-table th{
+  text-align:left;color:var(--muted-2);font-size:10px;text-transform:uppercase;
+  letter-spacing:0.06em;padding:0 8px 8px 0;border-bottom:1px solid var(--border);
+}
+.r-history-table td{padding:5px 8px 5px 0;border-top:1px solid var(--border-soft);color:var(--text);}
+.r-history-table tr:hover td{background:var(--panel-2);}
