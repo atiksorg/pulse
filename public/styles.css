@@ -1571,11 +1571,19 @@ body.canvas-dragging *{cursor:grabbing !important;}
   .filter-op{width:70px;}
 }
 
+/* ── Safe area for notched phones ─────────────── */
+@supports(padding: env(safe-area-inset-bottom)){
+  .mobile-bottom-nav{ padding-bottom: env(safe-area-inset-bottom); }
+  .floating-toolbar{ bottom: calc(56px + env(safe-area-inset-bottom)); }
+}
+
 @media (max-width:1024px){
   .cases-grid{grid-template-columns:repeat(2,1fr);}
 }
 @media (max-width:860px){
-  .panel-card{grid-column:span 12 !important;}
+  /* ── Оставляем только то, что НЕ покрыто новым блоком внизу файла ── */
+
+  /* Hero / Landing (не дублируется в новом блоке) */
   .usecases-grid{grid-template-columns:1fr;}
   .hero-actions{margin-bottom:40px;}
   .field-row{grid-template-columns:1fr;}
@@ -1584,165 +1592,20 @@ body.canvas-dragging *{cursor:grabbing !important;}
   .hero-playground{grid-template-columns:1fr;height:auto;}
   .pg-terminal,.pg-chart-wrap{height:280px;}
   .cases-grid{grid-template-columns:1fr;}
-  .hero-actions{margin-bottom:40px;}
 
-  /* ═══ Пункт 1: Горизонтальный свайп-тулбар ═══ */
-  .toolbar{
-    flex-wrap:nowrap;
-    overflow-x:auto;
-    padding-bottom:10px;
-    scrollbar-width:none;
-    -webkit-overflow-scrolling:touch;
-  }
-  .toolbar::-webkit-scrollbar{display:none;}
-  .toolbar .btn{flex-shrink:0;}
+  /* Scroll Shrink (оставляем для обратной совместимости) */
+  body.scrolled .dash-header{ padding:8px 0; }
+  body.scrolled .dash-tabs{ max-height:0; overflow:hidden; opacity:0; margin:0; padding:0; transition:opacity .2s ease, max-height .2s ease; }
+  body.scrolled .toolbar{ max-height:0; overflow:hidden; opacity:0; margin:0; padding:0; transition:opacity .2s ease, max-height .2s ease; }
+  .dash-tabs{ transition:opacity .2s ease, max-height .2s ease; max-height:60px; opacity:1; }
+  .toolbar{ transition:opacity .2s ease, max-height .2s ease; }
 
-  /* ═══ Пункт 2: FAB — плавающая кнопка ═══ */
-  .fab-add-panel{
-    display:flex;
-    position:fixed;
-    bottom:24px;
-    right:24px;
-    width:56px;
-    height:56px;
-    border-radius:50%;
-    background:var(--teal);
-    color:#062420;
-    border:none;
-    font-size:28px;
-    font-weight:700;
-    align-items:center;
-    justify-content:center;
-    box-shadow:0 4px 20px rgba(77,236,199,0.4);
-    z-index:calc(var(--zi-floating-toolbar) + 1);
-    cursor:pointer;
-    transition:transform .15s ease, box-shadow .15s ease;
-  }
-  .fab-add-panel:hover{transform:scale(1.08);box-shadow:0 6px 28px rgba(77,236,199,0.5);}
-  .fab-add-panel:active{transform:scale(0.95);}
-  /* Скрываем десктопную кнопку "Добавить панель" в тулбаре на мобилках */
-  .toolbar .btn-add-panel-desktop{display:none !important;}
-
-  /* ═══ Пункт 3: Scroll Shrink — компактная шапка ═══ */
-  body.scrolled .dash-header{
-    padding:8px 0;
-  }
-  body.scrolled .dash-tabs{
-    max-height:0;
-    overflow:hidden;
-    opacity:0;
-    margin:0;
-    padding:0;
-    transition:opacity .2s ease, max-height .2s ease;
-  }
-  body.scrolled .toolbar{
-    max-height:0;
-    overflow:hidden;
-    opacity:0;
-    margin:0;
-    padding:0;
-    transition:opacity .2s ease, max-height .2s ease;
-  }
-  .dash-tabs{
-    transition:opacity .2s ease, max-height .2s ease;
-    max-height:60px;
-    opacity:1;
-  }
-  .toolbar{
-    transition:opacity .2s ease, max-height .2s ease;
-  }
-
-  /* ═══ Пункт 4: Предотвращение автозума на iOS ═══ */
+  /* Prevent iOS zoom */
   input, select, textarea{font-size:16px !important;}
 
-  /* ═══ Пункт 5: Bottom Sheets для модалок ═══ */
-  .overlay{
-    align-items:flex-end;
-    padding:0;
-  }
-  .modal{
-    border-radius:20px 20px 0 0;
-    max-height:90vh;
-    overflow-y:auto;
-    width:100%;
-    max-width:100%;
-    animation:slideUp 0.3s ease-out;
-    -webkit-overflow-scrolling:touch;
-  }
-  @keyframes slideUp{
-    from{transform:translateY(100%);}
-    to{transform:translateY(0);}
-  }
-
-  /* ═══ Пункт 7: Кастомная HTML-легенда для pie ═══ */
-  .custom-pie-legend{
-    max-height:100px;
-    overflow-y:auto;
-    display:flex;
-    flex-wrap:wrap;
-    gap:4px 10px;
-    padding:8px 0;
-    font-family:var(--mono);
-    font-size:11px;
-  }
-  .custom-pie-legend-item{
-    display:flex;
-    align-items:center;
-    gap:5px;
-    color:var(--muted);
-    white-space:nowrap;
-  }
-  .custom-pie-legend-dot{
-    width:10px;
-    height:10px;
-    border-radius:2px;
-    flex-shrink:0;
-  }
-
-  /* ═══ Пункт 9: Тени для горизонтального скролла таблиц ═══ */
-  .table-scroll-container{
-    background:
-      linear-gradient(to right, var(--panel) 30%, rgba(19,25,38,0)),
-      linear-gradient(to right, rgba(19,25,38,0), var(--panel) 70%) 0 100%,
-      radial-gradient(farthest-side at 0 50%, rgba(0,0,0,.2), rgba(0,0,0,0)),
-      radial-gradient(farthest-side at 100% 50%, rgba(0,0,0,.4), rgba(0,0,0,0)) 0 100%;
-    background-repeat:no-repeat;
-    background-size:40px 100%, 40px 100%, 14px 100%, 14px 100%;
-    background-attachment:local, local, scroll, scroll;
-    overflow-x:auto;
-    -webkit-overflow-scrolling:touch;
-  }
-
-  /* ═══ Пункт 10: Отключение режима «Холст» и D&D ═══ */
+  /* Disable grid mode on mobile */
   #btnLayoutMode{display:none !important;}
-  .panel-resize-handle{display:none !important;}
   .panel-card{draggable:false;}
-
-  /* ═══ Floating Toolbar: всегда виден на мобилках ═══ */
-  .floating-toolbar{
-    top:auto;
-    bottom:0;
-    left:0;
-    right:0;
-    transform:none;
-    border-radius:16px 16px 0 0;
-    padding:10px 12px;
-    width:100%;
-    max-width:100%;
-    justify-content:center;
-  }
-  .floating-toolbar.hidden{
-    opacity:1;
-    transform:none;
-    pointer-events:auto;
-  }
-  .ft-tabs{max-width:180px;}
-  .ft-btn{width:36px;height:36px;font-size:16px;}
-
-  /* Canvas grid offset для мобильного toolbar */
-  .canvas-mode #panelGrid{
-    bottom:60px;
-  }
 }
 
 /* ── Heatmap ─────────────────────────────────── */
@@ -1757,3 +1620,434 @@ body.canvas-dragging *{cursor:grabbing !important;}
 .heatmap-legend{display:flex;align-items:center;gap:8px;margin-top:8px;padding:0 8px;}
 .heatmap-legend-label{font-family:var(--mono);font-size:10px;color:var(--muted-2);}
 .heatmap-legend-bar{flex:1;height:8px;border-radius:4px;}
+
+/* ═══════════════════════════════════════════════════
+   MOBILE APP MODE (max-width: 860px)
+   Десктоп-стили выше НЕ тронуты.
+   ═══════════════════════════════════════════════════ */
+@media (max-width:860px){
+
+  /* ── Compact Topbar ─────────────────────────────── */
+  .topbar{
+    padding:10px 14px;
+    min-height:48px;
+  }
+  .topbar-github-link{ display:none; }
+  .topbar-clock{ display:none; }
+  .session-indicator{ gap:6px; }
+  .session-src{ font-size:11px; }
+  .session-src .session-badge{
+    max-width:80px;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    font-size:11px;
+    padding:3px 6px;
+  }
+  .session-indicator .btn-sm{
+    font-size:10px;
+    padding:5px 8px;
+  }
+
+  /* ── Bottom Navigation Bar ───────────────────────── */
+  .mobile-bottom-nav{
+    position:fixed;
+    bottom:0; left:0; right:0;
+    z-index:var(--zi-floating-toolbar);
+    display:flex;
+    align-items:center;
+    justify-content:space-around;
+    height:56px;
+    background:rgba(11,15,23,0.96);
+    backdrop-filter:blur(16px);
+    border-top:1px solid var(--border);
+    -webkit-backdrop-filter:blur(16px);
+  }
+  .mbn-item{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:2px;
+    padding:6px 12px;
+    border:none;
+    background:none;
+    color:var(--muted);
+    font-size:9px;
+    font-family:var(--mono);
+    cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+    min-width:48px;
+    min-height:48px;
+    transition:color .15s ease;
+    position:relative;
+  }
+  .mbn-item:active{ transform:scale(0.92); }
+  .mbn-item.mbn-active{ color:var(--teal); }
+  .mbn-item svg{ flex-shrink:0; }
+  /* Центральная кнопка "+" (FAB в navbar) */
+  .mbn-item.mbn-fab{
+    width:48px; height:48px;
+    border-radius:50%;
+    background:var(--teal);
+    color:#062420;
+    padding:0;
+    box-shadow:0 2px 12px rgba(77,236,199,0.35);
+    margin-top:-12px;
+  }
+  .mbn-item.mbn-fab svg{ stroke:#062420; }
+
+  /* ── Floating Toolbar: hidden on mobile (replaced by bottom-nav) ── */
+  .floating-toolbar{
+    display:none !important;
+  }
+
+  /* ── FAB: hidden (replaced by bottom-nav center button) ── */
+  .fab-add-panel{ display:none !important; }
+
+  /* ── Pull-to-refresh indicator ───────────────────── */
+  .ptr-indicator{
+    position:fixed;
+    top:48px; left:0; right:0;
+    z-index:var(--zi-sticky);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    padding:8px 0;
+    font-family:var(--mono);
+    font-size:12px;
+    color:var(--teal);
+    transform:translateY(-100%);
+    transition:transform .25s ease;
+    pointer-events:none;
+  }
+  .ptr-indicator.active{
+    transform:translateY(0);
+  }
+  .ptr-spinner{
+    width:16px;height:16px;
+    border:2px solid var(--border);
+    border-top-color:var(--teal);
+    border-radius:50%;
+    animation:qs-spin .6s linear infinite;
+  }
+
+  /* ── Panel Grid: vertical stack ──────────────────── */
+  .grid{
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+    padding:12px 12px 72px;
+    min-height:auto;
+  }
+  /* Отменяем canvas-mode на мобилке */
+  .canvas-mode .grid,
+  .canvas-mode #panelGrid{
+    position:relative !important;
+    display:flex !important;
+    flex-direction:column !important;
+    height:auto !important;
+    overflow:visible !important;
+    background:none !important;
+    padding:12px 12px 72px;
+    top:auto !important; left:auto !important; right:auto !important; bottom:auto !important;
+  }
+
+  /* ── Panel Cards: full-width mobile cards ────────── */
+  .panel-card{
+    grid-column:auto !important;
+    width:100% !important;
+    min-height:200px;
+    border-radius:12px;
+    box-shadow:0 2px 12px rgba(0,0,0,0.25);
+    position:relative;
+  }
+  /* Отменяем абсолютное позиционирование canvas-карточек */
+  .canvas-mode .panel-card,
+  .canvas-mode .panel-card.locked{
+    position:relative !important;
+    left:auto !important;
+    top:auto !important;
+    width:100% !important;
+    height:auto !important;
+    z-index:auto !important;
+    transform:none !important;
+  }
+
+  /* ── Panel Head ──────────────────────────────────── */
+  .panel-head{
+    padding:12px 14px;
+  }
+  .panel-head h3{
+    font-size:13px;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+
+  /* ── Panel Body ──────────────────────────────────── */
+  .panel-body{
+    padding:12px 14px;
+    min-height:160px;
+  }
+  .panel-body.kpi-body{
+    min-height:120px;
+  }
+  .kpi-value{ font-size:36px; }
+
+  /* ── Panel Menu: always visible on touch (no hover) ── */
+  .panel-menu-floating{
+    opacity:1 !important;
+    pointer-events:auto !important;
+    top:6px; right:6px;
+  }
+  .pmbtn{
+    width:32px;height:32px;
+    touch-action:manipulation;
+  }
+
+  /* ── Panel Code Toggle: visible on mobile ────────── */
+  .panel-code-toggle{
+    display:block !important;
+  }
+
+  /* ── Canvas resize handle: hidden ────────────────── */
+  .canvas-resize-handle,
+  .panel-resize-handle{
+    display:none !important;
+  }
+
+  /* ── No drag on mobile ───────────────────────────── */
+  .panel-card{ draggable:false; }
+
+  /* ── KPI Grid: 2 columns ─────────────────────────── */
+  .grid .panel-card[style*="--w:4"],
+  .grid .panel-card[style*="--w:3"]{
+    /* KPI cards don't get special treatment since we're flex now */
+  }
+
+  /* ── Logs Table: smaller font ────────────────────── */
+  .logs-table{ font-size:11px; }
+  .logs-time{ font-size:10px; width:auto; }
+  .logs-type{ font-size:10px; }
+  .logs-msg{ font-size:10.5px; }
+  .logs-pager{ padding:8px 12px; }
+  .logs-pager-btn{
+    padding:8px 14px;
+    min-height:36px;
+    font-size:12px;
+  }
+
+  /* ── Mini Table ──────────────────────────────────── */
+  .mini-table{ font-size:11.5px; }
+  .table-search-input{
+    padding:10px;
+    font-size:13px;
+  }
+
+  /* ── Touch targets: minimum 44×44 ────────────────── */
+  .btn{
+    min-height:44px;
+    padding:10px 16px;
+  }
+  .btn-primary{
+    min-height:48px;
+    font-size:15px;
+  }
+  .dash-tab{
+    min-height:36px;
+    padding:6px 14px;
+  }
+  .logs-pager-btn,
+  .filter-del{
+    min-width:36px;
+    min-height:36px;
+  }
+
+  /* ── Active states for touch ─────────────────────── */
+  .panel-card:active{
+    transform:scale(0.995);
+    transition:transform .1s ease;
+  }
+  .case-card:active{ border-color:var(--teal); }
+  .tpl-card:active{ border-color:var(--teal); }
+  .usecase-card:active{ border-color:var(--teal); }
+
+  /* ── Bottom sheet modal style ────────────────────── */
+  .overlay{
+    align-items:flex-end;
+    padding:0;
+  }
+  .modal{
+    border-radius:20px 20px 0 0;
+    max-height:92vh;
+    overflow-y:auto;
+    width:100%;
+    max-width:100%;
+    animation:slideUp 0.3s ease-out;
+    -webkit-overflow-scrolling:touch;
+  }
+  @keyframes slideUp{
+    from{ transform:translateY(100%); }
+    to{ transform:translateY(0); }
+  }
+  /* Focus overlay — fullscreen */
+  #focusOverlay .modal{
+    border-radius:0;
+    max-height:100vh;
+    max-height:100dvh;
+    height:100vh;
+    height:100dvh;
+  }
+
+  /* ── Modal drag handle (bottom sheet grabber) ────── */
+  .modal::before{
+    content:'';
+    display:block;
+    width:36px; height:4px;
+    background:var(--muted-2);
+    border-radius:2px;
+    margin:8px auto 12px;
+  }
+
+  /* ── Hero / Landing mobile ───────────────────────── */
+  .hero{ padding:40px 0 28px; }
+  .hero h1{ font-size:clamp(24px,7vw,36px); }
+  .hero p.lead{ font-size:14px; }
+  .hero-checklist{
+    flex-direction:column;
+    gap:12px;
+  }
+  .hero-playground{
+    grid-template-columns:1fr;
+    height:auto;
+    gap:12px;
+  }
+  .pg-terminal,.pg-chart-wrap{ height:auto; min-height:200px; }
+
+  /* Hero Enter: stacked */
+  .hero-enter-row{
+    flex-direction:column;
+    gap:10px;
+  }
+  .hero-enter-row .src-tag{ width:100%; }
+  .hero-enter-row .btn-primary{ width:100%; }
+
+  /* Use Cases: single column */
+  .usecases-grid{ grid-template-columns:1fr; gap:16px; }
+  .usecases-title{ font-size:20px; }
+  .cases-grid{ grid-template-columns:1fr; }
+
+  /* ── Forms ───────────────────────────────────────── */
+  .field-row{ grid-template-columns:1fr; }
+  .tpl-grid{ grid-template-columns:1fr; }
+  .modal-actions{
+    flex-direction:column-reverse;
+    gap:8px;
+  }
+  .modal-actions .btn{
+    width:100%;
+    justify-content:center;
+  }
+  /* iOS: prevent zoom on input focus */
+  input, select, textarea{ font-size:16px !important; }
+
+  /* ── Share box ───────────────────────────────────── */
+  .share-box{
+    flex-direction:column;
+  }
+  .share-box input{ font-size:11px; }
+
+  /* ── Hero code tabs: smaller ─────────────────────── */
+  .uc-code-wrap{ font-size:11px; }
+  .uc-textarea{ font-size:10.5px; padding:10px 12px; }
+
+  /* ── Toast: bottom, above nav ────────────────────── */
+  .toast{
+    bottom:72px;
+    font-size:12px;
+    max-width:90%;
+    text-align:center;
+  }
+
+  /* ── Scroll Shrink (compact header on scroll) ────── */
+  body.scrolled .panel-head{
+    padding:8px 12px;
+  }
+
+  /* ── Custom pie legend ───────────────────────────── */
+  .custom-pie-legend{
+    max-height:80px;
+    overflow-y:auto;
+    display:flex;
+    flex-wrap:wrap;
+    gap:3px 8px;
+    padding:6px 0;
+    font-family:var(--mono);
+    font-size:10px;
+  }
+  .custom-pie-legend-item{
+    display:flex;
+    align-items:center;
+    gap:4px;
+    color:var(--muted);
+    white-space:nowrap;
+  }
+  .custom-pie-legend-dot{
+    width:8px; height:8px;
+    border-radius:2px;
+    flex-shrink:0;
+  }
+
+  /* ── Table scroll shadows ────────────────────────── */
+  .table-scroll-container{
+    background:
+      linear-gradient(to right, var(--panel) 30%, rgba(19,25,38,0)),
+      linear-gradient(to right, rgba(19,25,38,0), var(--panel) 70%) 0 100%,
+      radial-gradient(farthest-side at 0 50%, rgba(0,0,0,.2), rgba(0,0,0,0)),
+      radial-gradient(farthest-side at 100% 50%, rgba(0,0,0,.4), rgba(0,0,0,0)) 0 100%;
+    background-repeat:no-repeat;
+    background-size:30px 100%, 30px 100%, 10px 100%, 10px 100%;
+    background-attachment:local, local, scroll, scroll;
+    overflow-x:auto;
+    -webkit-overflow-scrolling:touch;
+  }
+
+  /* ── Skill wrap: smaller ─────────────────────────── */
+  .skill-wrap textarea{ height:260px; font-size:11px; }
+
+  /* ── Config builder: stack ───────────────────────── */
+  .config-builder-wrap{ grid-template-columns:1fr; }
+  .config-editor-wrap{ border-right:none; border-bottom:1px solid var(--border); }
+
+  /* ── Endpoint table ──────────────────────────────── */
+  .endpoint-table{ font-size:12px; }
+  .endpoint-table th{ font-size:9px; padding:0 8px 8px; }
+  .endpoint-table td{ padding:10px 8px; }
+
+  /* ── Canvas crosshair: hidden ────────────────────── */
+  .canvas-crosshair-h,
+  .canvas-crosshair-v,
+  .canvas-crosshair-dot{ display:none; }
+}
+
+/* ── Light theme mobile adjustments ──────────────── */
+[data-theme="light"] .mobile-bottom-nav{
+  background:rgba(255,255,255,0.96);
+  border-top:1px solid var(--border);
+}
+[data-theme="light"] .modal::before{
+  background:var(--muted-2);
+}
+
+/* ── Small phones (<380px) ───────────────────────── */
+@media (max-width:380px){
+  .brand{ font-size:15px; }
+  .topbar{ padding:8px 10px; }
+  .grid{ padding:8px 8px 72px; gap:8px; }
+  .panel-body{ padding:10px; }
+  .kpi-value{ font-size:30px; }
+  .mbn-item{ padding:4px 8px; font-size:8px; }
+  .mbn-item.mbn-fab{ width:42px; height:42px; }
+}
