@@ -1285,8 +1285,93 @@ function showQuickStartBanner(){
   }
 }
 
+/* ── buildPanelSummary: краткое текстовое описание сути панели ── */
+function buildPanelSummary(p, src){
+  var vizNames = {line:'Линейный график',bar:'Столбчатая диаграмма',pie:'Круговая диаграмма',kpi:'KPI-число',table:'Таблица',logs:'Таблица логов',gauge:'Шкала-индикатор',heatmap:'Тепловая карта'};
+  var rangeNames = {'24h':'24ч','7d':'7д','30d':'30д','all':'всё время','custom':'выбранный период'};
+  var groupNames = {'day':'по дням','hour':'по часам','minute':'по минутам','month':'по месяцам','week':'по неделям','__field':'по полю'};
+  var aggNames = {'count':'количество','sum':'сумма','avg':'среднее','min':'минимум','max':'максимум','median':'медиана','p95':'p95','p99':'p99'};
+
+  var parts = [];
+  parts.push(vizNames[p.viz] || p.viz);
+  parts.push(p.type ? 'тип: '+p.type : 'все типы');
+
+  if(p.group === '__field' || p.group === 'field'){
+    parts.push('по полю '+(p.field || '?'));
+  } else if(p.group){
+    parts.push(groupNames[p.group] || p.group);
+  }
+
+  if(p.agg && p.agg !== 'count'){
+    parts.push(aggNames[p.agg]||p.agg + (p.aggfield ? ' по полю '+p.aggfield : ''));
+  }
+
+  parts.push(rangeNames[p.range] || p.range || '—');
+
+  if(p.sort && p.sort !== 'key') parts.push('сортировка: '+(p.sort==='value_desc'?'по убыванию':'по возрастанию'));
+  if(p.limit && Number(p.limit)>0) parts.push('топ-'+Number(p.limit));
+  if(p.stacked) parts.push('stacked');
+  if(p.cumulative) parts.push('нарастающий');
+  if(p.compare) parts.push('сравнение периодов');
+  if(p.secondAxis) parts.push('две оси Y');
+  if(p.breakdownfield) parts.push('разбивка: '+p.breakdownfield);
+  if(p.unit) parts.push('ед.: '+p.unit);
+  if(Array.isArray(p.filters) && p.filters.length){
+    p.filters.forEach(function(f){
+      var fv = Array.isArray(f.value) ? f.value.join(',') : String(f.value);
+      if(fv.length > 20) fv = fv.slice(0,18)+'…';
+      parts.push(f.field+({'eq':'=','neq':'≠','gt':'>','lt':'<','in':'∈','contains':'~'}[f.op]||f.op)+fv);
+    });
+  }
+
+  /* Добавляем реальные данные, если есть */
+  var bodyEl = document.getElementById('body-' + p.id);
+  var chart = charts[p.id];
+
+  if(p.viz === 'kpi' || p.viz === 'gauge'){
+    var total = bodyEl ? bodyEl.getAttribute('data-total') : null;
+    if(total !== null && total !== ''){
+      parts.push('значение: '+total);
+    }
+  }
+  else if(p.viz === 'logs'){
+    var events = p._logsEvents || [];
+    parts.push(events.length+' событий');
+    if(events.length > 0){
+      /* Считаем топ типов из первых 100 событий */
+      var typeMap = {};
+      events.slice(0,100).forEach(function(ev){ typeMap[ev.type] = (typeMap[ev.type]||0)+1; });
+      var topTypes = Object.keys(typeMap).sort(function(a,b){return typeMap[b]-typeMap[a];}).slice(0,5);
+      if(topTypes.length){
+        parts.push('типы: '+topTypes.map(function(t){return t+'('+typeMap[t]+')';}).join(', '));
+      }
+    }
+  }
+  else if(p.viz === 'table'){
+    var rows = p._tableData || [];
+    parts.push(rows.length+' строк');
+  }
+  else if(chart && chart.data){
+    var labels = chart.data.labels || [];
+    var ds0 = chart.data.datasets[0];
+    var values = ds0 ? ds0.data.filter(function(v){return v!==null&&v!==undefined;}) : [];
+    if(values.length){
+      var min = Math.min.apply(null, values);
+      var max = Math.max.apply(null, values);
+      var sum = values.reduce(function(a,b){return a+b;},0);
+      var avg = sum / values.length;
+      parts.push(labels.length+' точек · min='+formatCompact(min)+' max='+formatCompact(max)+' avg='+formatCompact(avg));
+    }
+    if(chart.data.datasets.length > 1){
+      parts.push(chart.data.datasets.length+' серий');
+    }
+  }
+
+  return parts.join(' · ');
+}
+
 /* ── Export XML: compact dashboard snapshot for AI visualization ── */
-function exportXml(){
+function exportXml(fullMode){
   var db = getActiveDashboard();
   if(!db || !db.panels || !db.panels.length){
     toast('Нет данных для экспорта');
@@ -1295,6 +1380,7 @@ function exportXml(){
   var src = getSrc() || '';
   var now = new Date().toISOString();
   var tz = getUtcOffsetStr();
+  var compact = !fullMode;
 
   /* XML-атрибут экранирование */
   function xa(s){
@@ -1305,7 +1391,7 @@ function exportXml(){
 
   var L = [];
   L.push('<?xml version="1.0" encoding="UTF-8"?>');
-  L.push('<pulse-dashboard name="' + xa(db.name) + '" src="' + xa(src) + '" exported="' + xa(now) + '" tz="' + xa(tz) + '">');
+  L.push('<pulse-dashboard name="' + xa(db.name) + '" src="' + xa(src) + '" exported="' + xa(now) + '" tz="' + xa(tz) + '"' + (compact ? ' compact="true"' : '') + '>');
 
   /* Viewport холста */
   if(interactiveCanvas && !interactiveCanvas._destroyed){
@@ -1316,117 +1402,121 @@ function exportXml(){
 
   /* Каждая панель */
   db.panels.forEach(function(p){
-    L.push('  <panel id="' + xa(p.id) + '" title="' + xa(p.title) + '" viz="' + xa(p.viz) + '"'
-      + ' x="' + (p.cx||0) + '" y="' + (p.cy||0) + '" w="' + (p.cw||0) + '" h="' + (p.ch||0) + '" z="' + (p.cz||0) + '"'
-      + ' locked="' + (!!p.locked) + '">');
+    if(compact){
+      /* ── Компактный режим: summary вместо данных ── */
+      var summary = buildPanelSummary(p, src);
+      L.push('  <panel viz="' + xa(p.viz) + '" title="' + xa(p.title) + '" summary="' + xa(summary) + '" />');
+    } else {
+      /* ── Полный режим: всё как раньше ── */
+      L.push('  <panel id="' + xa(p.id) + '" title="' + xa(p.title) + '" viz="' + xa(p.viz) + '"'
+        + ' x="' + (p.cx||0) + '" y="' + (p.cy||0) + '" w="' + (p.cw||0) + '" h="' + (p.ch||0) + '" z="' + (p.cz||0) + '"'
+        + ' locked="' + (!!p.locked) + '">');
 
-    /* Конфигурация данных */
-    var cfgA = '';
-    ['type','group','field','agg','aggfield','range','from','to','sort','limit',
-     'unit','color','formatType','lineStyle','tension','width','autorefresh',
-     'stacked','cumulative','compare','secondAxis','gaugeMin','gaugeMax','breakdownfield']
-      .forEach(function(k){
-        var v = p[k];
-        if(v !== undefined && v !== null && v !== '') cfgA += ' ' + k + '="' + xa(v) + '"';
-      });
-    L.push('    <config' + cfgA + ' />');
-
-    /* Фильтры */
-    if(Array.isArray(p.filters) && p.filters.length){
-      L.push('    <filters>');
-      p.filters.forEach(function(f){
-        var fv = Array.isArray(f.value) ? f.value.join(',') : String(f.value);
-        L.push('      <filter field="' + xa(f.field) + '" op="' + xa(f.op) + '" value="' + xa(fv) + '" />');
-      });
-      L.push('    </filters>');
-    }
-
-    /* Пороговые линии */
-    if(Array.isArray(p.thresholds) && p.thresholds.length){
-      L.push('    <thresholds>');
-      p.thresholds.forEach(function(t){
-        L.push('      <threshold value="' + t.value + '" color="' + xa(t.color) + '" label="' + xa(t.label) + '" />');
-      });
-      L.push('    </thresholds>');
-    }
-
-    /* ── Извлечение данных по типу визуализации ── */
-    var bodyEl = document.getElementById('body-' + p.id);
-    var chart = charts[p.id];
-
-    if(p.viz === 'kpi'){
-      var total = bodyEl ? bodyEl.getAttribute('data-total') : '';
-      L.push('    <data total="' + xa(total) + '" />');
-    }
-    else if(p.viz === 'gauge'){
-      var total = bodyEl ? bodyEl.getAttribute('data-total') : '';
-      L.push('    <data total="' + xa(total) + '"'
-        + ' min="' + (p.gaugeMin !== undefined ? p.gaugeMin : 0) + '"'
-        + ' max="' + (p.gaugeMax !== undefined ? p.gaugeMax : 100) + '" />');
-    }
-    else if(p.viz === 'table'){
-      var rows = p._tableData || [];
-      var key = panelKey(p);
-      var maxRows = Math.min(rows.length, 20);
-      L.push('    <data rows="' + rows.length + '" shown="' + maxRows + '">');
-      for(var i = 0; i < maxRows; i++){
-        L.push('      <row key="' + xa(rows[i][key]) + '" value="' + rows[i].value + '" />');
-      }
-      L.push('    </data>');
-    }
-    else if(p.viz === 'logs'){
-      var events = p._logsEvents || [];
-      var maxEv = Math.min(events.length, 10);
-      L.push('    <data events="' + events.length + '" shown="' + maxEv + '">');
-      for(var i = 0; i < maxEv; i++){
-        var ev = events[i];
-        var msg = '';
-        try {
-          var pl = JSON.parse(ev.payload);
-          var pkeys = Object.keys(pl);
-          msg = pkeys.slice(0, 3).map(function(k){ return k + '=' + String(pl[k]); }).join(', ');
-        } catch(_){
-          msg = String(ev.payload || '');
-        }
-        if(msg.length > 80) msg = msg.slice(0, 77) + '…';
-        L.push('      <event time="' + xa(ev.ts) + '" type="' + xa(ev.type) + '" msg="' + xa(msg) + '" />');
-      }
-      L.push('    </data>');
-    }
-    else if(chart && chart.data){
-      /* line, bar, pie — данные из Chart.js */
-      var labels = chart.data.labels || [];
-      var datasets = chart.data.datasets || [];
-      if(datasets.length > 1){
-        /* Multi-series (breakdown) */
-        L.push('    <data points="' + labels.length + '" series="' + datasets.length + '">');
-        datasets.forEach(function(ds){
-          L.push('      <series name="' + xa(ds.label || '') + '">');
-          for(var i = 0; i < labels.length; i++){
-            var v = ds.data[i];
-            if(v !== null && v !== undefined){
-              L.push('        <point label="' + xa(labels[i]) + '" value="' + v + '" />');
-            }
-          }
-          L.push('      </series>');
+      /* Конфигурация данных */
+      var cfgA = '';
+      ['type','group','field','agg','aggfield','range','from','to','sort','limit',
+       'unit','color','formatType','lineStyle','tension','width','autorefresh',
+       'stacked','cumulative','compare','secondAxis','gaugeMin','gaugeMax','breakdownfield']
+        .forEach(function(k){
+          var v = p[k];
+          if(v !== undefined && v !== null && v !== '') cfgA += ' ' + k + '="' + xa(v) + '"';
         });
-        L.push('    </data>');
-      } else {
-        /* Single series */
-        var values = datasets[0] ? datasets[0].data : [];
-        L.push('    <data points="' + labels.length + '">');
-        for(var i = 0; i < labels.length; i++){
-          var v = values[i];
-          L.push('      <point label="' + xa(labels[i]) + '" value="' + (v != null ? v : '') + '" />');
+      L.push('    <config' + cfgA + ' />');
+
+      /* Фильтры */
+      if(Array.isArray(p.filters) && p.filters.length){
+        L.push('    <filters>');
+        p.filters.forEach(function(f){
+          var fv = Array.isArray(f.value) ? f.value.join(',') : String(f.value);
+          L.push('      <filter field="' + xa(f.field) + '" op="' + xa(f.op) + '" value="' + xa(fv) + '" />');
+        });
+        L.push('    </filters>');
+      }
+
+      /* Пороговые линии */
+      if(Array.isArray(p.thresholds) && p.thresholds.length){
+        L.push('    <thresholds>');
+        p.thresholds.forEach(function(t){
+          L.push('      <threshold value="' + t.value + '" color="' + xa(t.color) + '" label="' + xa(t.label) + '" />');
+        });
+        L.push('    </thresholds>');
+      }
+
+      /* Извлечение данных по типу визуализации */
+      var bodyEl = document.getElementById('body-' + p.id);
+      var chart = charts[p.id];
+
+      if(p.viz === 'kpi'){
+        var total = bodyEl ? bodyEl.getAttribute('data-total') : '';
+        L.push('    <data total="' + xa(total) + '" />');
+      }
+      else if(p.viz === 'gauge'){
+        var total = bodyEl ? bodyEl.getAttribute('data-total') : '';
+        L.push('    <data total="' + xa(total) + '"'
+          + ' min="' + (p.gaugeMin !== undefined ? p.gaugeMin : 0) + '"'
+          + ' max="' + (p.gaugeMax !== undefined ? p.gaugeMax : 100) + '" />');
+      }
+      else if(p.viz === 'table'){
+        var rows = p._tableData || [];
+        var key = panelKey(p);
+        var maxRows = Math.min(rows.length, 20);
+        L.push('    <data rows="' + rows.length + '" shown="' + maxRows + '">');
+        for(var i = 0; i < maxRows; i++){
+          L.push('      <row key="' + xa(rows[i][key]) + '" value="' + rows[i].value + '" />');
         }
         L.push('    </data>');
       }
-    }
-    else {
-      L.push('    <data />');
-    }
+      else if(p.viz === 'logs'){
+        var events = p._logsEvents || [];
+        var maxEv = Math.min(events.length, 10);
+        L.push('    <data events="' + events.length + '" shown="' + maxEv + '">');
+        for(var i = 0; i < maxEv; i++){
+          var ev = events[i];
+          var msg = '';
+          try {
+            var pl = JSON.parse(ev.payload);
+            var pkeys = Object.keys(pl);
+            msg = pkeys.slice(0, 3).map(function(k){ return k + '=' + String(pl[k]); }).join(', ');
+          } catch(_){
+            msg = String(ev.payload || '');
+          }
+          if(msg.length > 80) msg = msg.slice(0, 77) + '…';
+          L.push('      <event time="' + xa(ev.ts) + '" type="' + xa(ev.type) + '" msg="' + xa(msg) + '" />');
+        }
+        L.push('    </data>');
+      }
+      else if(chart && chart.data){
+        var labels = chart.data.labels || [];
+        var datasets = chart.data.datasets || [];
+        if(datasets.length > 1){
+          L.push('    <data points="' + labels.length + '" series="' + datasets.length + '">');
+          datasets.forEach(function(ds){
+            L.push('      <series name="' + xa(ds.label || '') + '">');
+            for(var i = 0; i < labels.length; i++){
+              var v = ds.data[i];
+              if(v !== null && v !== undefined){
+                L.push('        <point label="' + xa(labels[i]) + '" value="' + v + '" />');
+              }
+            }
+            L.push('      </series>');
+          });
+          L.push('    </data>');
+        } else {
+          var values = datasets[0] ? datasets[0].data : [];
+          L.push('    <data points="' + labels.length + '">');
+          for(var i = 0; i < labels.length; i++){
+            var v = values[i];
+            L.push('      <point label="' + xa(labels[i]) + '" value="' + (v != null ? v : '') + '" />');
+          }
+          L.push('    </data>');
+        }
+      }
+      else {
+        L.push('    <data />');
+      }
 
-    L.push('  </panel>');
+      L.push('  </panel>');
+    }
   });
 
   L.push('</pulse-dashboard>');
@@ -1437,11 +1527,12 @@ function exportXml(){
   var url = URL.createObjectURL(blob);
   var a = document.createElement('a');
   a.href = url;
-  a.download = (db.name || 'dashboard').replace(/[^a-zA-Z0-9_-]/g, '_') + '.xml';
+  var suffix = compact ? '_compact' : '_full';
+  a.download = (db.name || 'dashboard').replace(/[^a-zA-Z0-9_-]/g, '_') + suffix + '.xml';
   document.body.appendChild(a);
   a.click();
   setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); }, 100);
-  toast('XML экспортирован (' + db.panels.length + ' панелей)');
+  toast((compact ? 'Компактный XML' : 'Полный XML') + ' · ' + db.panels.length + ' панелей');
 }
 
 /* ── Fullscreen overlay close ───────────────────── */
