@@ -36,7 +36,7 @@ async function initDashboard(){
   $('#btnArrangeLayout').onclick = function(){ arrangeAndFitCanvas(); };
   $('#btnRefreshAll').onclick = function(){ renderPanels(); };
   $('#btnExport').onclick = exportCsv;
-  $('#btnExportXml').onclick = exportXml;
+  $('#btnExportXml').onclick = function(e){ exportXml(e.shiftKey); };
   $('#btnShare').onclick = function(){ showShareModal(); };
   $('#btnAddPanel').onclick = openAddPanel;
 
