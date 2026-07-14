@@ -6,6 +6,27 @@
 /* ── Canvas state (живёт в одном месте — panels-canvas.js) ─── */
 var interactiveCanvas = null;
 
+/* ── Dropdown z-index tracking ──────────────────── */
+var _activeDropdownCard = null;
+var _activeDropdownPanel = null;
+var _activeDropdownOrigZ = null;
+
+function _saveDropdownZIndex(card, p){
+  _activeDropdownCard = card;
+  _activeDropdownPanel = p;
+  _activeDropdownOrigZ = (typeof p.cz === 'number') ? p.cz : CANVAS_Z_MIN;
+}
+
+function _restoreDropdownZIndex(){
+  if(_activeDropdownCard && _activeDropdownPanel){
+    _activeDropdownCard.style.zIndex = Math.min(Math.max(_activeDropdownOrigZ, CANVAS_Z_MIN), CANVAS_Z_MAX);
+    _activeDropdownPanel.cz = _activeDropdownOrigZ;
+  }
+  _activeDropdownCard = null;
+  _activeDropdownPanel = null;
+  _activeDropdownOrigZ = null;
+}
+
 /* ── Viz size presets for canvas layout ──────────── */
 var CANVAS_VIZ_PRESETS = {
   line:  { cw: 380, ch: 280 },
@@ -497,5 +518,6 @@ function onDragEnd(e){ e.currentTarget.classList.remove('dragging'); $$('.panel-
 document.addEventListener('click', function(e){
   if(!e.target.closest('.panel-menu-wrap')){
     document.querySelectorAll('.panel-menu-dropdown.show').forEach(function(d){ d.classList.remove('show'); });
+    _restoreDropdownZIndex();
   }
 });
