@@ -1,0 +1,1055 @@
+/* ═══════════════════════════════════════════════════
+   mobile-styles.css — Переопределение вёрстки для
+   мобильных устройств (Progressive Enhancement)
+   ─────────────────────────────────────────────────
+   Загружается ТОЛЬКО при width < 860px + touch.
+   Не изменяет ни одну строку существующего styles.css.
+   ═══════════════════════════════════════════════════ */
+
+/* ── Safe Area CSS Variables ─────────────────────── */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --bottom-nav-height: 64px;
+  --mobile-header-height: 56px;
+}
+
+/* ═══════════════════════════════════════════════════
+   1. BOTTOM NAVIGATION BAR
+   Полностью заменяет Floating Toolbar
+   ═══════════════════════════════════════════════════ */
+
+/* Скрываем десктопный Floating Toolbar */
+.floating-toolbar {
+  display: none !important;
+}
+
+/* Скрываем FAB (функция перенесена в Bottom Nav) */
+.fab-add-panel {
+  display: none !important;
+}
+
+/* Bottom Navigation Bar */
+.mp-bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: var(--bottom-nav-height);
+  padding-bottom: var(--safe-bottom);
+  background: rgba(19, 25, 38, 0.96);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: stretch;
+  justify-content: space-around;
+  z-index: 898;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+[data-theme="light"] .mp-bottom-nav {
+  background: rgba(255, 255, 255, 0.96);
+}
+
+[data-theme="high-contrast"] .mp-bottom-nav {
+  background: rgba(0, 0, 0, 0.98);
+  border-top: 2px solid var(--teal);
+}
+
+.mp-nav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 6px 0 2px;
+  color: var(--muted-2);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: color 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+  position: relative;
+}
+
+.mp-nav-item:active {
+  opacity: 0.7;
+}
+
+.mp-nav-item.active {
+  color: var(--teal);
+}
+
+.mp-nav-item.active::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 24px;
+  height: 2px;
+  background: var(--teal);
+  border-radius: 0 0 2px 2px;
+}
+
+.mp-nav-icon {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mp-nav-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* Кнопка "+" (Add Panel) в Bottom Nav */
+.mp-nav-add {
+  position: relative;
+}
+
+.mp-nav-add .mp-nav-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--teal);
+  color: #062420;
+  margin-top: -14px;
+  box-shadow: 0 2px 12px rgba(77, 236, 199, 0.4);
+  transition: transform 0.15s ease;
+}
+
+.mp-nav-add:active .mp-nav-icon {
+  transform: scale(0.92);
+}
+
+.mp-nav-add .mp-nav-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+/* ═══════════════════════════════════════════════════
+   2. MOBILE HEADER — Dropdown для дашбордов
+   ═══════════════════════════════════════════════════ */
+
+/* Скрываем десктопные табы дашбордов в Floating Toolbar */
+.ft-tabs {
+  display: none !important;
+}
+
+/* Мобильный Header для дашборда */
+.mp-dash-header {
+  position: sticky;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--mobile-header-height);
+  padding: 0 16px;
+  padding-top: var(--safe-top);
+  background: rgba(11, 15, 23, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border-soft);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 897;
+  gap: 10px;
+}
+
+[data-theme="light"] .mp-dash-header {
+  background: rgba(255, 255, 255, 0.92);
+}
+
+[data-theme="high-contrast"] .mp-dash-header {
+  background: rgba(0, 0, 0, 0.95);
+  border-bottom: 2px solid var(--teal);
+}
+
+/* Левая часть: brand + dropdown */
+.mp-dash-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.mp-dash-header .brand {
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.mp-dash-header .brand .dot {
+  width: 7px;
+  height: 7px;
+}
+
+/* Dropdown дашборда */
+.mp-dash-dropdown {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.mp-dash-dropdown-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  width: 100%;
+  min-width: 0;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color 0.15s ease;
+}
+
+.mp-dash-dropdown-trigger:active {
+  border-color: var(--teal-dim);
+}
+
+.mp-dash-dropdown-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mp-dash-dropdown-arrow {
+  font-size: 10px;
+  color: var(--muted-2);
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.mp-dash-dropdown.open .mp-dash-dropdown-arrow {
+  transform: rotate(180deg);
+}
+
+/* Выпадающий список */
+.mp-dash-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 4px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  display: none;
+  max-height: 280px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mp-dash-dropdown.open .mp-dash-dropdown-menu {
+  display: block;
+  animation: mpSlideDown 0.15s ease-out;
+}
+
+@keyframes mpSlideDown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.mp-dash-dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: 7px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mp-dash-dropdown-item:active {
+  background: var(--panel-2);
+}
+
+.mp-dash-dropdown-item.active {
+  background: rgba(77, 236, 199, 0.08);
+  color: var(--teal);
+  font-weight: 600;
+}
+
+.mp-dash-dropdown-item .mp-dd-check {
+  color: var(--teal);
+  font-size: 14px;
+  opacity: 0;
+}
+
+.mp-dash-dropdown-item.active .mp-dd-check {
+  opacity: 1;
+}
+
+.mp-dash-dropdown-item .mp-dd-delete {
+  color: var(--muted-2);
+  font-size: 16px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.mp-dash-dropdown-item:active .mp-dd-delete {
+  opacity: 1;
+}
+
+.mp-dash-dropdown-item .mp-dd-delete:active {
+  color: var(--coral);
+}
+
+/* Кнопка "Новый дашборд" */
+.mp-dash-dropdown-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border-soft);
+  margin-top: 4px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--teal);
+  cursor: pointer;
+  border-radius: 7px;
+  transition: background 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mp-dash-dropdown-add:active {
+  background: rgba(77, 236, 199, 0.08);
+}
+
+/* Правая часть: кнопки */
+.mp-dash-header-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.mp-header-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: all 0.15s ease;
+}
+
+.mp-header-btn:active {
+  transform: scale(0.92);
+  border-color: var(--teal-dim);
+  color: var(--teal);
+}
+
+.mp-header-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* ═══════════════════════════════════════════════════
+   3. VERTICAL FEED — Все панели в ленту
+   ═══════════════════════════════════════════════════ */
+
+/* Отключаем Canvas-режим на мобильном */
+.canvas-mode #panelGrid {
+  position: static !important;
+  width: 100% !important;
+  height: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 12px !important;
+  padding: 12px 12px calc(var(--bottom-nav-height) + var(--safe-bottom) + 20px) !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  background: var(--bg) !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Все панели — 100% ширины, без absolute позиционирования */
+.canvas-mode .panel-card {
+  position: static !important;
+  grid-column: auto !important;
+  width: 100% !important;
+  left: auto !important;
+  top: auto !important;
+  min-height: auto !important;
+  border-radius: 12px !important;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25) !important;
+}
+
+/* Скрываем canvas-специфичные элементы */
+.canvas-mode .panel-card .canvas-resize-handle,
+.canvas-mode .panel-card .panel-resize-handle {
+  display: none !important;
+}
+
+.canvas-mode .panel-card .panel-code-toggle {
+  display: none !important;
+}
+
+.canvas-mode .panel-card .panel-code-block {
+  display: none !important;
+}
+
+/* Crosshair — скрыт */
+.canvas-crosshair-h,
+.canvas-crosshair-v,
+.canvas-crosshair-dot {
+  display: none !important;
+}
+
+/* Canvas surface — не нужен */
+.canvas-surface {
+  position: static !important;
+  transform: none !important;
+}
+
+/* ═══════════════════════════════════════════════════
+   4. BOTTOM SHEET — Контекстное меню панели
+   ═══════════════════════════════════════════════════ */
+
+/* Скрываем десктопный dropdown меню */
+.panel-menu-dropdown {
+  display: none !important;
+}
+
+/* Bottom Sheet Overlay */
+.mp-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 950;
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: var(--safe-bottom);
+}
+
+.mp-sheet-overlay.active {
+  display: flex;
+  animation: mpFadeIn 0.2s ease-out;
+}
+
+@keyframes mpFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Bottom Sheet Container */
+.mp-sheet {
+  width: 100%;
+  max-width: 100%;
+  background: var(--panel);
+  border-radius: 16px 16px 0 0;
+  padding: 8px 0 calc(8px + var(--safe-bottom));
+  animation: mpSheetUp 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  max-height: 80vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@keyframes mpSheetUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+/* Handle bar */
+.mp-sheet-handle {
+  width: 36px;
+  height: 4px;
+  background: var(--muted-2);
+  border-radius: 2px;
+  margin: 8px auto 12px;
+  opacity: 0.5;
+}
+
+/* Sheet Title */
+.mp-sheet-title {
+  padding: 4px 20px 12px;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  border-bottom: 1px solid var(--border-soft);
+  margin-bottom: 4px;
+}
+
+/* Sheet Items */
+.mp-sheet-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 20px;
+  font-size: 15px;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mp-sheet-item:active {
+  background: var(--panel-2);
+}
+
+.mp-sheet-item.danger {
+  color: var(--coral);
+}
+
+.mp-sheet-item.danger:active {
+  background: rgba(242, 102, 79, 0.08);
+}
+
+.mp-sheet-item svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.mp-sheet-item.danger svg {
+  opacity: 1;
+}
+
+/* Separator */
+.mp-sheet-sep {
+  height: 1px;
+  background: var(--border-soft);
+  margin: 4px 0;
+}
+
+/* ═══════════════════════════════════════════════════
+   5. PULL-TO-REFRESH
+   ═══════════════════════════════════════════════════ */
+
+.mp-pull-indicator {
+  position: fixed;
+  top: var(--mobile-header-height);
+  left: 50%;
+  transform: translateX(-50%) translateY(-50px);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--panel-2);
+  border: 2px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 896;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.mp-pull-indicator.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.mp-pull-indicator.refreshing {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.mp-pull-indicator.refreshing::before {
+  content: '';
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border);
+  border-top-color: var(--teal);
+  border-radius: 50%;
+  animation: mpSpin 0.6s linear infinite;
+}
+
+@keyframes mpSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* ═══════════════════════════════════════════════════
+   6. PANEL MENU BUTTON — Always visible on mobile
+   ═══════════════════════════════════════════════════ */
+
+.panel-menu-floating {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+/* ═══════════════════════════════════════════════════
+   7. MODALS — Full-screen overlays
+   ═══════════════════════════════════════════════════ */
+
+.overlay {
+  padding: 0 !important;
+  align-items: flex-end !important;
+}
+
+.modal {
+  border-radius: 20px 20px 0 0 !important;
+  max-height: 92vh !important;
+  max-width: 100% !important;
+  padding-bottom: calc(20px + var(--safe-bottom)) !important;
+  animation: mpSheetUp 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) !important;
+}
+
+/* Confirm modal — тоже bottom sheet */
+.confirm-modal {
+  max-width: 100% !important;
+  border-radius: 20px 20px 0 0 !important;
+}
+
+/* Focus overlay — full screen */
+#focusOverlay .modal {
+  border-radius: 0 !important;
+  max-height: 100vh !important;
+  height: 100vh !important;
+}
+
+/* ═══════════════════════════════════════════════════
+   8. FORM CONTROLS — Touch-friendly
+   ═══════════════════════════════════════════════════ */
+
+/* Увеличиваем touch-таргеты */
+.field input,
+.field select {
+  min-height: 44px !important;
+  font-size: 16px !important; /* Предотвращает зум на iOS */
+  padding: 10px 14px !important;
+}
+
+.field label {
+  font-size: 12px !important;
+}
+
+/* Segmented Control для select */
+.mp-segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.mp-segmented-item {
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mp-segmented-item.active {
+  background: rgba(77, 236, 199, 0.12);
+  border-color: var(--teal-dim);
+  color: var(--teal);
+  font-weight: 600;
+}
+
+.mp-segmented-item:active {
+  transform: scale(0.96);
+}
+
+/* Числовые инпуты с кнопками +/- */
+.mp-number-group {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.mp-number-btn {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.12s ease;
+}
+
+.mp-number-btn:active {
+  background: var(--border);
+}
+
+.mp-number-input {
+  flex: 1;
+  text-align: center;
+  border: none !important;
+  background: transparent !important;
+  font-family: var(--mono);
+  font-size: 16px !important;
+  min-height: 44px !important;
+  padding: 0 !important;
+}
+
+/* ═══════════════════════════════════════════════════
+   9. OFFLINE INDICATOR
+   ═══════════════════════════════════════════════════ */
+
+.mp-offline-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 28px;
+  padding-top: var(--safe-top);
+  background: rgba(242, 102, 79, 0.9);
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 1001;
+  letter-spacing: 0.02em;
+}
+
+.mp-offline-bar.visible {
+  display: flex;
+}
+
+/* ═══════════════════════════════════════════════════
+   10. TOPBAR — Compact on mobile
+   ═══════════════════════════════════════════════════ */
+
+.topbar {
+  padding: 10px 16px !important;
+  padding-top: calc(10px + var(--safe-top)) !important;
+}
+
+.topbar .brand {
+  font-size: 15px !important;
+}
+
+.topbar .brand .dot {
+  width: 7px !important;
+  height: 7px !important;
+}
+
+.topbar-clock {
+  display: none !important;
+}
+
+.topbar-github-link {
+  display: none !important;
+}
+
+.session-indicator {
+  gap: 8px !important;
+}
+
+.session-src {
+  font-size: 11px !important;
+}
+
+.session-src .session-badge {
+  font-size: 11px !important;
+  padding: 3px 8px !important;
+}
+
+.session-indicator .btn-sm {
+  font-size: 10px !important;
+  padding: 5px 10px !important;
+}
+
+/* ═══════════════════════════════════════════════════
+   11. LANDING PAGE — Mobile adjustments
+   ═══════════════════════════════════════════════════ */
+
+.hero {
+  padding: 40px 0 24px !important;
+}
+
+.hero h1 {
+  font-size: 28px !important;
+}
+
+.hero p.lead {
+  font-size: 14px !important;
+}
+
+.hero-playground {
+  grid-template-columns: 1fr !important;
+  height: auto !important;
+}
+
+.pg-terminal, .pg-chart-wrap {
+  height: 240px !important;
+}
+
+.hero-enter-row {
+  flex-direction: column !important;
+  align-items: stretch !important;
+}
+
+.hero-enter-row .src-tag {
+  width: 100% !important;
+}
+
+.hero-enter-row .src-tag input {
+  width: 100% !important;
+}
+
+.hero-enter-row .btn {
+  width: 100% !important;
+  justify-content: center !important;
+}
+
+.usecases-grid {
+  grid-template-columns: 1fr !important;
+  gap: 16px !important;
+}
+
+.cases-grid {
+  grid-template-columns: 1fr !important;
+}
+
+/* ═══════════════════════════════════════════════════
+   12. KPI & CHARTS — Mobile sizing
+   ═══════════════════════════════════════════════════ */
+
+.kpi-value {
+  font-size: 36px !important;
+}
+
+.panel-body {
+  padding: 12px 14px !important;
+}
+
+.panel-head {
+  padding: 10px 14px !important;
+}
+
+.panel-head h3 {
+  font-size: 12.5px !important;
+}
+
+/* ═══════════════════════════════════════════════════
+   13. TOAST — Above bottom nav
+   ═══════════════════════════════════════════════════ */
+
+.toast {
+  bottom: calc(var(--bottom-nav-height) + var(--safe-bottom) + 12px) !important;
+}
+
+/* ═══════════════════════════════════════════════════
+   14. SWIPE HINT — Visual indicator for dashboard switching
+   ═══════════════════════════════════════════════════ */
+
+.mp-swipe-hint {
+  position: fixed;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-2);
+  font-size: 18px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+  z-index: 895;
+}
+
+.mp-swipe-hint.left {
+  left: 4px;
+}
+
+.mp-swipe-hint.right {
+  right: 4px;
+}
+
+.mp-swipe-hint.visible {
+  opacity: 0.4;
+}
+
+/* ═══════════════════════════════════════════════════
+   15. PRESS & DRAG TOOLTIP — Chart value display
+   ═══════════════════════════════════════════════════ */
+
+.mp-chart-tooltip {
+  position: fixed;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  max-width: 200px;
+}
+
+.mp-chart-tooltip.visible {
+  opacity: 1;
+}
+
+.mp-chart-tooltip-label {
+  color: var(--muted-2);
+  font-size: 10px;
+  margin-bottom: 2px;
+}
+
+.mp-chart-tooltip-value {
+  color: var(--teal);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+/* ═══════════════════════════════════════════════════
+   16. SCROLLBAR — Thinner on mobile
+   ═══════════════════════════════════════════════════ */
+
+::-webkit-scrollbar {
+  width: 3px !important;
+  height: 3px !important;
+}
+
+/* ═══════════════════════════════════════════════════
+   17. DASHBOARD VIEW — Adjust padding for bottom nav
+   ═══════════════════════════════════════════════════ */
+
+#view-dashboard {
+  padding-bottom: var(--bottom-nav-height);
+}
+
+/* ═══════════════════════════════════════════════════
+   18. LANDING VIEW — Adjust padding for bottom nav
+   ═══════════════════════════════════════════════════ */
+
+#view-docs {
+  padding-bottom: var(--bottom-nav-height);
+}
+
+/* ═══════════════════════════════════════════════════
+   19. PANEL MENU FLOATING — Larger touch targets
+   ═══════════════════════════════════════════════════ */
+
+.pmbtn {
+  width: 32px !important;
+  height: 32px !important;
+}
+
+/* ═══════════════════════════════════════════════════
+   20. QUICK START BANNER — Mobile layout
+   ═══════════════════════════════════════════════════ */
+
+.qs-banner-body {
+  flex-direction: column !important;
+}
+
+.qs-banner-code {
+  min-width: 0 !important;
+  width: 100% !important;
+}
+
+.qs-banner-send {
+  width: 100% !important;
+  justify-content: center !important;
+}
+
+/* ═══════════════════════════════════════════════════
+   21. CONFIG BUILDER — Stack on mobile
+   ═══════════════════════════════════════════════════ */
+
+.config-builder-wrap {
+  grid-template-columns: 1fr !important;
+}
+
+.config-editor-wrap {
+  border-right: none !important;
+  border-bottom: 1px solid var(--border) !important;
+}
+
+/* ═══════════════════════════════════════════════════
+   22. HELP MODAL — Full height on mobile
+   ═══════════════════════════════════════════════════ */
+
+#helpModal .modal {
+  max-height: 100vh !important;
+  border-radius: 0 !important;
+  height: 100vh !important;
+}
+
+/* ═══════════════════════════════════════════════════
+   23. SHARE MODAL — Full height on mobile
+   ═══════════════════════════════════════════════════ */
+
+#shareModal .modal {
+  max-height: 100vh !important;
+  border-radius: 0 !important;
+  height: 100vh !important;
+}
+
+/* ═══════════════════════════════════════════════════
+   24. QS MODAL — Full height on mobile
+   ═══════════════════════════════════════════════════ */
+
+#qsModal .modal {
+  max-height: 100vh !important;
+  border-radius: 0 !important;
+  height: 100vh !important;
+}
+
+/* ═══════════════════════════════════════════════════
+   25. PANEL CARD — Locked state on mobile
+   ═══════════════════════════════════════════════════ */
+
+.panel-card.locked {
+  border-left: 3px solid var(--teal) !important;
+}
+
+.panel-card.locked::before,
+.panel-card.locked::after {
+  display: none !important;
+}
