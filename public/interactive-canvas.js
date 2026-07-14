@@ -210,6 +210,9 @@
       if (tag === 'BUTTON' || tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || tag === 'A') return true;
       if (node.classList && (node.classList.contains('panel-menu-item') || 
           node.classList.contains('pmbtn') || 
+          node.classList.contains('panel-menu-dropdown') ||
+          node.classList.contains('panel-menu-floating') ||
+          node.classList.contains('panel-menu-wrap') ||
           node.classList.contains('panel-code-toggle') ||
           node.classList.contains('canvas-resize-handle'))) return true;
       node = node.parentNode;
