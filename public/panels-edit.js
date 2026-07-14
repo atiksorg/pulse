@@ -1285,6 +1285,165 @@ function showQuickStartBanner(){
   }
 }
 
+/* ── Export XML: compact dashboard snapshot for AI visualization ── */
+function exportXml(){
+  var db = getActiveDashboard();
+  if(!db || !db.panels || !db.panels.length){
+    toast('Нет данных для экспорта');
+    return;
+  }
+  var src = getSrc() || '';
+  var now = new Date().toISOString();
+  var tz = getUtcOffsetStr();
+
+  /* XML-атрибут экранирование */
+  function xa(s){
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
+  }
+
+  var L = [];
+  L.push('<?xml version="1.0" encoding="UTF-8"?>');
+  L.push('<pulse-dashboard name="' + xa(db.name) + '" src="' + xa(src) + '" exported="' + xa(now) + '" tz="' + xa(tz) + '">');
+
+  /* Viewport холста */
+  if(interactiveCanvas && !interactiveCanvas._destroyed){
+    L.push('  <canvas scale="' + interactiveCanvas.scale.toFixed(3)
+      + '" offsetX="' + Math.round(interactiveCanvas.offsetX)
+      + '" offsetY="' + Math.round(interactiveCanvas.offsetY) + '" />');
+  }
+
+  /* Каждая панель */
+  db.panels.forEach(function(p){
+    L.push('  <panel id="' + xa(p.id) + '" title="' + xa(p.title) + '" viz="' + xa(p.viz) + '"'
+      + ' x="' + (p.cx||0) + '" y="' + (p.cy||0) + '" w="' + (p.cw||0) + '" h="' + (p.ch||0) + '" z="' + (p.cz||0) + '"'
+      + ' locked="' + (!!p.locked) + '">');
+
+    /* Конфигурация данных */
+    var cfgA = '';
+    ['type','group','field','agg','aggfield','range','from','to','sort','limit',
+     'unit','color','formatType','lineStyle','tension','width','autorefresh',
+     'stacked','cumulative','compare','secondAxis','gaugeMin','gaugeMax','breakdownfield']
+      .forEach(function(k){
+        var v = p[k];
+        if(v !== undefined && v !== null && v !== '') cfgA += ' ' + k + '="' + xa(v) + '"';
+      });
+    L.push('    <config' + cfgA + ' />');
+
+    /* Фильтры */
+    if(Array.isArray(p.filters) && p.filters.length){
+      L.push('    <filters>');
+      p.filters.forEach(function(f){
+        var fv = Array.isArray(f.value) ? f.value.join(',') : String(f.value);
+        L.push('      <filter field="' + xa(f.field) + '" op="' + xa(f.op) + '" value="' + xa(fv) + '" />');
+      });
+      L.push('    </filters>');
+    }
+
+    /* Пороговые линии */
+    if(Array.isArray(p.thresholds) && p.thresholds.length){
+      L.push('    <thresholds>');
+      p.thresholds.forEach(function(t){
+        L.push('      <threshold value="' + t.value + '" color="' + xa(t.color) + '" label="' + xa(t.label) + '" />');
+      });
+      L.push('    </thresholds>');
+    }
+
+    /* ── Извлечение данных по типу визуализации ── */
+    var bodyEl = document.getElementById('body-' + p.id);
+    var chart = charts[p.id];
+
+    if(p.viz === 'kpi'){
+      var total = bodyEl ? bodyEl.getAttribute('data-total') : '';
+      L.push('    <data total="' + xa(total) + '" />');
+    }
+    else if(p.viz === 'gauge'){
+      var total = bodyEl ? bodyEl.getAttribute('data-total') : '';
+      L.push('    <data total="' + xa(total) + '"'
+        + ' min="' + (p.gaugeMin !== undefined ? p.gaugeMin : 0) + '"'
+        + ' max="' + (p.gaugeMax !== undefined ? p.gaugeMax : 100) + '" />');
+    }
+    else if(p.viz === 'table'){
+      var rows = p._tableData || [];
+      var key = panelKey(p);
+      var maxRows = Math.min(rows.length, 20);
+      L.push('    <data rows="' + rows.length + '" shown="' + maxRows + '">');
+      for(var i = 0; i < maxRows; i++){
+        L.push('      <row key="' + xa(rows[i][key]) + '" value="' + rows[i].value + '" />');
+      }
+      L.push('    </data>');
+    }
+    else if(p.viz === 'logs'){
+      var events = p._logsEvents || [];
+      var maxEv = Math.min(events.length, 10);
+      L.push('    <data events="' + events.length + '" shown="' + maxEv + '">');
+      for(var i = 0; i < maxEv; i++){
+        var ev = events[i];
+        var msg = '';
+        try {
+          var pl = JSON.parse(ev.payload);
+          var pkeys = Object.keys(pl);
+          msg = pkeys.slice(0, 3).map(function(k){ return k + '=' + String(pl[k]); }).join(', ');
+        } catch(_){
+          msg = String(ev.payload || '');
+        }
+        if(msg.length > 80) msg = msg.slice(0, 77) + '…';
+        L.push('      <event time="' + xa(ev.ts) + '" type="' + xa(ev.type) + '" msg="' + xa(msg) + '" />');
+      }
+      L.push('    </data>');
+    }
+    else if(chart && chart.data){
+      /* line, bar, pie — данные из Chart.js */
+      var labels = chart.data.labels || [];
+      var datasets = chart.data.datasets || [];
+      if(datasets.length > 1){
+        /* Multi-series (breakdown) */
+        L.push('    <data points="' + labels.length + '" series="' + datasets.length + '">');
+        datasets.forEach(function(ds){
+          L.push('      <series name="' + xa(ds.label || '') + '">');
+          for(var i = 0; i < labels.length; i++){
+            var v = ds.data[i];
+            if(v !== null && v !== undefined){
+              L.push('        <point label="' + xa(labels[i]) + '" value="' + v + '" />');
+            }
+          }
+          L.push('      </series>');
+        });
+        L.push('    </data>');
+      } else {
+        /* Single series */
+        var values = datasets[0] ? datasets[0].data : [];
+        L.push('    <data points="' + labels.length + '">');
+        for(var i = 0; i < labels.length; i++){
+          var v = values[i];
+          L.push('      <point label="' + xa(labels[i]) + '" value="' + (v != null ? v : '') + '" />');
+        }
+        L.push('    </data>');
+      }
+    }
+    else {
+      L.push('    <data />');
+    }
+
+    L.push('  </panel>');
+  });
+
+  L.push('</pulse-dashboard>');
+
+  /* Скачивание .xml файла */
+  var xml = L.join('\n');
+  var blob = new Blob([xml], { type: 'application/xml' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = (db.name || 'dashboard').replace(/[^a-zA-Z0-9_-]/g, '_') + '.xml';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); }, 100);
+  toast('XML экспортирован (' + db.panels.length + ' панелей)');
+}
+
 /* ── Fullscreen overlay close ───────────────────── */
 (function bindFocusOverlay(){
   function bind(){
