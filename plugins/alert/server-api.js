@@ -127,7 +127,7 @@ async function handleAlertRequest(req, res, db, url) {
 
             // Обязательные поля
             if (!data.dashboard_id || !data.panel_id || !data.title || !data.condition_type || data.threshold === undefined) {
-                jsonResponse(res, 400, { error: 'Missing required fields' });
+                jsonResponse(res, 400, { error: 'Missing required fields', received: { dashboard_id: data.dashboard_id, panel_id: data.panel_id, title: data.title, condition_type: data.condition_type, threshold: data.threshold } });
                 return true;
             }
 
@@ -150,6 +150,13 @@ async function handleAlertRequest(req, res, db, url) {
             }
 
             var channelsJson = JSON.stringify(channels);
+
+            // Проверяем существование таблицы
+            var tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='alert_rules'").get();
+            if (!tableExists) {
+                jsonResponse(res, 500, { error: 'alert_rules table not found — plugin may not be loaded' });
+                return true;
+            }
 
             if (data.id) {
                 db.prepare(
@@ -259,9 +266,9 @@ async function handleAlertRequest(req, res, db, url) {
         return true;
 
     } catch (e) {
-        console.error('[alerts-api] error:', e.message);
+        console.error('[alerts-api] error:', e.message, e.stack || '');
         if (!res.headersSent) {
-            jsonResponse(res, 500, { error: 'internal', message: e.message });
+            jsonResponse(res, 500, { error: 'internal', message: e.message || String(e) });
         }
         return true;
     }
