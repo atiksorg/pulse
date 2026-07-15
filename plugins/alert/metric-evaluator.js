@@ -51,6 +51,10 @@ function _ensureDb() {
       reject(e);
     }
   });
+
+  // Очищаем кэш Promise в случае ошибки, чтобы дать шанс переподключиться
+  initPromise.catch(() => { initPromise = null; });
+
   return initPromise;
 }
 
@@ -239,6 +243,8 @@ async function checkNoData(src, type) {
         ).get(...params);
         if (row && row.last_ts) {
           if (!lastTs || row.last_ts > lastTs) lastTs = row.last_ts;
+          // Таблицы идут в порядке DESC, первая найденная запись = самая свежая
+          break;
         }
       } catch (_) {}
     }
