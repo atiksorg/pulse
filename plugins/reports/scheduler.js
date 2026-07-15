@@ -47,12 +47,25 @@ async function checkAndDispatchReports(db) {
         continue;
       }
 
-      // Атомарный захват: кто первый обновил — тот и отправляет
+      // Атомарный захват (compare-and-swap): обновляем last_sent_at, только если
+      // он всё ещё равен тому значению, которое мы прочитали в SELECT.
+      // SQLite-оператор `IS NOT DISTINCT FROM` корректно обрабатывает NULL
+      // (в отличие от `=`), поэтому:
+      //   • если last_sent_at = NULL  и в БД NULL  → обновим (новая отправка)
+      //   • если last_sent_at = вчера и в БД вчера   → обновим (дневное окно)
+      //   • если другой тик уже обновил last_sent_at → 0 строк (dedup гонки)
+      //
+      // ⚠️ БЫЛА ОШИБКА: использовалось `last_sent_at < oldValue` со старым
+      // значением из SELECT. При равенстве (типичный случай: вчерашняя отправка
+      // с last_sent_at = вчера вечером, проверка на следующий день) UPDATE
+      // возвращал 0 строк и отправка не запускалась, пока в логах появлялся
+      // `dedup` каждый тик в течение всего 30-минутного окна.
       const newSentAt = utcNow.toISOString();
+      const oldSentAt = cfg.last_sent_at || null;
       const result = db.prepare(
         `UPDATE report_configs SET last_sent_at = ?
-         WHERE id = ? AND (last_sent_at IS NULL OR last_sent_at < ?)`
-      ).run(newSentAt, cfg.id, cfg.last_sent_at || '1970-01-01');
+         WHERE id = ? AND last_sent_at IS NOT DISTINCT FROM ?`
+      ).run(newSentAt, cfg.id, oldSentAt);
 
       if (result.changes === 1) {
         console.log(`[reports-scheduler] dispatching report for dashboard ${cfg.dashboard_id} (config ${cfg.id})`);
@@ -60,7 +73,7 @@ async function checkAndDispatchReports(db) {
         dispatchReport(db, Object.assign({}, cfg, { last_sent_at: newSentAt }))
           .catch(err => console.error('[reports-scheduler] dispatch error:', err.message));
       } else {
-        console.log(`[reports-scheduler] config ${cfg.id}: would send but last_sent_at already updated (dedup)`);
+        console.log(`[reports-scheduler] config ${cfg.id}: would send but last_sent_at already updated (dedup) — другой тик в этом же окне уже запустил отправку, пропускаем`);
       }
     }
   } catch (err) {
