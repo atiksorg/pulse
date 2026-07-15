@@ -113,7 +113,11 @@ function shouldSendNowDetailed(config, now) {
     } else if (nowMin < targetMin) {
       result.reason = 'too_early (сейчас ' + hhmm + ', цель ' + target + ')';
     } else {
-      result.reason = 'too_late (сейчас ' + hhmm + ', окно ' + target + '–' + _addMinutes(target, WINDOW_MINUTES) + ' прошло)';
+      // Окно прошло, но сегодня ещё не отправляли — догоняем (catch-up).
+      // Сервер мог быть перезапущен во время окна.
+      result.send = true;
+      result.catchUp = true;
+      result.reason = 'catch_up (сейчас ' + hhmm + ', окно ' + target + '–' + _addMinutes(target, WINDOW_MINUTES) + ' пропущено, сегодня ещё не отправляли)';
     }
     return result;
   }
@@ -139,7 +143,10 @@ function shouldSendNowDetailed(config, now) {
     } else if (nowMin < targetMin) {
       result.reason = 'too_early (сейчас ' + hhmm + ', цель ' + target + ')';
     } else {
-      result.reason = 'too_late (сейчас ' + hhmm + ', окно ' + target + '–' + _addMinutes(target, WINDOW_MINUTES) + ' прошло)';
+      // Окно прошло, но сегодня ещё не отправляли — догоняем (catch-up).
+      result.send = true;
+      result.catchUp = true;
+      result.reason = 'catch_up (сейчас ' + hhmm + ', окно ' + target + '–' + _addMinutes(target, WINDOW_MINUTES) + ' пропущено, сегодня ещё не отправляли)';
     }
     return result;
   }
