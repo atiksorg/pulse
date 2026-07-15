@@ -11,7 +11,7 @@
 'use strict';
 
 const { shouldSendNow, parseTimezoneOffset, getLocalTime, formatHHMM, hhmmToMinutes } = require('../shared/schedule-utils');
-const { dispatchReport } = require('./dispatcher');
+const { dispatchReport, getActiveDispatches } = require('./dispatcher');
 
 const CHECK_INTERVAL_MS = 60 * 1000; // не чаще раза в минуту
 let lastCheckTime = 0;
@@ -68,4 +68,16 @@ async function checkAndDispatchReports(db) {
   }
 }
 
-module.exports = { checkAndDispatchReports };
+/**
+ * Получить статус планировщика (heartbeat).
+ */
+function getSchedulerStatus() {
+  return {
+    lastCheckTime: lastCheckTime ? new Date(lastCheckTime).toISOString() : null,
+    lastCheckAgeMs: lastCheckTime ? Date.now() - lastCheckTime : null,
+    activeDispatches: getActiveDispatches(),
+    checkIntervalMs: CHECK_INTERVAL_MS,
+  };
+}
+
+module.exports = { checkAndDispatchReports, getSchedulerStatus };
