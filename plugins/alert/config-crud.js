@@ -319,15 +319,25 @@ function registerRoutes(server, db, deps) {
 
       // ── POST /alerts/:panelId/preview-value — текущее значение метрики ──
       if (req.method === 'POST' && action === 'preview-value') {
-        const row = db.prepare('SELECT * FROM alert_rules WHERE panel_id = ?')
-          .get(panelId);
-        if (!row) return auth.json(res, 404, { error: 'not_found' });
-        if (row.src !== session.src) return auth.json(res, 403, { error: 'forbidden' });
+        // Читаем dashboard_id из тела запроса — НЕ требуем существования alert_rules.
+        // Это позволяет показывать live-значение метрики ещё до создания правила.
+        let body;
+        try { body = await auth.readJsonBody(req); }
+        catch (_) { body = {}; }
 
-        const panel = findPanelInDashboard(row.dashboard_id, row.panel_id);
+        const dashboardId = String(body.dashboard_id || '').trim();
+        if (!dashboardId) return auth.json(res, 400, { error: 'missing_dashboard_id' });
+
+        // Проверяем, что дашборд принадлежит пользователю
+        const dash = auth.getDashboard(db, dashboardId);
+        if (!dash) return auth.json(res, 404, { error: 'dashboard_not_found' });
+        if (dash.src !== session.src) return auth.json(res, 403, { error: 'forbidden' });
+
+        // Ищем панель напрямую в дашборде (без alert_rules)
+        const panel = findPanelInDashboard(dashboardId, panelId);
         if (!panel) return auth.json(res, 404, { error: 'panel_not_found' });
 
-        const evalResult = await evaluatePanelMetric(panel, row.src);
+        const evalResult = await evaluatePanelMetric(panel, dash.src);
         return auth.json(res, 200, {
           value: evalResult.value,
           aggMode: evalResult.aggMode,
