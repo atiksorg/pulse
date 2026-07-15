@@ -10,7 +10,9 @@ const { generateDashboardXml } = require('./xml-generator');
 const { runReportFunction }    = require('./api-client');
 
 const MAX_PARALLEL = 3;
+const MAX_QUEUE = 10;
 let activeDispatches = 0;
+const pendingQueue = []; // [{db, config, historyId}]
 
 /**
  * Добавить фазу в phases JSON записи report_history.
@@ -41,11 +43,19 @@ function appendPhase(db, historyId, phase, detail) {
  */
 async function dispatchReport(db, config, historyId) {
   if (activeDispatches >= MAX_PARALLEL) {
-    console.warn('[reports-dispatch] max parallel reached, skipping');
-    if (historyId) {
-      db.prepare('UPDATE report_history SET status = ?, error_message = ?, finished_at = ? WHERE id = ?')
-        .run('error', 'max_parallel_reached', new Date().toISOString(), historyId);
+    if (pendingQueue.length >= MAX_QUEUE) {
+      console.warn('[reports-dispatch] max parallel reached and queue full, dropping');
+      if (historyId) {
+        db.prepare('UPDATE report_history SET status = ?, error_message = ?, finished_at = ? WHERE id = ?')
+          .run('error', 'queue_full', new Date().toISOString(), historyId);
+      }
+      return;
     }
+    console.log(`[reports-dispatch] max parallel reached, queueing (pos ${pendingQueue.length + 1})`);
+    if (historyId) {
+      appendPhase(db, historyId, 'queued', `position=${pendingQueue.length + 1}`);
+    }
+    pendingQueue.push({ db, config, historyId });
     return;
   }
 
@@ -111,7 +121,9 @@ async function dispatchReport(db, config, historyId) {
 
   } catch (err) {
     const durationMs = Date.now() - startTime;
-    // Ошибка — логируем, но НЕ откатываем last_sent_at (повтор в следующем окне)
+    // Ошибка — логируем, но НЕ откатываем last_sent_at.
+    // Повторная попытка (retry) — на стороне планировщика (scheduler.js),
+    // который проверяет report_history на наличие ошибок за сегодня.
     db.prepare(
       'UPDATE report_history SET status = ?, error_message = ?, finished_at = ?, duration_ms = ? WHERE id = ?'
     ).run('error', String(err.message).slice(0, 500), new Date().toISOString(), durationMs, historyId);
@@ -120,6 +132,19 @@ async function dispatchReport(db, config, historyId) {
     console.error(`[reports-dispatch] ✗ report error: ${err.message} (${durationMs}ms)`);
   } finally {
     activeDispatches--;
+    processQueue();
+  }
+}
+
+/**
+ * Обработать очередь ожидающих отчётов (до MAX_PARALLEL слотов).
+ */
+function processQueue() {
+  while (pendingQueue.length > 0 && activeDispatches < MAX_PARALLEL) {
+    const next = pendingQueue.shift();
+    console.log(`[reports-dispatch] dequeuing report for dashboard ${next.config.dashboard_id}`);
+    dispatchReport(next.db, next.config, next.historyId)
+      .catch(err => console.error('[reports-dispatch] queue dispatch error:', err.message));
   }
 }
 
@@ -130,4 +155,11 @@ function getActiveDispatches() {
   return activeDispatches;
 }
 
-module.exports = { dispatchReport, getActiveDispatches };
+/**
+ * Получить длину очереди ожидающих отправки.
+ */
+function getQueueLength() {
+  return pendingQueue.length;
+}
+
+module.exports = { dispatchReport, getActiveDispatches, getQueueLength };
