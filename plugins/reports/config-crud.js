@@ -12,7 +12,7 @@
 
 const crypto = require('crypto');
 const auth   = require('../../auth');
-const { shouldSendNow, parseTimezoneOffset, getLocalTime, formatHHMM, formatDate, hhmmToMinutes } = require('../shared/schedule-utils');
+const { shouldSendNowDetailed, parseTimezoneOffset, getLocalTime, formatHHMM, formatDate, hhmmToMinutes, WINDOW_MINUTES } = require('../shared/schedule-utils');
 
 const VALID_SCHEDULE_TYPES = ['daily', 'weekly', 'interval'];
 const VALID_SIZES = ['9:16', '16:9', '1:1', 'A4'];
@@ -22,7 +22,7 @@ const VALID_DAYS_RE = /^[0-6](,[0-6])*$/;
  * Регистрация HTTP-маршрутов.
  * @param {object} server — http.Server
  * @param {object} db     — better-sqlite3 Database
- * @param {object} deps   — { scheduler, dispatcher, xmlGenerator }
+ * @param {object} deps   — { dispatcher, schedulerStatus, generateXml }
  */
 function registerRoutes(server, db, deps) {
   const origListener = server.listeners('request')[0];
@@ -57,7 +57,7 @@ function registerRoutes(server, db, deps) {
       if (!session) return auth.json(res, 401, { error: 'unauthorized' });
 
       // ── GET /reports/:dashboardId — получить конфиг ──
-      if (req.method === 'GET' && !action) {
+      if (req.method === 'GET' && !action && dashboardId !== 'scheduler-status') {
         const row = db.prepare('SELECT * FROM report_configs WHERE dashboard_id = ?')
           .get(dashboardId);
         if (!row) return auth.json(res, 404, { error: 'not_found' });
@@ -192,14 +192,14 @@ function registerRoutes(server, db, deps) {
       }
 
       // ── GET /reports/:dashboardId/history — история отправок ──
-      if (req.method === 'GET' && action === 'history') {
+      if (req.method === 'GET' && action === 'history' && !segments[3]) {
         const row = db.prepare('SELECT src FROM report_configs WHERE dashboard_id = ?')
           .get(dashboardId);
         if (!row) return auth.json(res, 404, { error: 'not_found' });
         if (row.src !== session.src) return auth.json(res, 403, { error: 'forbidden' });
 
         const history = db.prepare(
-          `SELECT id, config_id, started_at, finished_at, status, image_url, error_message, trigger_type
+          `SELECT id, config_id, started_at, finished_at, status, image_url, error_message, trigger_type, duration_ms
            FROM report_history
            WHERE dashboard_id = ?
            ORDER BY started_at DESC
@@ -219,6 +219,9 @@ function registerRoutes(server, db, deps) {
         ).get(historyId, dashboardId);
         if (!hRow) return auth.json(res, 404, { error: 'not_found' });
 
+        let phases = [];
+        try { phases = JSON.parse(hRow.phases || '[]'); } catch (_) {}
+
         return auth.json(res, 200, {
           id: hRow.id,
           status: hRow.status,
@@ -226,6 +229,9 @@ function registerRoutes(server, db, deps) {
           error_message: hRow.error_message,
           started_at: hRow.started_at,
           finished_at: hRow.finished_at,
+          duration_ms: hRow.duration_ms || 0,
+          trigger_type: hRow.trigger_type,
+          phases: phases,
         });
       }
 
@@ -243,8 +249,9 @@ function registerRoutes(server, db, deps) {
         const localDate = formatDate(localNow);
         const localDay = localNow.getUTCDay();
 
-        // Сработал бы таймер прямо сейчас?
-        const wouldSend = shouldSendNow(row, utcNow);
+        // Сработал бы таймер прямо сейчас? (с причиной)
+        const detail = shouldSendNowDetailed(row, utcNow);
+        const wouldSend = detail.send;
 
         // Вычисляем когда следующее срабатывание
         let nextSendAt = null;
@@ -254,46 +261,60 @@ function registerRoutes(server, db, deps) {
         const targetMin = hhmmToMinutes(target);
         const nowMin = hhmmToMinutes(localHHMM);
 
-        if (row.schedule_type === 'daily') {
-          // Сегодня или завтра
-          let nextDay = new Date(localNow);
+        if (detail.alreadySentToday) {
+          // Уже отправлено сегодня — следующее = завтра (или ближайший подходящий день)
+          if (row.schedule_type === 'daily') {
+            let nextDay = new Date(localNow.getTime() + 86400000);
+            nextDay.setUTCHours(parseInt(target.split(':')[0], 10), parseInt(target.split(':')[1], 10), 0, 0);
+            nextSendAt = new Date(nextDay.getTime() - offset * 3600000).toISOString();
+            minutesUntilNext = Math.round((new Date(nextSendAt).getTime() - utcNow.getTime()) / 60000);
+          } else if (row.schedule_type === 'weekly') {
+            const allowedDays = String(row.schedule_days || '1,2,3,4,5')
+              .split(',').map(d => parseInt(d.trim(), 10)).filter(d => !isNaN(d));
+            for (let add = 1; add <= 7; add++) {
+              const candidateDate = new Date(localNow.getTime() + add * 86400000);
+              const candidateDay = candidateDate.getUTCDay();
+              if (!allowedDays.includes(candidateDay)) continue;
+              candidateDate.setUTCHours(parseInt(target.split(':')[0], 10), parseInt(target.split(':')[1], 10), 0, 0);
+              nextSendAt = new Date(candidateDate.getTime() - offset * 3600000).toISOString();
+              minutesUntilNext = Math.round((new Date(nextSendAt).getTime() - utcNow.getTime()) / 60000);
+              break;
+            }
+          }
+        } else if (wouldSend) {
+          // Сработал бы прямо сейчас — nextSendAt = текущее время (0 мин)
+          nextSendAt = utcNow.toISOString();
+          minutesUntilNext = 0;
+        } else if (row.schedule_type === 'daily' || row.schedule_type === 'weekly') {
+          // Ещё не время — вычисляем когда наступит окно
           if (nowMin < targetMin) {
             // Сегодня ещё будет
+            let nextDay = new Date(localNow);
             nextDay.setUTCHours(parseInt(target.split(':')[0], 10), parseInt(target.split(':')[1], 10), 0, 0);
-          } else {
-            // Уже прошло — завтра
-            nextDay = new Date(nextDay.getTime() + 86400000);
-            nextDay.setUTCHours(parseInt(target.split(':')[0], 10), parseInt(target.split(':')[1], 10), 0, 0);
-          }
-          // Переводим обратно в UTC
-          nextSendAt = new Date(nextDay.getTime() - offset * 3600000).toISOString();
-          minutesUntilNext = Math.round((new Date(nextSendAt).getTime() - utcNow.getTime()) / 60000);
-        }
-
-        if (row.schedule_type === 'weekly') {
-          const allowedDays = String(row.schedule_days || '1,2,3,4,5')
-            .split(',').map(d => parseInt(d.trim(), 10)).filter(d => !isNaN(d));
-
-          // Ищем ближайший подходящий день
-          for (let add = 0; add <= 7; add++) {
-            const candidateDate = new Date(localNow.getTime() + add * 86400000);
-            const candidateDay = candidateDate.getUTCDay();
-            if (!allowedDays.includes(candidateDay)) continue;
-
-            const candidateHHMM = formatHHMM(candidateDate);
-            const candidateMin = hhmmToMinutes(candidateHHMM);
-
-            // Если это сегодня и время уже прошло — пропускаем
-            if (add === 0 && candidateMin >= targetMin) continue;
-
-            candidateDate.setUTCHours(parseInt(target.split(':')[0], 10), parseInt(target.split(':')[1], 10), 0, 0);
-            nextSendAt = new Date(candidateDate.getTime() - offset * 3600000).toISOString();
+            nextSendAt = new Date(nextDay.getTime() - offset * 3600000).toISOString();
             minutesUntilNext = Math.round((new Date(nextSendAt).getTime() - utcNow.getTime()) / 60000);
-            break;
+          } else {
+            // Сегодня уже прошло — завтра / ближайший день
+            if (row.schedule_type === 'weekly') {
+              const allowedDays = String(row.schedule_days || '1,2,3,4,5')
+                .split(',').map(d => parseInt(d.trim(), 10)).filter(d => !isNaN(d));
+              for (let add = 1; add <= 7; add++) {
+                const candidateDate = new Date(localNow.getTime() + add * 86400000);
+                const candidateDay = candidateDate.getUTCDay();
+                if (!allowedDays.includes(candidateDay)) continue;
+                candidateDate.setUTCHours(parseInt(target.split(':')[0], 10), parseInt(target.split(':')[1], 10), 0, 0);
+                nextSendAt = new Date(candidateDate.getTime() - offset * 3600000).toISOString();
+                minutesUntilNext = Math.round((new Date(nextSendAt).getTime() - utcNow.getTime()) / 60000);
+                break;
+              }
+            } else {
+              let nextDay = new Date(localNow.getTime() + 86400000);
+              nextDay.setUTCHours(parseInt(target.split(':')[0], 10), parseInt(target.split(':')[1], 10), 0, 0);
+              nextSendAt = new Date(nextDay.getTime() - offset * 3600000).toISOString();
+              minutesUntilNext = Math.round((new Date(nextSendAt).getTime() - utcNow.getTime()) / 60000);
+            }
           }
-        }
-
-        if (row.schedule_type === 'interval') {
+        } else if (row.schedule_type === 'interval') {
           const hours = Number(row.schedule_hours) || 0;
           if (hours > 0 && row.last_sent_at) {
             const lastSent = new Date(row.last_sent_at);
@@ -316,6 +337,14 @@ function registerRoutes(server, db, deps) {
         const serverTimeStr = utcNow.toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
         const localTimeStr = localDate + ' ' + localHHMM;
 
+        // Окно расписания для визуального таймлайна
+        const windowStart = target;
+        const windowEndHHMM = (row.schedule_type === 'interval') ? null : (function() {
+          let total = targetMin + WINDOW_MINUTES;
+          if (total >= 1440) total -= 1440;
+          return String(Math.floor(total / 60)).padStart(2, '0') + ':' + String(total % 60).padStart(2, '0');
+        })();
+
         return auth.json(res, 200, {
           serverTime: utcNow.toISOString(),
           serverTimeStr,
@@ -331,8 +360,107 @@ function registerRoutes(server, db, deps) {
           lastSentAt: row.last_sent_at,
           isActive: !!row.is_active,
           wouldSendNow: wouldSend,
+          wouldSendReason: detail.reason,
+          inWindow: detail.inWindow,
+          alreadySentToday: detail.alreadySentToday,
+          windowStart: windowStart,
+          windowEnd: windowEndHHMM,
+          windowMinutes: WINDOW_MINUTES,
           nextSendAt: nextSendAt,
           minutesUntilNext: minutesUntilNext,
+        });
+      }
+
+      // ── GET /reports/scheduler-status — глобальный heartbeat планировщика ──
+      if (req.method === 'GET' && dashboardId === 'scheduler-status' && !action) {
+        const statusFn = deps && deps.schedulerStatus;
+        const status = typeof statusFn === 'function' ? statusFn() : { error: 'not_available' };
+
+        // Дополнительно: считаем активные конфигы и недавние ошибки
+        const activeCount = db.prepare('SELECT COUNT(*) as cnt FROM report_configs WHERE is_active = 1').get().cnt;
+        const recentErrors = db.prepare(
+          "SELECT COUNT(*) as cnt FROM report_history WHERE status = 'error' AND started_at > ?"
+        ).get(new Date(Date.now() - 3600000).toISOString()).cnt;
+        const recentDone = db.prepare(
+          "SELECT COUNT(*) as cnt FROM report_history WHERE status = 'done' AND started_at > ?"
+        ).get(new Date(Date.now() - 3600000).toISOString()).cnt;
+
+        return auth.json(res, 200, Object.assign({}, status, {
+          activeConfigs: activeCount,
+          recentErrors1h: recentErrors,
+          recentDone1h: recentDone,
+        }));
+      }
+
+      // ── POST /reports/:dashboardId/preview-xml — предпросмотр XML ──
+      if (req.method === 'POST' && action === 'preview-xml') {
+        const row = db.prepare('SELECT * FROM report_configs WHERE dashboard_id = ?')
+          .get(dashboardId);
+        if (!row) return auth.json(res, 404, { error: 'not_found' });
+        if (row.src !== session.src) return auth.json(res, 403, { error: 'forbidden' });
+
+        try {
+          const { generateDashboardXml } = require('./xml-generator');
+          const xml = await generateDashboardXml(db, dashboardId);
+          return auth.json(res, 200, {
+            xml: xml,
+            length: xml.length,
+            sizeKB: (xml.length / 1024).toFixed(1),
+          });
+        } catch (err) {
+          return auth.json(res, 500, { error: 'xml_generation_failed', message: err.message });
+        }
+      }
+
+      // ── GET /reports/:dashboardId/stats — статистика за 7 дней ──
+      if (req.method === 'GET' && action === 'stats') {
+        const row = db.prepare('SELECT src FROM report_configs WHERE dashboard_id = ?')
+          .get(dashboardId);
+        if (!row) return auth.json(res, 404, { error: 'not_found' });
+        if (row.src !== session.src) return auth.json(res, 403, { error: 'forbidden' });
+
+        const since7d = new Date(Date.now() - 7 * 86400000).toISOString();
+        const since24h = new Date(Date.now() - 86400000).toISOString();
+
+        const total7d = db.prepare(
+          'SELECT COUNT(*) as cnt FROM report_history WHERE dashboard_id = ? AND started_at > ?'
+        ).get(dashboardId, since7d).cnt;
+
+        const done7d = db.prepare(
+          "SELECT COUNT(*) as cnt FROM report_history WHERE dashboard_id = ? AND status = 'done' AND started_at > ?"
+        ).get(dashboardId, since7d).cnt;
+
+        const error7d = db.prepare(
+          "SELECT COUNT(*) as cnt FROM report_history WHERE dashboard_id = ? AND status = 'error' AND started_at > ?"
+        ).get(dashboardId, since7d).cnt;
+
+        const avgDuration = db.prepare(
+          "SELECT AVG(duration_ms) as avg_ms FROM report_history WHERE dashboard_id = ? AND status = 'done' AND started_at > ? AND duration_ms > 0"
+        ).get(dashboardId, since7d).avg_ms || 0;
+
+        const total24h = db.prepare(
+          'SELECT COUNT(*) as cnt FROM report_history WHERE dashboard_id = ? AND started_at > ?'
+        ).get(dashboardId, since24h).cnt;
+
+        const done24h = db.prepare(
+          "SELECT COUNT(*) as cnt FROM report_history WHERE dashboard_id = ? AND status = 'done' AND started_at > ?"
+        ).get(dashboardId, since24h).cnt;
+
+        const error24h = db.prepare(
+          "SELECT COUNT(*) as cnt FROM report_history WHERE dashboard_id = ? AND status = 'error' AND started_at > ?"
+        ).get(dashboardId, since24h).cnt;
+
+        // Последняя ошибка
+        const lastError = db.prepare(
+          "SELECT error_message, started_at FROM report_history WHERE dashboard_id = ? AND status = 'error' ORDER BY started_at DESC LIMIT 1"
+        ).get(dashboardId);
+
+        return auth.json(res, 200, {
+          period7d: { total: total7d, done: done7d, error: error7d },
+          period24h: { total: total24h, done: done24h, error: error24h },
+          avgDurationMs: Math.round(avgDuration),
+          avgDurationStr: avgDuration > 0 ? (avgDuration > 60000 ? Math.round(avgDuration / 60000) + ' мин' : Math.round(avgDuration / 1000) + ' сек') : '—',
+          lastError: lastError ? { message: lastError.error_message, at: lastError.started_at } : null,
         });
       }
 
