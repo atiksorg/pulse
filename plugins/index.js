@@ -11,7 +11,7 @@ const fs   = require('fs');
 const path = require('path');
 
 // Порядок загрузки плагинов (важен для зависимостей в будущем)
-const PLUGIN_DIRS = ['reports', 'kpi-alerts'];
+const PLUGIN_DIRS = ['reports', 'panel-triggers'];
 
 function loadPlugins(server, db) {
   const loaded = [];

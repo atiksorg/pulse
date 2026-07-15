@@ -66,13 +66,6 @@ function bindPanelMenuActions(card, p, src){
   card.querySelector('[data-act="example"]') && (card.querySelector('[data-act="example"]').onclick=function(){ showExampleToast(p, src); });
   card.querySelector('[data-act="ai-optimize"]') && (card.querySelector('[data-act="ai-optimize"]').onclick=function(){ optimizePanelWithAI(p, src); });
   card.querySelector('[data-act="ai-discover"]') && (card.querySelector('[data-act="ai-discover"]').onclick=function(){ discoverPanelsFromLogs(p, src); });
-  card.querySelector('[data-act="kpi-alert"]') && (card.querySelector('[data-act="kpi-alert"]').onclick=function(){
-    var db = getActiveDashboard();
-    if (!db || !db.id || db.id.startsWith('temp_')) { toast('Сначала сохраните дашборд'); return; }
-    if (window.KpiAlertsModal) {
-      KpiAlertsModal.open(db.id, p.id);
-    }
-  });
 }
 
 /* ── Toggle panel lock (pin) — in-place, no full re-render ── */
