@@ -71,9 +71,9 @@ function registerRoutes(server, db, deps) {
       // ── GET /alerts/scheduler-status — heartbeat (без panelId) ──
       if (req.method === 'GET' && panelId === 'scheduler-status' && !action) {
         const statusFn = deps && deps.schedulerStatus;
-        const status = typeof statusFn === 'function' ? statusFn() : { error: 'not_available' };
+        const status = typeof statusFn === 'function' ? statusFn(db) : { error: 'not_available' };
 
-        const activeCount = db.prepare('SELECT COUNT(*) as cnt FROM alert_configs WHERE is_active = 1').get().cnt;
+        const activeCount = db.prepare('SELECT COUNT(*) as cnt FROM alert_rules WHERE is_active = 1').get().cnt;
         const recentErrors = db.prepare(
           "SELECT COUNT(*) as cnt FROM alert_history WHERE status = 'error' AND fired_at > ?"
         ).get(new Date(Date.now() - 3600000).toISOString()).cnt;
@@ -90,7 +90,7 @@ function registerRoutes(server, db, deps) {
 
       // ── GET /alerts/:panelId — получить конфиг ──
       if (req.method === 'GET' && !action) {
-        const row = db.prepare('SELECT * FROM alert_configs WHERE panel_id = ?')
+        const row = db.prepare('SELECT * FROM alert_rules WHERE panel_id = ?')
           .get(panelId);
         if (!row) return auth.json(res, 404, { error: 'not_found' });
         if (row.src !== session.src) return auth.json(res, 403, { error: 'forbidden' });
@@ -100,7 +100,7 @@ function registerRoutes(server, db, deps) {
 
       // ── GET /alerts/:panelId/token — токены в открытом виде ──
       if (req.method === 'GET' && action === 'token') {
-        const row = db.prepare('SELECT * FROM alert_configs WHERE panel_id = ?')
+        const row = db.prepare('SELECT * FROM alert_rules WHERE panel_id = ?')
           .get(panelId);
         if (!row) return auth.json(res, 404, { error: 'not_found' });
         if (row.src !== session.src) return auth.json(res, 403, { error: 'forbidden' });
@@ -141,7 +141,7 @@ function registerRoutes(server, db, deps) {
         }
 
         // Существующая запись?
-        const existingRow = db.prepare('SELECT * FROM alert_configs WHERE panel_id = ?')
+        const existingRow = db.prepare('SELECT * FROM alert_rules WHERE panel_id = ?')
           .get(panelId);
         const isUpdate = !!existingRow;
 
@@ -155,7 +155,7 @@ function registerRoutes(server, db, deps) {
           // Обновляем: при пустом bot_token — сохраняем старый
           const channels = mergeChannels(existingRow.channels, cfg.channels);
           db.prepare(`
-            UPDATE alert_configs SET
+            UPDATE alert_rules SET
               dashboard_id = ?, is_active = ?,
               condition = ?, threshold = ?, threshold_min = ?, threshold_max = ?,
               check_interval_sec = ?, cooldown_min = ?,
@@ -173,7 +173,7 @@ function registerRoutes(server, db, deps) {
           const id = 'al_' + crypto.randomBytes(8).toString('hex');
           // INSERT ... ON CONFLICT: страховка от редкой гонки
           db.prepare(`
-            INSERT INTO alert_configs (
+            INSERT INTO alert_rules (
               id, panel_id, dashboard_id, src, is_active,
               condition, threshold, threshold_min, threshold_max,
               check_interval_sec, cooldown_min,
@@ -203,32 +203,32 @@ function registerRoutes(server, db, deps) {
           );
         }
 
-        const saved = db.prepare('SELECT * FROM alert_configs WHERE panel_id = ?')
+        const saved = db.prepare('SELECT * FROM alert_rules WHERE panel_id = ?')
           .get(panelId);
         return auth.json(res, 200, { config: sanitizeConfig(saved) });
       }
 
       // ── DELETE /alerts/:panelId ──
       if (req.method === 'DELETE' && !action) {
-        const row = db.prepare('SELECT * FROM alert_configs WHERE panel_id = ?')
+        const row = db.prepare('SELECT * FROM alert_rules WHERE panel_id = ?')
           .get(panelId);
         if (!row) return auth.json(res, 404, { error: 'not_found' });
         if (row.src !== session.src) return auth.json(res, 403, { error: 'forbidden' });
 
-        db.prepare('DELETE FROM alert_configs WHERE panel_id = ?').run(panelId);
+        db.prepare('DELETE FROM alert_rules WHERE panel_id = ?').run(panelId);
         return auth.json(res, 200, { ok: true });
       }
 
       // ── POST /alerts/:panelId/test — тестовая отправка ──
       if (req.method === 'POST' && action === 'test') {
-        const row = db.prepare('SELECT * FROM alert_configs WHERE panel_id = ?')
+        const row = db.prepare('SELECT * FROM alert_rules WHERE panel_id = ?')
           .get(panelId);
         if (!row) return auth.json(res, 404, { error: 'not_found' });
         if (row.src !== session.src) return auth.json(res, 403, { error: 'forbidden' });
 
         // Rate-limit: не чаще 1 раза в 5 минут
         const recent = db.prepare(
-          "SELECT id FROM alert_history WHERE config_id = ? AND trigger_type = ? AND fired_at > ?"
+          "SELECT id FROM alert_history WHERE rule_id = ? AND trigger_type = ? AND fired_at > ?"
         ).get(row.id, 'test', new Date(Date.now() - 5 * 60 * 1000).toISOString());
         if (recent) return auth.json(res, 429, { error: 'too_frequent', remainSec: 290 });
 
@@ -242,7 +242,7 @@ function registerRoutes(server, db, deps) {
 
         // Создаём history-запись со статусом 'working' и trigger='test'
         const historyId = db.prepare(
-          `INSERT INTO alert_history (config_id, panel_id, dashboard_id, src, fired_at, value, threshold, condition, status, trigger_type)
+          `INSERT INTO alert_history (rule_id, panel_id, dashboard_id, src, fired_at, value, threshold, condition, status, trigger_type)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'working', 'test')`
         ).run(
           row.id, row.panel_id, row.dashboard_id, row.src,
@@ -273,13 +273,13 @@ function registerRoutes(server, db, deps) {
 
       // ── GET /alerts/:panelId/history — история срабатываний ──
       if (req.method === 'GET' && action === 'history' && !segments[3]) {
-        const row = db.prepare('SELECT src FROM alert_configs WHERE panel_id = ?')
+        const row = db.prepare('SELECT src FROM alert_rules WHERE panel_id = ?')
           .get(panelId);
         if (!row) return auth.json(res, 404, { error: 'not_found' });
         if (row.src !== session.src) return auth.json(res, 403, { error: 'forbidden' });
 
         const history = db.prepare(
-          `SELECT id, config_id, fired_at, finished_at, status, error_message, trigger_type, duration_ms, value, threshold
+          `SELECT id, rule_id, fired_at, finished_at, status, error_message, trigger_type, duration_ms, value, threshold
            FROM alert_history
            WHERE panel_id = ?
            ORDER BY fired_at DESC
@@ -319,7 +319,7 @@ function registerRoutes(server, db, deps) {
 
       // ── POST /alerts/:panelId/preview-value — текущее значение метрики ──
       if (req.method === 'POST' && action === 'preview-value') {
-        const row = db.prepare('SELECT * FROM alert_configs WHERE panel_id = ?')
+        const row = db.prepare('SELECT * FROM alert_rules WHERE panel_id = ?')
           .get(panelId);
         if (!row) return auth.json(res, 404, { error: 'not_found' });
         if (row.src !== session.src) return auth.json(res, 403, { error: 'forbidden' });
