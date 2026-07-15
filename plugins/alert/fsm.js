@@ -79,7 +79,7 @@ function enqueueAlert(rule, state, value, historyId, db) {
     try {
         channels = JSON.parse(rule.channels);
     } catch (e) {
-        console.error(\`[Alert FSM] Failed to parse channels for rule \${rule.id}\`);
+        console.error(`[Alert FSM] Failed to parse channels for rule ${rule.id}`);
         return;
     }
 
@@ -88,15 +88,15 @@ function enqueueAlert(rule, state, value, historyId, db) {
     
     let messageText = '';
     if (state === 'FIRING') {
-        messageText = \`🚨 \${title} сработал! Текущее значение: \${value} (Порог: \${rule.condition_type} \${threshold})\`;
+        messageText = `🚨 ${title} сработал! Текущее значение: ${value} (Порог: ${rule.condition_type} ${threshold})`;
     } else if (state === 'RESOLVED') {
-        messageText = \`✅ \${title} восстановился. Текущее значение: \${value}\`;
+        messageText = `✅ ${title} восстановился. Текущее значение: ${value}`;
     }
 
-    const stmt = db.prepare(\`
+    const stmt = db.prepare(`
         INSERT INTO alert_queue (rule_id, history_id, channel_type, channel_config, message_text)
         VALUES (?, ?, ?, ?, ?)
-    \`);
+    `);
 
     for (const channel of channels) {
         if (!channel.type) continue;
