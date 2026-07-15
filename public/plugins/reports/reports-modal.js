@@ -62,6 +62,9 @@
       _reportsConfig = data.config;
       _fillForm(data.config);
       if (statusEl) statusEl.textContent = data.config.is_active ? 'активен' : 'неактивен';
+
+      // Загружаем реальные токены (в открытом виде) для отображения в полях
+      _loadTokens(dashboardId);
     } catch (err) {
       if (statusEl) statusEl.textContent = 'сеть недоступна';
     }
@@ -69,18 +72,39 @@
     _loadHistory(dashboardId);
   }
 
+  /* ── Загрузить токены в открытом виде ── */
+  async function _loadTokens(dashboardId) {
+    try {
+      var r = await fetch(API + '/reports/' + encodeURIComponent(dashboardId) + '/tokens', {
+        headers: authHeaders()
+      });
+      if (!r.ok) return;
+      var data = await r.json();
+
+      var botInput = document.getElementById('r_botToken');
+      var tgInput = document.getElementById('r_tgToken');
+
+      if (botInput && data.bot_token) {
+        botInput.value = data.bot_token;
+        botInput.setAttribute('data-loaded', 'true');
+      }
+      if (tgInput && data.telegram_bot_token) {
+        tgInput.value = data.telegram_bot_token;
+        tgInput.setAttribute('data-loaded', 'true');
+      }
+    } catch (_) {}
+  }
+
   /* ── Заполнить форму из конфига ── */
   function _fillForm(cfg) {
     var $ = function(id) { return document.getElementById(id); };
     $('r_botId').value        = cfg.bot_id || '';
-    $('r_botToken').value     = '';  // masked — не заполняем, пользователь введёт новый если нужно
-    $('r_botTokenHint').textContent = cfg.bot_token_hint || '';
+    $('r_botToken').value     = '';  // заполнится через _loadTokens()
     $('r_functionId').value   = cfg.function_id || 697;
     $('r_prompt').value       = cfg.prompt || '';
     $('r_size').value         = cfg.size || '9:16';
     $('r_filesUrl').value     = cfg.files_url || '';
-    $('r_tgToken').value      = '';  // masked
-    $('r_tgTokenHint').textContent = cfg.telegram_bot_token ? cfg.telegram_bot_token : '';
+    $('r_tgToken').value      = '';  // заполнится через _loadTokens()
     $('r_chatIds').value      = cfg.chat_ids || '';
     $('r_emails').value       = cfg.emails || '';
     $('r_scheduleType').value = cfg.schedule_type || 'daily';
@@ -96,13 +120,11 @@
     var $ = function(id) { return document.getElementById(id); };
     $('r_botId').value        = '';
     $('r_botToken').value     = '';
-    $('r_botTokenHint').textContent = '';
     $('r_functionId').value   = '697';
     $('r_prompt').value       = 'Визуализируй на одном листе все приложенные данные ничего не додумывая, а точно опираясь на указанные цифры.';
     $('r_size').value         = '9:16';
     $('r_filesUrl').value     = '';
     $('r_tgToken').value      = '';
-    $('r_tgTokenHint').textContent = '';
     $('r_chatIds').value      = '';
     $('r_emails').value       = '';
     $('r_scheduleType').value = 'daily';
@@ -143,12 +165,9 @@
       timezone:          $('r_timezone').value || 'UTC+03:00',
       is_active:         $('r_isActive').checked,
     };
-    // bot_token — только если пользователь ввёл новый
+    // bot_token — отправляем если поле не пустое (включая загруженный из /tokens)
     var bt = $('r_botToken').value.trim();
     if (bt) body.bot_token = bt;
-    else if (_reportsConfig && _reportsConfig.bot_token_hint) {
-      // не обновляем — на сервере останется старый
-    }
     // telegram_bot_token — аналогично
     var tt = $('r_tgToken').value.trim();
     if (tt) body.telegram_bot_token = tt;
@@ -314,6 +333,18 @@
     // Тип расписания
     var stEl = document.getElementById('r_scheduleType');
     if (stEl) stEl.addEventListener('change', _onScheduleTypeChange);
+
+    // Кнопки-глазики для токенов
+    document.querySelectorAll('#reportsModal .eye-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var targetId = btn.getAttribute('data-target');
+        var input = document.getElementById(targetId);
+        if (!input) return;
+        var isPassword = input.type === 'password';
+        input.type = isPassword ? 'text' : 'password';
+        btn.textContent = isPassword ? '🙈' : '👁';
+      });
+    });
 
     // Кнопки
     var saveBtn = document.getElementById('rBtnSave');
