@@ -4,13 +4,13 @@
  * Проверяет, нужно ли отправлять отчёт, при каждом вызове checkAndDispatchReports().
  * Вызывается:
  *   1. Из хука global._pluginOnFlush (каждый flush батча событий, не чаще раза в минуту)
- *   2. Из fallback-таймера (раз в 5 минут, на случай простоя трафика)
+ *   2. Из основного таймера (каждую минуту, независимо от трафика)
  *
  * Дедупликация: атомарный UPDATE last_sent_at — кто первый обновил, тот и отправляет.
  */
 'use strict';
 
-const { shouldSendNow } = require('../shared/schedule-utils');
+const { shouldSendNow, parseTimezoneOffset, getLocalTime, formatHHMM, hhmmToMinutes } = require('../shared/schedule-utils');
 const { dispatchReport } = require('./dispatcher');
 
 const CHECK_INTERVAL_MS = 60 * 1000; // не чаще раза в минуту
@@ -35,7 +35,17 @@ async function checkAndDispatchReports(db) {
     const utcNow = new Date();
 
     for (const cfg of configs) {
-      if (!shouldSendNow(cfg, utcNow)) continue;
+      const wouldSend = shouldSendNow(cfg, utcNow);
+      if (!wouldSend) {
+        // Логируем для отладки: почему не сработало
+        const offset = parseTimezoneOffset(cfg.timezone);
+        const localNow = getLocalTime(utcNow, offset);
+        const localHHMM = formatHHMM(localNow);
+        const targetMin = hhmmToMinutes(cfg.schedule_time || '09:00');
+        const nowMin = hhmmToMinutes(localHHMM);
+        console.log(`[reports-scheduler] skip config ${cfg.id}: local=${localHHMM}, target=${cfg.schedule_time}, nowMin=${nowMin}, targetMin=${targetMin}, last_sent=${cfg.last_sent_at || 'never'}`);
+        continue;
+      }
 
       // Атомарный захват: кто первый обновил — тот и отправляет
       const newSentAt = utcNow.toISOString();
@@ -49,6 +59,8 @@ async function checkAndDispatchReports(db) {
         // fire-and-forget: не блокируем проверку других конфигов
         dispatchReport(db, Object.assign({}, cfg, { last_sent_at: newSentAt }))
           .catch(err => console.error('[reports-scheduler] dispatch error:', err.message));
+      } else {
+        console.log(`[reports-scheduler] config ${cfg.id}: would send but last_sent_at already updated (dedup)`);
       }
     }
   } catch (err) {
