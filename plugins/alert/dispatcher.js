@@ -36,19 +36,51 @@ function appendPhase(db, historyId, phase, detail) {
  * Плейсхолдеры: {{value}}, {{threshold}}, {{threshold_min}}, {{threshold_max}},
  * {{condition}}, {{title}}, {{panel_id}}, {{dashboard_id}}, {{src}},
  * {{agg}}, {{range}}, {{type}}.
+ *
+ * Дефолтный шаблон использует только переносы строк и эмодзи — без
+ * Markdown-разметки, чтобы корректно работать в любом parse_mode.
  */
 function renderTemplate(template, ctx) {
   if (!template) {
-    // Дефолтный шаблон если пользователь не задал свой
-    return `🚨 *${ctx.title || 'KPI-алерт'}*\n\n` +
-      `Текущее значение: *${ctx.value}*\n` +
+    return `🚨 ${ctx.title || 'KPI-алерт'}\n\n` +
+      `Текущее значение: ${ctx.value}\n` +
       `Условие: ${ctx.condition} ${ctx.threshold}\n` +
-      `Дашборд: \`${ctx.dashboard_id}\``;
+      `Дашборд: ${ctx.dashboard_id}`;
   }
   return template.replace(/\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g, (m, key) => {
     if (ctx[key] === undefined || ctx[key] === null) return '';
     return String(ctx[key]);
   });
+}
+
+/**
+ * Спецсимволы, которые в MarkdownV2 Telegram считает управляющими
+ * и которые нужно экранировать обратным слэшем вне entities:
+ *   _ * [ ] ( ) ~ ` > # + - = | { } . !
+ * Источник: https://core.telegram.org/bots/api#markdownv2-style
+ */
+const MDV2_SPECIAL = /([_*\[\]()~`>#+\-=|{}.!])/g;
+
+/**
+ * Экранировать спецсимволы MarkdownV2 в произвольной строке.
+ * Применяется к сообщению целиком, если parse_mode=MARKDOWNV2, —
+ * пользовательские шаблоны обычно не содержат MDv2-разметки, а
+ * сырые значения (имена панелей, ID) почти всегда содержат
+ * спецсимволы вроде '.', '!', '-', '|' и т.п., которые ломают парсинг.
+ */
+function escapeMarkdownV2(text) {
+  if (text === null || text === undefined) return '';
+  return String(text).replace(MDV2_SPECIAL, '\\$1');
+}
+
+/**
+ * Подготовить текст к отправке в Telegram с учётом parse_mode.
+ *  - HTML/MARKDOWN: оставляем как есть (пользователь явно контролирует разметку)
+ *  - MARKDOWNV2: экранируем все спецсимволы во всём теле сообщения
+ */
+function prepareTelegramText(text, parseMode) {
+  if (parseMode === 'MARKDOWNV2') return escapeMarkdownV2(text);
+  return text;
 }
 
 /**
@@ -58,9 +90,13 @@ function renderTemplate(template, ctx) {
 function telegramSendMessage(botToken, chatId, text, parseMode) {
   return new Promise((resolve) => {
     try {
+      // Сначала режем по лимиту Telegram (4096 символов), чтобы экранирование
+      // не оставляло висящий обратный слэш на границе обрезки.
+      const trimmed = String(text == null ? '' : text).slice(0, 4096);
+      const safeText = prepareTelegramText(trimmed, parseMode);
       const body = JSON.stringify({
         chat_id: String(chatId),
-        text: String(text).slice(0, 4096), // Telegram limit
+        text: safeText,
         parse_mode: parseMode || 'HTML',
         disable_web_page_preview: true,
       });
@@ -229,4 +265,6 @@ module.exports = {
   recordCooldownSkip,
   getActiveDispatches,
   renderTemplate, // экспорт для тестов/предпросмотра
+  escapeMarkdownV2, // экспорт для тестов
+  prepareTelegramText, // экспорт для тестов
 };
