@@ -1935,6 +1935,13 @@ const server = http.createServer(async (req, res) => {
 // ── Запуск ─────────────────────────────────────────────
 initKnownTables();
 auth.initAuthTables(db);
+
+// ── Plugins: загрузка плагинов (отчёты, триггеры и т.д.) ──
+// ВАЖНО: загружаем ДО запуска сервера, чтобы таблицы плагинов (alert_rules и т.д.)
+// были созданы до обработки первого запроса. Раньше loadPlugins вызывался после
+// server.listen(), из-за чего /api/alerts/rules падал с 500 (no such table).
+require('./plugins').loadPlugins(server, db);
+
 initWorkerPool();
 initBufferWAL();
 recoverBufferWAL();
@@ -2099,9 +2106,6 @@ cleanupOldTables();
 
 // ── Pulse Self-Analytics: Auto-registration ─────────────
 ensurePulseSrc();
-
-// ── Plugins: загрузка плагинов (отчёты, триггеры и т.д.) ──
-require('./plugins').loadPlugins(server, db);
 
 // ── Pulse Self-Analytics: Timers ───────────────────────
 setInterval(collectSysMetrics, 60 * 1000);     // раз в минуту — системные метрики
