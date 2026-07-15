@@ -14,7 +14,7 @@ const { httpPost, pollUntilDone, sleep } = require('../shared/http-client');
 const PROXY_HOST  = 'eu1.account.dialog.ai.atiks.org';
 const API_HOST    = 'api.pro-talk.ru';
 const POLL_INTERVAL = 8000;   // 8 сек между полами
-const POLL_TIMEOUT  = 300000; // 5 минут максимум
+const POLL_TIMEOUT  = 600000; // 10 минут максимум
 
 // Счётчик для генерации уникальных task_id
 let taskCounter = 0;
