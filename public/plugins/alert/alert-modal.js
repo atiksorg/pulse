@@ -11,17 +11,29 @@
   var _alertPanel = null;      // объект панели {id, title, viz, ...}
   var _alertDashboard = null;  // объект дашборда {id, ...}
   var _liveValueCache = null;  // текущее значение метрики (для preview)
+  // Состояние загрузки конфига: 'loading' | 'loaded' | 'missing' | 'error'
+  var _configLoadState = 'loading';
+  var _configLoadError = '';
 
   /* ── Открыть модалку ── */
   function openAlertModal(panel, dashboard) {
     _alertPanel = panel;
     _alertDashboard = dashboard;
+    _alertConfig = null;
+    _configLoadState = 'loading';
+    _configLoadError = '';
     var modal = document.getElementById('alertModal');
     if (!modal) return;
     var titleEl = document.getElementById('alertPanelTitle');
     if (titleEl) titleEl.textContent = (panel && panel.title) || '—';
     var statusEl = document.getElementById('alertStatus');
     if (statusEl) statusEl.textContent = 'загрузка…';
+
+    // Сбрасываем плейсхолдеры вкладки «Монитор» в исходное состояние,
+    // чтобы не висели старые «загрузка…» / stale-данные с прошлой сессии.
+    var stateEl = document.getElementById('aConfigState');
+    if (stateEl) stateEl.innerHTML = '<span style="color:var(--muted-2);">конфиг загружается…</span>';
+
     modal.classList.add('active');
     _switchTab('channel');
     _loadConfig(panel.id);
@@ -89,6 +101,8 @@
   async function _loadConfig(panelId) {
     var statusEl = document.getElementById('alertStatus');
     if (statusEl) statusEl.textContent = 'загрузка…';
+    _configLoadState = 'loading';
+    _configLoadError = '';
 
     try {
       var r = await fetch(API + '/alerts/' + encodeURIComponent(panelId), {
@@ -96,25 +110,45 @@
       });
       if (r.status === 404) {
         _alertConfig = null;
+        _configLoadState = 'missing';
         _fillFormDefaults();
         if (statusEl) statusEl.textContent = 'не настроен';
+        _renderConfigState();
         return;
       }
       if (r.status === 401) { clearSession(); closeAlertModal(); return; }
       if (!r.ok) {
         var e = await r.json().catch(function() { return {}; });
         if (statusEl) statusEl.textContent = 'ошибка: ' + (e.error || r.status);
+        _configLoadState = 'error';
+        _configLoadError = e.error || ('http_' + r.status);
+        _renderConfigState();
         return;
       }
       var data = await r.json();
       _alertConfig = data.config;
+      _configLoadState = 'loaded';
       _fillForm(data.config);
       if (statusEl) statusEl.textContent = data.config.is_active ? 'активен' : 'неактивен';
+
+      // Если пользователь уже открыл вкладку «Монитор» пока грузился конфиг —
+      // обновим её, чтобы «конфиг загружается…» сменилось на реальные данные.
+      var monitorPane = document.querySelector('#alertModal .atab-pane[data-pane="monitor"]');
+      if (monitorPane && monitorPane.classList.contains('active')) {
+        _renderConfigState();
+      }
 
       // Загружаем реальный токен (отдельный endpoint)
       _loadToken(panelId);
     } catch (err) {
       if (statusEl) statusEl.textContent = 'сеть недоступна';
+      _configLoadState = 'error';
+      _configLoadError = 'network';
+      // Покажем ошибку и в мониторе, если он активен
+      var monitorPane2 = document.querySelector('#alertModal .atab-pane[data-pane="monitor"]');
+      if (monitorPane2 && monitorPane2.classList.contains('active')) {
+        _renderConfigState();
+      }
     }
 
     _loadHistory();
@@ -514,16 +548,32 @@
   function _renderConfigState() {
     var el = document.getElementById('aConfigState');
     if (!el) return;
+
+    // Различаем состояния загрузки, чтобы не показывать «конфиг загружается…»
+    // в случаях, когда конфиг реально отсутствует или произошла ошибка.
+    if (_configLoadState === 'loading' && !_alertConfig) {
+      el.innerHTML = '<span style="color:var(--muted-2);">конфиг загружается…</span>';
+      return;
+    }
+    if (_configLoadState === 'error' && !_alertConfig) {
+      el.innerHTML = '<span style="color:var(--red,#FF6B6B);">ошибка загрузки: ' +
+        escapeHtml(_configLoadError || 'unknown') + '</span>';
+      return;
+    }
     if (!_alertConfig) {
-      el.innerHTML = '<span style="color:var(--muted-2);">конфиг не создан</span>';
+      // _configLoadState === 'missing' или просто конфига нет
+      el.innerHTML = '<span style="color:var(--muted-2);">конфиг не создан — заполните форму и сохраните</span>';
       return;
     }
     var c = _alertConfig;
+    var isActiveHtml = c.is_active
+      ? '<span style="color:var(--green,#4CAF50);">да</span>'
+      : '<span style="color:var(--red,#FF6B6B);">нет</span>';
     var html = [
       '<div style="display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:11px;line-height:1.6;">',
-      '  <span style="color:var(--muted-2);">Активен:</span> <span>' + (c.is_active ? '<span style="color:var(--green,#4CAF50);">да</span>' : '<span style="color:var(--red,#FF6B6B);">нет</span>') + '</span>',
+      '  <span style="color:var(--muted-2);">Активен:</span> <span>' + isActiveHtml + '</span>',
       '  <span style="color:var(--muted-2);">Условие:</span> <span style="font-family:var(--mono);">' + escapeHtml(c.condition) + '</span>',
-      '  <span style="color:var(--muted-2);">Порог:</span> <span style="font-family:var(--mono);">' + (c.threshold !== null ? c.threshold : '—') + '</span>',
+      '  <span style="color:var(--muted-2);">Порог:</span> <span style="font-family:var(--mono);">' + (c.threshold !== null && c.threshold !== undefined ? c.threshold : '—') + '</span>',
       '  <span style="color:var(--muted-2);">Интервал:</span> <span style="font-family:var(--mono);">' + c.check_interval_sec + ' сек</span>',
       '  <span style="color:var(--muted-2);">Cooldown:</span> <span style="font-family:var(--mono);">' + c.cooldown_min + ' мин</span>',
       '  <span style="color:var(--muted-2);">last_value:</span> <span style="font-family:var(--mono);">' + (c.last_value !== null && c.last_value !== undefined ? c.last_value : '—') + '</span>',
