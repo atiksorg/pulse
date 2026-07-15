@@ -6,12 +6,12 @@ let readOnlyDb = null;
 
 function getReadOnlyDb() {
     if (!readOnlyDb) {
-        // Предполагаем, что БД лежит в корне проекта
-        const dbPath = path.join(__dirname, '../../analytics.db');
+        // Используем тот же путь к БД, что и основной сервер
+        const dbPath = process.env.DB_PATH || path.join(__dirname, '../../events.db');
         try {
             readOnlyDb = new Database(dbPath, { readonly: true });
         } catch (e) {
-            console.error('[Alert Evaluator] Failed to open read-only DB:', e);
+            console.error('[Alert Evaluator] Failed to open read-only DB:', e.message);
             return null;
         }
     }
