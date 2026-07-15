@@ -10,6 +10,13 @@
   var _alertRules = [];
   var _alertPollTimers = {};
 
+  /* ── Безопасный парсинг JSON-ответа (fallback: текст) ── */
+  function _safeParseResponse(r){
+    var ct = r.headers.get('content-type') || '';
+    if(ct.indexOf('json') !== -1) return r.json();
+    return r.text().then(function(t){ return { error: t || 'HTTP ' + r.status }; });
+  }
+
   /* ── Открыть модалку алерта для конкретной панели ── */
   window.openAlertModal = function openAlertModal(p, src){
     var modal = document.getElementById('alertModal');
@@ -344,7 +351,7 @@
     })
     .then(function(r){
       if(r.status === 401){ clearSession(); toast('Сессия истекла'); return null; }
-      if(!r.ok) return r.json().then(function(e){ throw new Error(e.error || 'HTTP '+r.status); });
+      if(!r.ok) return _safeParseResponse(r).then(function(e){ throw new Error(e.error || 'HTTP '+r.status); });
       return r.json();
     })
     .then(function(data){
@@ -372,7 +379,7 @@
       headers: authHeaders()
     })
     .then(function(r){
-      if(!r.ok) throw new Error('HTTP ' + r.status);
+      if(!r.ok) return _safeParseResponse(r).then(function(e){ throw new Error(e.error || 'HTTP '+r.status); });
       return r.json();
     })
     .then(function(){
@@ -410,7 +417,7 @@
       })
     })
     .then(function(r){
-      if(!r.ok) return r.json().then(function(e){ throw new Error(e.error || 'HTTP '+r.status); });
+      if(!r.ok) return _safeParseResponse(r).then(function(e){ throw new Error(e.error || 'HTTP '+r.status); });
       return r.json();
     })
     .then(function(){
