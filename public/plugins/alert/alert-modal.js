@@ -439,6 +439,10 @@
     if (phase === 'telegram_post') return '📡';
     if (phase === 'telegram_ok') return '✅';
     if (phase === 'telegram_error') return '⚠️';
+    if (phase === 'channel_send') return '📡';
+    if (phase === 'channel_ok') return '✅';
+    if (phase === 'channel_error') return '⚠️';
+    if (phase === 'skip_unknown_channel') return '⏭';
     if (phase === 'done') return '🎉';
     if (phase === 'error') return '❌';
     return '•';
@@ -527,15 +531,35 @@
         }
       }
 
-      var html = [
+      // Self-healthcheck индикатор
+      var healthcheckHtml = '';
+      if (data.selfHealthcheckOk === false) {
+        healthcheckHtml = '<div style="margin-bottom:6px;padding:4px 8px;background:rgba(255,107,107,0.15);border:1px solid var(--red,#FF6B6B);border-radius:4px;font-size:11px;color:var(--red,#FF6B6B);">⚠️ ' + escapeHtml(data.selfHealthcheckWarning || 'scheduler degraded') + '</div>';
+      }
+
+      // Queue stats
+      var queueHtml = '';
+      if (data.queue) {
+        var q = data.queue;
+        queueHtml = '  <span style="color:var(--muted-2);">Очередь:</span> <span>' +
+          (q.pending ? '<span style="color:var(--yellow);">⏳' + q.pending + '</span> ' : '') +
+          (q.processing ? '<span style="color:var(--teal);">⚡' + q.processing + '</span> ' : '') +
+          (q.failed ? '<span style="color:var(--red);">✗' + q.failed + '</span> ' : '') +
+          (!q.pending && !q.processing && !q.failed ? '<span style="color:var(--green);">чисто</span>' : '') +
+          '</span>';
+      }
+
+      var html = healthcheckHtml + [
         '<div style="display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:11px;line-height:1.6;">',
         '  <span style="color:var(--muted-2);">Проверка:</span> <span style="color:' + ageColor + ';">' + ageStr + '</span>',
+        '  <span style="color:var(--muted-2);">Self-check:</span> <span style="color:' + (data.selfHealthcheckOk !== false ? 'var(--green,#4CAF50)' : 'var(--red,#FF6B6B)') + ';">' + (data.selfHealthcheckOk !== false ? '✓ ok' : '✗ degraded') + '</span>',
         '  <span style="color:var(--muted-2);">Интервал тиков:</span> <span>' + (data.checkIntervalMs / 1000) + ' сек</span>',
-        '  <span style="color:var(--muted-2);">Активных конфигов:</span> <span>' + data.activeConfigs + '</span>',
+        '  <span style="color:var(--muted-2);">Активных правил:</span> <span>' + data.activeConfigs + '</span>',
         '  <span style="color:var(--muted-2);">Параллельных отправок:</span> <span>' + (data.activeDispatches || 0) + ' / 3</span>',
         '  <span style="color:var(--muted-2);">Активных вычислений:</span> <span>' + (data.activeEvals || 0) + ' / 4</span>',
         '  <span style="color:var(--muted-2);">Отправлено (1ч):</span> <span style="color:var(--green,#4CAF50);">' + (data.recentSent1h || 0) + '</span>',
         '  <span style="color:var(--muted-2);">Ошибок (1ч):</span> <span style="color:' + ((data.recentErrors1h || 0) > 0 ? 'var(--red,#FF6B6B)' : 'var(--muted-2)') + ';">' + (data.recentErrors1h || 0) + '</span>',
+        queueHtml,
         '</div>'
       ].join('\n');
       el.innerHTML = html;
@@ -569,9 +593,34 @@
     var isActiveHtml = c.is_active
       ? '<span style="color:var(--green,#4CAF50);">да</span>'
       : '<span style="color:var(--red,#FF6B6B);">нет</span>';
+
+    // FSM-состояние с цветовой индикацией
+    var stateColors = {
+      'ok': 'var(--green,#4CAF50)',
+      'pending': 'var(--yellow,#FFD93D)',
+      'firing': 'var(--red,#FF6B6B)',
+      'resolved': 'var(--teal,#2DD4BF)'
+    };
+    var stateEmoji = {
+      'ok': '🟢', 'pending': '🟡', 'firing': '🔴', 'resolved': '🔵'
+    };
+    var fsmState = c.state || 'ok';
+    var stateColor = stateColors[fsmState] || 'var(--muted-2)';
+    var stateIcon = stateEmoji[fsmState] || '⚪';
+
+    // Severity badge
+    var sevColors = {
+      'info': 'var(--teal,#2DD4BF)',
+      'warning': 'var(--yellow,#FFD93D)',
+      'critical': 'var(--red,#FF6B6B)'
+    };
+    var sevColor = sevColors[c.severity] || 'var(--muted-2)';
+
     var html = [
       '<div style="display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:11px;line-height:1.6;">',
       '  <span style="color:var(--muted-2);">Активен:</span> <span>' + isActiveHtml + '</span>',
+      '  <span style="color:var(--muted-2);">Состояние:</span> <span style="color:' + stateColor + ';font-weight:600;">' + stateIcon + ' ' + escapeHtml(fsmState) + (c.pending_count > 0 ? ' (pending: ' + c.pending_count + ')' : '') + '</span>',
+      '  <span style="color:var(--muted-2);">Важность:</span> <span style="color:' + sevColor + ';">' + escapeHtml(c.severity || 'warning') + '</span>',
       '  <span style="color:var(--muted-2);">Условие:</span> <span style="font-family:var(--mono);">' + escapeHtml(c.condition) + '</span>',
       '  <span style="color:var(--muted-2);">Порог:</span> <span style="font-family:var(--mono);">' + (c.threshold !== null && c.threshold !== undefined ? c.threshold : '—') + '</span>',
       '  <span style="color:var(--muted-2);">Интервал:</span> <span style="font-family:var(--mono);">' + c.check_interval_sec + ' сек</span>',
