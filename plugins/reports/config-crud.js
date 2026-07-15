@@ -366,6 +366,32 @@ function registerRoutes(server, db, deps) {
           return String(Math.floor(total / 60)).padStart(2, '0') + ':' + String(total % 60).padStart(2, '0');
         })();
 
+        // Retry info: если сегодня уже отправляли, но были ошибки
+        let retryInfo = null;
+        if (!wouldSend && detail.alreadySentToday &&
+            (row.schedule_type === 'daily' || row.schedule_type === 'weekly')) {
+          const todayStartLocal = new Date(localNow);
+          todayStartLocal.setUTCHours(0, 0, 0, 0);
+          const todayStartUtc = new Date(todayStartLocal.getTime() - offset * 3600000).toISOString();
+
+          const errorsToday = db.prepare(
+            "SELECT COUNT(*) as cnt FROM report_history WHERE config_id = ? AND status = 'error' AND started_at > ?"
+          ).get(row.id, todayStartUtc).cnt;
+
+          const lastSuccess = db.prepare(
+            "SELECT id FROM report_history WHERE config_id = ? AND status = 'done' AND started_at > ? ORDER BY started_at DESC LIMIT 1"
+          ).get(row.id, todayStartUtc);
+
+          if (errorsToday > 0 && !lastSuccess) {
+            const maxRetries = 2;
+            retryInfo = {
+              errorsToday,
+              maxRetries,
+              willRetry: errorsToday < maxRetries,
+            };
+          }
+        }
+
         return auth.json(res, 200, {
           serverTime: utcNow.toISOString(),
           serverTimeStr,
@@ -384,6 +410,8 @@ function registerRoutes(server, db, deps) {
           wouldSendReason: detail.reason,
           inWindow: detail.inWindow,
           alreadySentToday: detail.alreadySentToday,
+          catchUp: detail.catchUp || false,
+          retryInfo: retryInfo,
           windowStart: windowStart,
           windowEnd: windowEndHHMM,
           windowMinutes: WINDOW_MINUTES,
@@ -549,6 +577,11 @@ function validateConfig(body, isUpdate) {
 
   // schedule_hours — целое число
   const scheduleHours = Math.max(0, Math.min(168, Number(body.schedule_hours) || 0));
+
+  // Для interval-типа schedule_hours должен быть > 0
+  if (scheduleType === 'interval' && scheduleHours <= 0) {
+    return { ok: false, error: 'invalid_schedule_hours' };
+  }
 
   // timezone
   const timezone = /^UTC[+-]\d{2}:\d{2}$/.test(body.timezone)
