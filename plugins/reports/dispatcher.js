@@ -97,14 +97,14 @@ async function dispatchReport(db, config, historyId) {
     });
     appendPhase(db, historyId, 'api_done', `polls=${pollCount}, image=${result.image_url || 'none'}`);
 
-    // 3. Успех — обновляем историю и last_sent_at
+    // 3. Успех — обновляем историю. last_sent_at НЕ обновляем здесь:
+    //    его уже поставил планировщик при атомарном захвате (см. scheduler.js).
+    //    Повторное обновление в эту же секунду бесполезно и может
+    //    затереть более свежее значение при гонке.
     const durationMs = Date.now() - startTime;
     db.prepare(
       'UPDATE report_history SET status = ?, image_url = ?, finished_at = ?, duration_ms = ? WHERE id = ?'
     ).run('done', result.image_url || null, new Date().toISOString(), durationMs, historyId);
-
-    db.prepare('UPDATE report_configs SET last_sent_at = ? WHERE id = ?')
-      .run(new Date().toISOString(), config.id);
 
     appendPhase(db, historyId, 'done', `total ${durationMs}ms`);
     console.log(`[reports-dispatch] ✓ report done: ${config.dashboard_id} → ${result.image_url || '(no image)'} (${durationMs}ms)`);
