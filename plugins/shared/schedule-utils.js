@@ -143,6 +143,7 @@ module.exports = {
   formatHHMM,
   formatDate,
   getLocalDayOfWeek,
+  hhmmToMinutes,
   shouldSendNow,
   isValidTimezone,
 };
