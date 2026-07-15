@@ -26,8 +26,14 @@
     if (!modal) return;
     var titleEl = document.getElementById('alertPanelTitle');
     if (titleEl) titleEl.textContent = (panel && panel.title) || '—';
-    var statusEl = document.getElementById('alertStatus');
-    if (statusEl) statusEl.textContent = 'загрузка…';
+
+    // Сбрасываем toggle в нейтральное состояние до загрузки
+    var statusText = document.getElementById('alertStatusText');
+    if (statusText) statusText.textContent = 'Загрузка…';
+    var statusSub = document.getElementById('alertStatusSub');
+    if (statusSub) statusSub.textContent = '';
+    var statusDot = document.getElementById('alertStatusDot');
+    if (statusDot) statusDot.style.background = 'var(--muted-2,#4E5768)';
 
     // Сбрасываем плейсхолдеры вкладки «Монитор» в исходное состояние,
     // чтобы не висели старые «загрузка…» / stale-данные с прошлой сессии.
@@ -99,8 +105,6 @@
 
   /* ── Загрузить конфиг с сервера ── */
   async function _loadConfig(panelId) {
-    var statusEl = document.getElementById('alertStatus');
-    if (statusEl) statusEl.textContent = 'загрузка…';
     _configLoadState = 'loading';
     _configLoadError = '';
 
@@ -112,14 +116,13 @@
         _alertConfig = null;
         _configLoadState = 'missing';
         _fillFormDefaults();
-        if (statusEl) statusEl.textContent = 'не настроен';
+        _updateToggleVisual();
         _renderConfigState();
         return;
       }
       if (r.status === 401) { clearSession(); closeAlertModal(); return; }
       if (!r.ok) {
         var e = await r.json().catch(function() { return {}; });
-        if (statusEl) statusEl.textContent = 'ошибка: ' + (e.error || r.status);
         _configLoadState = 'error';
         _configLoadError = e.error || ('http_' + r.status);
         _renderConfigState();
@@ -129,7 +132,6 @@
       _alertConfig = data.config;
       _configLoadState = 'loaded';
       _fillForm(data.config);
-      if (statusEl) statusEl.textContent = data.config.is_active ? 'активен' : 'неактивен';
 
       // Если пользователь уже открыл вкладку «Монитор» пока грузился конфиг —
       // обновим её, чтобы «конфиг загружается…» сменилось на реальные данные.
@@ -141,9 +143,9 @@
       // Загружаем реальный токен (отдельный endpoint)
       _loadToken(panelId);
     } catch (err) {
-      if (statusEl) statusEl.textContent = 'сеть недоступна';
       _configLoadState = 'error';
       _configLoadError = 'network';
+      _updateToggleVisual();
       // Покажем ошибку и в мониторе, если он активен
       var monitorPane2 = document.querySelector('#alertModal .atab-pane[data-pane="monitor"]');
       if (monitorPane2 && monitorPane2.classList.contains('active')) {
@@ -188,6 +190,7 @@
 
     _onConditionChange();
     _updatePreview();
+    _updateToggleVisual();
   }
 
   function _fillFormDefaults() {
@@ -205,6 +208,32 @@
     $('a_message').value       = '';
     _onConditionChange();
     _updatePreview();
+    _updateToggleVisual();
+  }
+
+  /* ── Обновить визуал toggle вкл/выкл ── */
+  function _updateToggleVisual() {
+    var cb = document.getElementById('a_isActive');
+    if (!cb) return;
+    var track = cb.parentElement.querySelector('.alert-toggle-track');
+    var knob = cb.parentElement.querySelector('.alert-toggle-knob');
+    var statusDot = document.getElementById('alertStatusDot');
+    var statusText = document.getElementById('alertStatusText');
+    var statusSub = document.getElementById('alertStatusSub');
+
+    if (cb.checked) {
+      if (track) track.style.background = 'var(--teal,#4DECC7)';
+      if (knob) knob.style.transform = 'translateX(22px)';
+      if (statusDot) statusDot.style.background = 'var(--teal,#4DECC7)';
+      if (statusText) statusText.textContent = 'Уведомление включено';
+      if (statusSub) statusSub.textContent = 'Проверка по расписанию, отправка при срабатывании';
+    } else {
+      if (track) track.style.background = 'var(--muted-2,#4E5768)';
+      if (knob) knob.style.transform = 'translateX(0)';
+      if (statusDot) statusDot.style.background = 'var(--muted-2,#4E5768)';
+      if (statusText) statusText.textContent = 'Уведомление выключено';
+      if (statusSub) statusSub.textContent = 'Настройте параметры и включите';
+    }
   }
 
   /* ── Показ/скрытие полей в зависимости от условия ── */
@@ -313,8 +342,7 @@
       var data = await r.json();
       _alertConfig = data.config;
       _fillForm(data.config);
-      var statusEl = document.getElementById('alertStatus');
-      if (statusEl) statusEl.textContent = data.config.is_active ? 'активен' : 'неактивен';
+      _updateToggleVisual();
       toast('Настройки сохранены ✓');
     } catch (err) {
       toast('Сеть недоступна');
@@ -677,22 +705,37 @@
     var saveBtn = document.getElementById('aBtnSave');
     if (saveBtn) saveBtn.addEventListener('click', _saveConfig);
 
-    var delBtn = document.getElementById('aBtnDelete');
-    if (delBtn) delBtn.addEventListener('click', async function() {
-      if (!await confirmModal('Удалить уведомление?', 'Конфигурация порогового уведомления будет удалена. История сохранится.', 'Удалить')) return;
+    // Toggle вкл/выкл в шапке
+    var toggleCb = document.getElementById('a_isActive');
+    if (toggleCb) toggleCb.addEventListener('change', function() {
+      _updateToggleVisual();
+    });
+
+    // Сброс настроек
+    var resetBtn = document.getElementById('aBtnResetConfig');
+    if (resetBtn) resetBtn.addEventListener('click', async function() {
+      if (!_alertConfig) {
+        toast('Настройки ещё не созданы');
+        return;
+      }
+      // Выключаем уведомление (is_active = false) вместо удаления
       try {
+        var body = _readForm();
+        body.is_active = false;
         var r = await fetch(API + '/alerts/' + encodeURIComponent(_alertPanel.id), {
-          method: 'DELETE',
-          headers: authHeaders()
+          method: 'PUT',
+          headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+          body: JSON.stringify(body)
         });
         if (r.ok) {
-          _alertConfig = null;
-          _fillFormDefaults();
-          toast('Настройки удалены');
-          var statusEl = document.getElementById('alertStatus');
-          if (statusEl) statusEl.textContent = 'не настроен';
+          var data = await r.json();
+          _alertConfig = data.config;
+          _fillForm(data.config);
+          toast('Уведомление выключено');
         }
-      } catch (_) { toast('Сеть недоступна'); }
+      } catch (_) {
+        toast('Сеть недоступна');
+      }
     });
 
     // Кнопка обновления live-значения
