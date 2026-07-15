@@ -646,6 +646,14 @@ const server = http.createServer(async (req, res) => {
       return _origResEnd.apply(res, arguments);
     };
 
+    // ── Пропуск для плагинов: /alerts/* обрабатывается отдельным listener'ом ──
+    // Плагин alert добавляет свой handler через server.on('request', ...).
+    // Оба listener'а вызываются для каждого запроса. Если основной handler
+    // не пропустит /alerts/* — он дойдёт до конца и вернёт 404 (файл не найден),
+    // а res.end() уже вызовется, прежде чем плагин успеет обработать запрос.
+    // ВАЖНО: пропуск ДО CORS/OPTIONS, чтобы плагин сам обрабатывал preflight.
+    if (req.url.startsWith('/alerts')) return;
+
     // CORS
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -656,13 +664,6 @@ const server = http.createServer(async (req, res) => {
       res.end();
       return;
     }
-
-    // ── Пропуск для плагинов: /alerts/* обрабатывается отдельным listener'ом ──
-    // Плагин alert добавляет свой handler через server.on('request', ...).
-    // Оба listener'а вызываются для каждого запроса. Если основной handler
-    // не пропустит /alerts/* — он дойдёт до конца и вернёт 404 (файл не найден),
-    // а res.end() уже вызовется, прежде чем плагин успеет обработать запрос.
-    if (req.url.startsWith('/alerts')) return;
 
     const url = new URL(req.url, `http://${req.headers.host}`);    // Health — лёгкая проверка, без COUNT(*) по таблицам
     if (url.pathname === '/health') {
