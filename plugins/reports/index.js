@@ -39,12 +39,14 @@ function hooks(db) {
     checkAndDispatchReports(db).catch(() => {});
   };
 
-  // ── Fallback-таймер: раз в 5 минут, на случай простоя трафика ──
+  // ── Основной таймер: каждую минуту, независимо от трафика ──
+  // Это гарантирует, что планировщик не пропустит окно расписания,
+  // даже если нет входящих событий (flush не вызывается).
   setInterval(() => {
     checkAndDispatchReports(db).catch(() => {});
-  }, 5 * 60 * 1000);
+  }, 60 * 1000);
 
-  console.log('[reports] scheduler hooks registered (flush + 5min fallback)');
+  console.log('[reports] scheduler hooks registered (flush + 1min timer)');
 }
 
 module.exports = { schema, registerRoutes, hooks };
