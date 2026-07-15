@@ -11,7 +11,8 @@
 const { initReportTables } = require('./schema');
 const { registerRoutes: registerConfigRoutes } = require('./config-crud');
 const { dispatchReport } = require('./dispatcher');
-const { checkAndDispatchReports } = require('./scheduler');
+const { checkAndDispatchReports, getSchedulerStatus } = require('./scheduler');
+const { generateDashboardXml } = require('./xml-generator');
 
 /**
  * Миграции: создание таблиц.
@@ -25,7 +26,11 @@ function schema(db) {
  * Прокидываем dispatcher в deps, чтобы config-crud мог вызвать test-отправку.
  */
 function registerRoutes(server, db) {
-  registerConfigRoutes(server, db, { dispatcher: { dispatchReport } });
+  registerConfigRoutes(server, db, {
+    dispatcher: { dispatchReport },
+    schedulerStatus: getSchedulerStatus,
+    generateXml: generateDashboardXml,
+  });
 }
 
 /**
