@@ -129,6 +129,9 @@ function registerRoutes(server, db, deps) {
           // Создаём — bot_token обязателен
           if (!cfg.bot_token) return auth.json(res, 400, { error: 'invalid_bot_token' });
           const id = 'rc_' + crypto.randomBytes(8).toString('hex');
+          // INSERT ... ON CONFLICT: если по dashboard_id уже есть запись
+          // (UNIQUE INDEX), перезаписываем её. Страховка от редкой гонки,
+          // когда два запроса пришли одновременно.
           db.prepare(`
             INSERT INTO report_configs (
               id, dashboard_id, src, is_active, bot_id, bot_token, function_id,
@@ -136,6 +139,24 @@ function registerRoutes(server, db, deps) {
               schedule_type, schedule_time, schedule_days, schedule_hours,
               timezone, created_at, updated_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(dashboard_id) DO UPDATE SET
+              is_active = excluded.is_active,
+              bot_id = excluded.bot_id,
+              bot_token = excluded.bot_token,
+              function_id = excluded.function_id,
+              prompt = excluded.prompt,
+              size = excluded.size,
+              files_url = excluded.files_url,
+              telegram_bot_token = excluded.telegram_bot_token,
+              chat_ids = excluded.chat_ids,
+              emails = excluded.emails,
+              schedule_type = excluded.schedule_type,
+              schedule_time = excluded.schedule_time,
+              schedule_days = excluded.schedule_days,
+              schedule_hours = excluded.schedule_hours,
+              timezone = excluded.timezone,
+              src = excluded.src,
+              updated_at = excluded.updated_at
           `).run(
             id, dashboardId, session.src,
             cfg.is_active ? 1 : 0,
