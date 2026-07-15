@@ -10,6 +10,9 @@
  *
  * Открывает своё read-only подключение к SQLite (не блокирует writer-поток
  * events_server.js, который пишет в WAL).
+ *
+ * v2: Поддержка no_data и rate_of_change типов проверок.
+ * v2: Убрано ограничение viz — теперь работает с любыми панелями.
  */
 'use strict';
 
@@ -26,8 +29,6 @@ let db = null;
 let initPromise = null;
 
 function _dbPath() {
-  // Та же БД, что у events_server.js. По умолчанию ./events.db,
-  // но если задан DB_PATH — берём его.
   return process.env.DB_PATH || path.join(__dirname, '..', '..', 'events.db');
 }
 
@@ -43,7 +44,7 @@ function _ensureDb() {
       }
       db = new Database(p, { readonly: true, fileMustExist: true });
       db.pragma('journal_mode = WAL');
-      db.pragma('cache_size = -16000'); // 16 МБ
+      db.pragma('cache_size = -16000');
       db.pragma('temp_store = MEMORY');
       resolve(db);
     } catch (e) {
@@ -59,6 +60,7 @@ function safeField(name) {
 
 function resolveRange(range, from, to) {
   if (range === 'custom') return { from: from || null, to: to || null };
+  if (range === 'all') return { from: null, to: null };
   const now = new Date();
   let fromDate = null;
   if (range === '24h')  fromDate = new Date(now.getTime() - 24 * 3600000);
@@ -85,15 +87,11 @@ function filterTablesByDate(tables, from, to) {
 
 /**
  * Вычислить значение метрики для панели.
- * Возвращает { value: number|null, error?: string }.
- * Если viz не 'kpi' и не 'gauge' — возвращает value: null и error.
+ * v2: Убрано ограничение viz — работает с любыми панелями (kpi, gauge, line, table...).
+ * Возвращает { value: number|null, error?: string, aggMode?: string, count?: number }.
  */
 async function evaluatePanelMetric(panel, src) {
   if (!panel) return { value: null, error: 'panel_missing' };
-  const viz = panel.viz || 'line';
-  if (viz !== 'kpi' && viz !== 'gauge') {
-    return { value: null, error: 'unsupported_viz:' + viz };
-  }
 
   if (activeEvals >= MAX_PARALLEL) {
     return { value: null, error: 'metric_evaluator_busy' };
@@ -119,9 +117,7 @@ async function evaluatePanelMetric(panel, src) {
     if (from) { where.push('ts >= ?'); params.push(from); }
     if (to)   { where.push('ts <= ?'); params.push(to); }
 
-    // Filters (как в events_server.js, но без op='in'/contains — упрощаем
-    // на старте: KPI-пороги редко требуют сложных фильтров, при
-    // необходимости расширим)
+    // Filters
     for (const f of filters.slice(0, 5)) {
       if (!f || !f.field || !IDENT_RE.test(f.field)) continue;
       const col = `json_extract(payload, '$."${f.field}"')`;
@@ -166,8 +162,10 @@ async function evaluatePanelMetric(panel, src) {
     } else if (agg === 'avg' && aggfield) {
       const f = safeField(aggfield);
       if (f) { aggExpr = `AVG(json_extract(payload, '$."${f}"'))`; aggMode = 'avg'; }
+    } else if (agg === 'max' && aggfield) {
+      const f = safeField(aggfield);
+      if (f) { aggExpr = `MAX(json_extract(payload, '$."${f}"'))`; aggMode = 'max'; }
     }
-    // count / пустая agg → COUNT(*)
 
     // Таблицы
     const tables = database.prepare(
@@ -193,6 +191,8 @@ async function evaluatePanelMetric(panel, src) {
     let value;
     if (aggMode === 'avg') {
       value = count > 0 ? Math.round((total / count) * 100) / 100 : 0;
+    } else if (aggMode === 'min' || aggMode === 'max') {
+      value = Math.round(total * 100) / 100;
     } else {
       value = Math.round(total * 100) / 100;
     }
@@ -203,6 +203,117 @@ async function evaluatePanelMetric(panel, src) {
   } finally {
     activeEvals--;
   }
+}
+
+/**
+ * Проверить наличие данных (no_data detection).
+ * Возвращает время (в секундах) с последнего события для данного src+type.
+ * Если событий нет — возвращает очень большое число.
+ *
+ * @param {string} src
+ * @param {string} type
+ * @returns {Promise<{ secondsSinceLastEvent: number|null, error?: string }>}
+ */
+async function checkNoData(src, type) {
+  if (activeEvals >= MAX_PARALLEL) {
+    return { secondsSinceLastEvent: null, error: 'metric_evaluator_busy' };
+  }
+  activeEvals++;
+
+  try {
+    const database = await _ensureDb();
+
+    const tables = database.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'events_%' ORDER BY name DESC"
+    ).all();
+
+    let lastTs = null;
+
+    for (const { name } of tables) {
+      try {
+        const where = ['src = ?'];
+        const params = [src];
+        if (type) { where.push('type = ?'); params.push(type); }
+        const row = database.prepare(
+          `SELECT MAX(ts) as last_ts FROM "${name}" WHERE ${where.join(' AND ')}`
+        ).get(...params);
+        if (row && row.last_ts) {
+          if (!lastTs || row.last_ts > lastTs) lastTs = row.last_ts;
+        }
+      } catch (_) {}
+    }
+
+    if (!lastTs) {
+      return { secondsSinceLastEvent: Infinity };
+    }
+
+    const elapsed = Math.floor((Date.now() - new Date(lastTs).getTime()) / 1000);
+    return { secondsSinceLastEvent: elapsed, lastTs };
+  } catch (e) {
+    return { secondsSinceLastEvent: null, error: e.message };
+  } finally {
+    activeEvals--;
+  }
+}
+
+/**
+ * Вычислить rate_of_change: процент изменения метрики за указанный период.
+ *
+ * @param {object} panel — конфиг панели
+ * @param {string} src
+ * @param {string} windowExpr — выражение окна, напр. '1h', '24h', '7d'
+ * @returns {Promise<{ pctChange: number|null, currentValue: number|null, previousValue: number|null, error?: string }>}
+ */
+async function evaluateRateOfChange(panel, src, windowExpr) {
+  if (!panel) return { pctChange: null, error: 'panel_missing' };
+
+  // Парсим окно
+  const windowMs = _parseWindow(windowExpr);
+  if (!windowMs) return { pctChange: null, error: 'invalid_window' };
+
+  // Текущее значение
+  const current = await evaluatePanelMetric(panel, src);
+  if (current.value === null) return { pctChange: null, error: current.error };
+
+  // Значение в прошлом окне (сдвигаем range)
+  const database = await _ensureDb();
+
+  // Создаём копию panel со сдвинутым окном
+  const now = new Date();
+  const pastPanel = Object.assign({}, panel, {
+    range: 'custom',
+    from: new Date(now.getTime() - 2 * windowMs).toISOString(),
+    to: new Date(now.getTime() - windowMs).toISOString(),
+  });
+
+  const previous = await evaluatePanelMetric(pastPanel, src);
+  if (previous.value === null) return { pctChange: null, error: previous.error };
+
+  const pctChange = previous.value !== 0
+    ? Math.round(((current.value - previous.value) / Math.abs(previous.value)) * 10000) / 100
+    : (current.value !== 0 ? 100 : 0);
+
+  return {
+    pctChange,
+    currentValue: current.value,
+    previousValue: previous.value,
+  };
+}
+
+/**
+ * Парсить выражение окна: '1h' → 3600000, '24h' → 86400000, '7d' → 604800000.
+ */
+function _parseWindow(expr) {
+  if (!expr || typeof expr !== 'string') return 0;
+  const m = expr.match(/^(\d+)([hdwm])$/);
+  if (!m) return 0;
+  const n = parseInt(m[1], 10);
+  const unit = m[2];
+  if (unit === 'h') return n * 3600000;
+  if (unit === 'd') return n * 86400000;
+  if (unit === 'w') return n * 7 * 86400000;
+  if (unit === 'm') return n * 30 * 86400000;
+  return 0;
 }
 
 /**
@@ -220,8 +331,6 @@ function getActiveEvals() {
  */
 function findPanelInDashboard(dashboardId, panelId) {
   if (!db) {
-    // Синхронный путь: инициализируемся, если ещё не успели
-    // (первый вызов будет async, дальше — sync)
     try {
       const p = _dbPath();
       if (!fs.existsSync(p)) return null;
@@ -248,6 +357,8 @@ function findPanelInDashboard(dashboardId, panelId) {
 
 module.exports = {
   evaluatePanelMetric,
+  checkNoData,
+  evaluateRateOfChange,
   findPanelInDashboard,
   getActiveEvals,
 };
