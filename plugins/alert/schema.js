@@ -59,6 +59,7 @@ function initAlertTables(db) {
       dashboard_id    TEXT NOT NULL,
       src             TEXT NOT NULL,
       fired_at        TEXT NOT NULL,
+      finished_at     TEXT,
       value           REAL,
       threshold       REAL,
       condition       TEXT,
@@ -69,9 +70,10 @@ function initAlertTables(db) {
       trigger_type    TEXT DEFAULT 'auto',
       phases          TEXT DEFAULT '[]'
     );
-    CREATE INDEX IF NOT EXISTS idx_ah_config ON alert_history(config_id, fired_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_ah_panel  ON alert_history(panel_id, fired_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_ah_src    ON alert_history(src, fired_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_ah_config   ON alert_history(config_id, fired_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_ah_panel    ON alert_history(panel_id, fired_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_ah_src      ON alert_history(src, fired_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_ah_finished ON alert_history(finished_at);
   `);
 
   // ── 2. Миграции: добавляем новые столбцы если их нет ──
@@ -83,6 +85,15 @@ function initAlertTables(db) {
   if (!acNames.includes('message_template')) {
     db.exec(`ALTER TABLE alert_configs ADD COLUMN message_template TEXT DEFAULT ''`);
     console.log('[alert-schema] migration: added message_template column');
+  }
+
+  // alert_history: finished_at (для существующих БД, где таблица создана
+  // без этой колонки — иначе UPDATE/SELECT finished_at падают)
+  const ahCols = db.prepare("PRAGMA table_info(alert_history)").all();
+  const ahNames = ahCols.map(c => c.name);
+  if (!ahNames.includes('finished_at')) {
+    db.exec(`ALTER TABLE alert_history ADD COLUMN finished_at TEXT`);
+    console.log('[alert-schema] migration: added alert_history.finished_at column');
   }
 
   // ── 3. UNIQUE INDEX по panel_id (один конфиг на панель) ──
