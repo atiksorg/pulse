@@ -66,6 +66,19 @@ function registerRoutes(server, db, deps) {
         return auth.json(res, 200, { config: sanitizeConfig(row) });
       }
 
+      // ── GET /reports/:dashboardId/tokens — получить токены в открытом виде ──
+      if (req.method === 'GET' && action === 'tokens') {
+        const row = db.prepare('SELECT * FROM report_configs WHERE dashboard_id = ?')
+          .get(dashboardId);
+        if (!row) return auth.json(res, 404, { error: 'not_found' });
+        if (row.src !== session.src) return auth.json(res, 403, { error: 'forbidden' });
+
+        return auth.json(res, 200, {
+          bot_token: row.bot_token || '',
+          telegram_bot_token: row.telegram_bot_token || '',
+        });
+      }
+
       // ── PUT /reports/:dashboardId — создать/обновить ──
       if (req.method === 'PUT' && !action) {
         // Проверяем что дашборд принадлежит пользователю
