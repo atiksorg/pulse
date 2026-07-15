@@ -339,8 +339,6 @@ pre .k1{color:var(--amber);}
 .skill-copy:hover{color:var(--teal);border-color:var(--teal-dim);}
 
 /* ── Confirm / Input modal ────────────────────── */
-#confirmModal{z-index:calc(var(--zi-overlay) + 50);}
-#inputModal{z-index:calc(var(--zi-overlay) + 50);}
 .confirm-modal{max-width:460px;}
 .confirm-modal .sub{margin-bottom:0;line-height:1.7;}
 .confirm-modal .field{margin-bottom:0;}
