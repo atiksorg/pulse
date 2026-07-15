@@ -108,7 +108,13 @@
     $('r_chatIds').value      = cfg.chat_ids || '';
     $('r_emails').value       = cfg.emails || '';
     $('r_scheduleType').value = cfg.schedule_type || 'daily';
-    $('r_scheduleTime').value = cfg.schedule_time || '09:00';
+    // Разбираем schedule_time на часы и минуты
+    var stParts = (cfg.schedule_time || '09:00').split(':');
+    var hourSel = document.getElementById('r_scheduleHour');
+    var minSel  = document.getElementById('r_scheduleMinute');
+    if (hourSel) hourSel.value = stParts[0] || '09';
+    if (minSel)  minSel.value  = stParts[1] || '00';
+    _syncScheduleTime();
     $('r_scheduleDays').value = cfg.schedule_days || '1,2,3,4,5';
     $('r_scheduleHours').value = cfg.schedule_hours || 0;
     $('r_timezone').value     = cfg.timezone || 'UTC+03:00';
@@ -128,7 +134,11 @@
     $('r_chatIds').value      = '';
     $('r_emails').value       = '';
     $('r_scheduleType').value = 'daily';
-    $('r_scheduleTime').value = '09:00';
+    var hourSel = document.getElementById('r_scheduleHour');
+    var minSel  = document.getElementById('r_scheduleMinute');
+    if (hourSel) hourSel.value = '09';
+    if (minSel)  minSel.value  = '00';
+    _syncScheduleTime();
     $('r_scheduleDays').value = '1,2,3,4,5';
     $('r_scheduleHours').value = '6';
     $('r_timezone').value     = 'UTC+03:00';
@@ -145,6 +155,113 @@
     if (timeRow)  timeRow.style.display  = (type === 'daily' || type === 'weekly') ? '' : 'none';
     if (daysRow)  daysRow.style.display  = (type === 'weekly') ? '' : 'none';
     if (hoursRow) hoursRow.style.display = (type === 'interval') ? '' : 'none';
+  }
+
+  /* ── Синхронизация select'ов часа/минуты → скрытый input ── */
+  function _syncScheduleTime() {
+    var hourSel = document.getElementById('r_scheduleHour');
+    var minSel  = document.getElementById('r_scheduleMinute');
+    var hidden  = document.getElementById('r_scheduleTime');
+    if (hourSel && minSel && hidden) {
+      hidden.value = hourSel.value + ':' + minSel.value;
+    }
+  }
+
+  /* ── Проверка расписания (запрос к серверу) ── */
+  var _checkTimer = null;
+
+  async function _checkSchedule() {
+    if (!_reportsDashboardId) { toast('Сначала сохраните конфиг'); return; }
+
+    var resultEl = document.getElementById('rScheduleCheck');
+    var btn = document.getElementById('rBtnCheckSchedule');
+    if (!resultEl) return;
+
+    resultEl.innerHTML = '<span style="color:var(--muted-2);">⏳ запрос к серверу…</span>';
+    if (btn) { btn.disabled = true; }
+
+    try {
+      var r = await fetch(API + '/reports/' + encodeURIComponent(_reportsDashboardId) + '/check-schedule', {
+        headers: authHeaders()
+      });
+      if (r.status === 401) { clearSession(); closeReportsModal(); return; }
+      if (r.status === 404) { resultEl.innerHTML = '<span style="color:var(--red);">Конфиг не найден — сохраните настройки</span>'; return; }
+      if (!r.ok) {
+        var e = await r.json().catch(function() { return {}; });
+        resultEl.innerHTML = '<span style="color:var(--red);">Ошибка: ' + (e.error || r.status) + '</span>';
+        return;
+      }
+      var data = await r.json();
+
+      // Локальное время браузера
+      var browserNow = new Date();
+      var browserHHMM = String(browserNow.getHours()).padStart(2,'0') + ':' + String(browserNow.getMinutes()).padStart(2,'0');
+      var browserOffsetMin = -browserNow.getTimezoneOffset();
+      var browserOffsetStr = 'UTC' + (browserOffsetMin >= 0 ? '+' : '-') +
+        String(Math.floor(Math.abs(browserOffsetMin) / 60)).padStart(2,'0') + ':' +
+        String(Math.abs(browserOffsetMin) % 60).padStart(2,'0');
+
+      // Разница сервер/браузер
+      var serverDate = new Date(data.serverTime);
+      var diffMs = serverDate.getTime() - browserNow.getTime();
+      var diffSec = Math.round(Math.abs(diffMs) / 1000);
+      var diffSign = diffMs >= 0 ? '+' : '-';
+      var diffStr = diffSec < 60 ? diffSec + ' сек' : Math.round(diffSec / 60) + ' мин';
+      var diffColor = Math.abs(diffMs) > 60000 ? 'var(--red)' : 'var(--green,#4CAF50)';
+
+      // Обратный отсчёт
+      var countdownStr = '—';
+      if (data.minutesUntilNext !== null && data.minutesUntilNext !== undefined) {
+        if (data.minutesUntilNext <= 0) {
+          countdownStr = 'сейчас!';
+        } else if (data.minutesUntilNext < 60) {
+          countdownStr = data.minutesUntilNext + ' мин';
+        } else {
+          var h = Math.floor(data.minutesUntilNext / 60);
+          var m = data.minutesUntilNext % 60;
+          countdownStr = h + ' ч ' + m + ' мин';
+        }
+      }
+
+      // Статус
+      var statusHtml = data.wouldSendNow
+        ? '<span style="color:var(--red,#FF6B6B);font-weight:bold;">🔴 СРАБОТАЛ БЫ СЕЙЧАС</span>'
+        : '<span style="color:var(--green,#4CAF50);">🟢 Не сработал бы</span>';
+
+      // Активность
+      var activeStr = data.isActive
+        ? '<span style="color:var(--green,#4CAF50);">✅ включено</span>'
+        : '<span style="color:var(--red,#FF6B6B);">⛔ выключено</span>';
+
+      var html = [
+        '<div style="display:grid;grid-template-columns:auto 1fr;gap:4px 12px;line-height:1.6;">',
+        '  <span style="color:var(--muted-2);">Сервер:</span> <span>' + escapeHtml(data.serverTimeStr) + '</span>',
+        '  <span style="color:var(--muted-2);">Браузер:</span> <span>' + browserHHMM + ' (' + browserOffsetStr + ')</span>',
+        '  <span style="color:var(--muted-2);">Разница:</span> <span style="color:' + diffColor + ';">' + diffSign + diffStr + '</span>',
+        '  <span style="color:var(--muted-2);">Час.пояс:</span> <span>' + escapeHtml(data.timezone) + ' (offset ' + data.timezoneOffset + ' ч)</span>',
+        '  <span style="color:var(--muted-2);">Местное время:</span> <span>' + escapeHtml(data.localTime) + ' (' + data.localDayName + ')</span>',
+        '  <span style="color:var(--muted-2);">Расписание:</span> <span>' + escapeHtml(data.scheduleType) + ' → ' + escapeHtml(data.scheduleTime || '—') + '</span>',
+        '  <span style="color:var(--muted-2);">Автоотправка:</span> <span>' + activeStr + '</span>',
+        '  <span style="color:var(--muted-2);">Статус:</span> <span>' + statusHtml + '</span>',
+        '  <span style="color:var(--muted-2);">До отправки:</span> <span style="font-weight:bold;">' + countdownStr + '</span>',
+        '  <span style="color:var(--muted-2);">Последняя:</span> <span>' + (data.lastSentAt ? escapeHtml(data.lastSentAt.replace('T',' ').slice(0,19)) : 'никогда') + '</span>',
+        '</div>'
+      ].join('\n');
+
+      resultEl.innerHTML = html;
+
+      // Обновляем countdown каждые 30 сек (показываем сколько осталось)
+      if (_checkTimer) clearInterval(_checkTimer);
+      if (data.minutesUntilNext > 0) {
+        _checkTimer = setInterval(function() {
+          _checkSchedule();
+        }, 30000);
+      }
+    } catch (err) {
+      resultEl.innerHTML = '<span style="color:var(--red);">Сеть недоступна</span>';
+    } finally {
+      if (btn) { btn.disabled = false; }
+    }
   }
 
   /* ── Собрать тело запроса из формы ── */
@@ -334,6 +451,12 @@
     var stEl = document.getElementById('r_scheduleType');
     if (stEl) stEl.addEventListener('change', _onScheduleTypeChange);
 
+    // Синхронизация select'ов часа/минуты → скрытый инпут
+    var hourSel = document.getElementById('r_scheduleHour');
+    var minSel  = document.getElementById('r_scheduleMinute');
+    if (hourSel) hourSel.addEventListener('change', _syncScheduleTime);
+    if (minSel)  minSel.addEventListener('change', _syncScheduleTime);
+
     // Кнопки-глазики для токенов
     document.querySelectorAll('#reportsModal .eye-btn').forEach(function(btn) {
       btn.addEventListener('click', function() {
@@ -370,6 +493,10 @@
         }
       } catch (_) { toast('Сеть недоступна'); }
     });
+
+    // Проверка расписания
+    var checkBtn = document.getElementById('rBtnCheckSchedule');
+    if (checkBtn) checkBtn.addEventListener('click', _checkSchedule);
   }
 
   // Экспорт (инициализация — bindEvents — вызывается из reports-ui.js ПОСЛЕ инъекции HTML)
