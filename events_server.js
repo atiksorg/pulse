@@ -657,17 +657,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    const url = new URL(req.url, `http://${req.headers.host}`);
-
-    // ── Плагин alerts: пропускаем /alerts/* ──
-    // Плагин alerts навешивает свой request-listener через server.on('request', ...).
-    // Если мы не вернёмся здесь, основной хендлер упадёт в финальный 404 для
-    // /alerts/*, и плагин не сможет ответить — клиент получит 404.
-    if (url.pathname.startsWith('/alerts/') || url.pathname === '/alerts') {
-      return; // дожидаемся, пока alert-listener обработает запрос
-    }
-
-    // Health — лёгкая проверка, без COUNT(*) по таблицам
+    const url = new URL(req.url, `http://${req.headers.host}`);    // Health — лёгкая проверка, без COUNT(*) по таблицам
     if (url.pathname === '/health') {
       const tables = db.prepare(
         "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'events_%'"
