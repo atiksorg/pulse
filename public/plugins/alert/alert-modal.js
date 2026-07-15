@@ -83,7 +83,8 @@
     try {
       var r = await fetch(API + '/alerts/' + encodeURIComponent(_alertPanel.id) + '/preview-value', {
         method: 'POST',
-        headers: authHeaders()
+        headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+        body: JSON.stringify({ dashboard_id: _alertDashboard.id })
       });
       if (!r.ok) {
         if (el) el.textContent = '—';
