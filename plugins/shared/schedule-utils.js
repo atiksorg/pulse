@@ -57,9 +57,20 @@ function getLocalDayOfWeek(utcDate, tzOffsetHours) {
 }
 
 /**
+ * Разбирает строку "HH:MM" в минуты от полуночи.
+ * @param {string} hhmm — "07:30" → 450
+ * @returns {number}
+ */
+function hhmmToMinutes(hhmm) {
+  const parts = String(hhmm || '00:00').split(':');
+  return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+}
+
+/**
  * Проверить, нужно ли отправлять отчёт по данному конфигу.
- * Возвращает true если текущее время попадает в окно расписания
- * и last_sent_at указывает, что сегодня ещё не отправляли.
+ * Возвращает true если текущее время попадает в ОКНО расписания
+ * (schedule_time ± WINDOW_MINUTES) и last_sent_at указывает,
+ * что сегодня/в этом интервале ещё не отправляли.
  *
  * @param {object} config — { schedule_type, schedule_time, schedule_days, schedule_hours, timezone, last_sent_at }
  * @param {Date}   now    — текущее UTC-время (для тестов можно передать)
@@ -72,9 +83,12 @@ function shouldSendNow(config, now) {
   const hhmm = formatHHMM(localNow);
   const todayStr = formatDate(localNow);
 
+  // Окно: ±30 минут от schedule_time
+  // (планировщик тикает раз в ~1-5 мин, 30 мин — с запасом)
+  const WINDOW_MINUTES = 30;
+
   // Проверка: сегодня ещё не отправляли
   if (config.last_sent_at) {
-    // Конвертируем last_sent_at в локальное время пользователя для сравнения
     const lastSent = new Date(config.last_sent_at);
     const lastSentLocal = getLocalTime(lastSent, offset);
     const lastSentDay = formatDate(lastSentLocal);
@@ -85,19 +99,24 @@ function shouldSendNow(config, now) {
   }
 
   if (config.schedule_type === 'daily') {
-    // Отправляем если текущее время >= schedule_time
-    return hhmm >= (config.schedule_time || '09:00');
+    const target = config.schedule_time || '09:00';
+    const nowMin = hhmmToMinutes(hhmm);
+    const targetMin = hhmmToMinutes(target);
+    // Окно: [targetMin, targetMin + WINDOW_MINUTES)
+    return nowMin >= targetMin && nowMin < targetMin + WINDOW_MINUTES;
   }
 
   if (config.schedule_type === 'weekly') {
-    // Проверяем день недели
     const dayOfWeek = getLocalDayOfWeek(now, offset);
     const allowedDays = String(config.schedule_days || '1,2,3,4,5')
       .split(',')
       .map(d => parseInt(d.trim(), 10))
       .filter(d => !isNaN(d));
     if (!allowedDays.includes(dayOfWeek)) return false;
-    return hhmm >= (config.schedule_time || '09:00');
+    const target = config.schedule_time || '09:00';
+    const nowMin = hhmmToMinutes(hhmm);
+    const targetMin = hhmmToMinutes(target);
+    return nowMin >= targetMin && nowMin < targetMin + WINDOW_MINUTES;
   }
 
   if (config.schedule_type === 'interval') {
