@@ -37,6 +37,14 @@ function registerRoutes(server, db) {
  * Подписка на хуки.
  */
 function hooks(db) {
+  // Защита от двойной регистрации (если плагин грузится несколько раз —
+  // например, два процесса Node или хот-релоад модуля).
+  if (global._reportsHooksRegistered) {
+    console.log('[reports] hooks already registered, skipping');
+    return;
+  }
+  global._reportsHooksRegistered = true;
+
   // ── Хук flush: при каждом flush-событии проверяем расписание ──
   const existingOnFlush = global._pluginOnFlush;
   global._pluginOnFlush = () => {
