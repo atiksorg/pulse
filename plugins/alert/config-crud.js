@@ -32,15 +32,20 @@ const VALID_CONDITIONS = ['gt', 'gte', 'lt', 'lte', 'eq', 'neq', 'outside_range'
  * @param {object} deps   — { schedulerStatus }
  */
 function registerRoutes(server, db, deps) {
-  const origListener = server.listeners('request')[0];
-
-  server.removeAllListeners('request');
+  // ВАЖНО: НЕ снимаем оригинальный listener, а добавляем свой через server.on().
+  // Раньше код делал server.removeAllListeners('request') + сохранял origListener
+  // и вручную пробрасывал ему не-/alerts запросы. Эта схема ломалась, когда
+  // origListener (основной http.createServer-callback) уже завершал res.end()
+  // для неугодных путей (404 в самом конце хендлера), а плагин всё равно
+  // пытался писать в res.headersSent=true → Node выкидывал ERR_STREAM_WRITE_AFTER_END.
+  //
+  // Теперь оба listener'а работают независимо: основной хендлер events_server.js
+  // сам пропускает /alerts/* (см. ранний return в его начале), а наш listener
+  // пропускает всё, что не /alerts. Никто не снимает чужие подписки.
   server.on('request', async (req, res) => {
     try {
-      // Быстрый пропуск: не /alerts → передаём оригинальному обработчику
-      if (!req.url.startsWith('/alerts')) {
-        return origListener(req, res);
-      }
+      // Быстрый пропуск: не /alerts → пусть обрабатывает основной хендлер
+      if (!req.url.startsWith('/alerts')) return;
 
       const url = new URL(req.url, `http://${req.headers.host}`);
       const segments = url.pathname.split('/').filter(Boolean);
