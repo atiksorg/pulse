@@ -21,6 +21,7 @@ const { Worker } = require('worker_threads');
 const Database = require('better-sqlite3');
 const auth = require('./auth');
 const ai = require('./ai');
+const alertsApi = require('./plugins/alert/server-api');
 
 // ── Настройки ──────────────────────────────────────────
 const PORT                = process.env.PORT              || 3333;
@@ -657,7 +658,14 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    const url = new URL(req.url, `http://${req.headers.host}`);    // Health — лёгкая проверка, без COUNT(*) по таблицам
+    const url = new URL(req.url, `http://${req.headers.host}`);
+
+    // ── Alerts API (/api/alerts/*) — обрабатываем до всех остальных маршрутов ──
+    if (await alertsApi.handleAlertRequest(req, res, db, req.url)) {
+      return;
+    }
+
+    // Health — лёгкая проверка, без COUNT(*) по таблицам
     if (url.pathname === '/health') {
       const tables = db.prepare(
         "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'events_%'"
