@@ -47,6 +47,23 @@ function registerRoutes(server, db, deps) {
       // Быстрый пропуск: не /alerts → пусть обрабатывает основной хендлер
       if (!req.url.startsWith('/alerts')) return;
 
+      // ── Request timeout: если за 15 сек не ответили — 504 ──
+      // Это предотвращает «вечное зависание» при blocked SQLite или
+      // зависшем evaluatePanelMetric. Без таймаута прокси (Nginx/Cloudflare)
+      // сам вернёт 504 через ~60-100 сек, но клиент уже давно отвалится.
+      let _responded = false;
+      const _timer = setTimeout(() => {
+        if (!_responded && !res.headersSent) {
+          _responded = true;
+          console.error('[alerts] request timeout for', req.url);
+          res.statusCode = 504;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: 'gateway_timeout' }));
+        }
+      }, 15000);
+      // Сбрасываем таймер при завершении ответа (нормальном или аварийном)
+      res.on('close', () => { _responded = true; clearTimeout(_timer); });
+
       const url = new URL(req.url, `http://${req.headers.host}`);
       const segments = url.pathname.split('/').filter(Boolean);
       // ['/alerts', ':panelId'] или ['/alerts', ':panelId', 'token'] или ...
@@ -237,7 +254,10 @@ function registerRoutes(server, db, deps) {
         if (!panel) return auth.json(res, 404, { error: 'panel_not_found' });
 
         // Вычисляем текущее значение (даже для test — чтобы в сообщении был актуальный value)
-        const evalResult = await evaluatePanelMetric(panel, row.src);
+        const evalResult = await Promise.race([
+          evaluatePanelMetric(panel, row.src),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('metric_eval_timeout')), 10000))
+        ]).catch(e => ({ value: null, error: e.message }));
         const value = evalResult.value === null ? 0 : evalResult.value;
 
         // Создаём history-запись со статусом 'working' и trigger='test'
@@ -337,7 +357,10 @@ function registerRoutes(server, db, deps) {
         const panel = findPanelInDashboard(dashboardId, panelId);
         if (!panel) return auth.json(res, 404, { error: 'panel_not_found' });
 
-        const evalResult = await evaluatePanelMetric(panel, dash.src);
+        const evalResult = await Promise.race([
+          evaluatePanelMetric(panel, dash.src),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('metric_eval_timeout')), 10000))
+        ]).catch(e => ({ value: null, error: e.message }));
         return auth.json(res, 200, {
           value: evalResult.value,
           aggMode: evalResult.aggMode,
