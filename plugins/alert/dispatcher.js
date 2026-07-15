@@ -73,6 +73,13 @@ registerAdapter('telegram', {
     });
 
     return new Promise((resolve) => {
+      let finished = false;
+      const finish = (res) => { if (!finished) { finished = true; clearTimeout(fallback); resolve(res); } };
+
+      const fallback = setTimeout(() => {
+        finish({ ok: false, error: 'telegram_hard_timeout' });
+      }, 16000);
+
       try {
         const parsed = url.parse('https://api.telegram.org/bot' + botToken + '/sendMessage');
         const req = https.request({
@@ -89,18 +96,20 @@ registerAdapter('telegram', {
           res.on('data', c => { data += c; });
           res.on('end', () => {
             if (res.statusCode >= 200 && res.statusCode < 300) {
-              resolve({ ok: true });
+              finish({ ok: true });
             } else {
-              resolve({ ok: false, error: 'telegram_http_' + res.statusCode + ': ' + data.slice(0, 200) });
+              finish({ ok: false, error: 'telegram_http_' + res.statusCode + ': ' + data.slice(0, 200) });
             }
           });
+          res.on('error', (e) => finish({ ok: false, error: 'telegram_res_err: ' + e.message }));
+          res.on('aborted', () => finish({ ok: false, error: 'telegram_res_aborted' }));
         });
-        req.on('error', (e) => resolve({ ok: false, error: 'telegram_net: ' + e.message }));
-        req.on('timeout', () => { req.destroy(); resolve({ ok: false, error: 'telegram_timeout' }); });
+        req.on('error', (e) => finish({ ok: false, error: 'telegram_net: ' + e.message }));
+        req.on('timeout', () => { req.destroy(); finish({ ok: false, error: 'telegram_timeout' }); });
         req.write(body);
         req.end();
       } catch (e) {
-        resolve({ ok: false, error: 'telegram_exc: ' + e.message });
+        finish({ ok: false, error: 'telegram_exc: ' + e.message });
       }
     });
   },
@@ -127,6 +136,13 @@ registerAdapter('webhook', {
     });
 
     return new Promise((resolve) => {
+      let finished = false;
+      const finish = (res) => { if (!finished) { finished = true; clearTimeout(fallback); resolve(res); } };
+
+      const fallback = setTimeout(() => {
+        finish({ ok: false, error: 'webhook_hard_timeout' });
+      }, 16000);
+
       try {
         const mod = webhookUrl.startsWith('https') ? https : http;
         const parsed = new URL(webhookUrl);
@@ -145,18 +161,20 @@ registerAdapter('webhook', {
           res.on('data', c => { data += c; });
           res.on('end', () => {
             if (res.statusCode >= 200 && res.statusCode < 300) {
-              resolve({ ok: true });
+              finish({ ok: true });
             } else {
-              resolve({ ok: false, error: 'webhook_http_' + res.statusCode });
+              finish({ ok: false, error: 'webhook_http_' + res.statusCode });
             }
           });
+          res.on('error', (e) => finish({ ok: false, error: 'webhook_res_err: ' + e.message }));
+          res.on('aborted', () => finish({ ok: false, error: 'webhook_res_aborted' }));
         });
-        req.on('error', (e) => resolve({ ok: false, error: 'webhook_net: ' + e.message }));
-        req.on('timeout', () => { req.destroy(); resolve({ ok: false, error: 'webhook_timeout' }); });
+        req.on('error', (e) => finish({ ok: false, error: 'webhook_net: ' + e.message }));
+        req.on('timeout', () => { req.destroy(); finish({ ok: false, error: 'webhook_timeout' }); });
         req.write(payload);
         req.end();
       } catch (e) {
-        resolve({ ok: false, error: 'webhook_exc: ' + e.message });
+        finish({ ok: false, error: 'webhook_exc: ' + e.message });
       }
     });
   },
@@ -256,46 +274,49 @@ async function dispatchAlert(db, rule, ctx, historyId, eventType) {
   if (activeDispatches >= MAX_PARALLEL) {
     console.warn('[alert-dispatch] max parallel reached, skipping');
     if (historyId) {
-      db.prepare('UPDATE alert_history SET status = ?, error_message = ?, finished_at = ? WHERE id = ?')
-        .run('error', 'max_parallel_reached', new Date().toISOString(), historyId);
+      try {
+        db.prepare('UPDATE alert_history SET status = ?, error_message = ?, finished_at = ? WHERE id = ?')
+          .run('error', 'max_parallel_reached', new Date().toISOString(), historyId);
+      } catch (_) {}
     }
     return { ok: false, error: 'max_parallel_reached' };
   }
 
   activeDispatches++;
-  eventType = eventType || (ctx.state === 'resolved' ? 'resolve' : 'fire');
-
-  // Создаём запись в истории если ещё нет
-  if (!historyId) {
-    historyId = db.prepare(
-      `INSERT INTO alert_history (rule_id, panel_id, dashboard_id, src, fired_at, value, threshold, condition, severity, status, trigger_type, event_type)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'working', 'auto', ?)`
-    ).run(
-      rule.id, rule.panel_id || '', rule.dashboard_id, rule.src,
-      new Date().toISOString(),
-      ctx.value, ctx.threshold, ctx.condition,
-      ctx.severity || 'warning', eventType
-    ).lastInsertRowid;
-  }
-
-  const startTime = Date.now();
-
-  // Парсим каналы
-  let channels = [];
-  try { channels = JSON.parse(rule.channels || '[]'); } catch (_) { channels = []; }
-  if (!Array.isArray(channels)) channels = [];
-
-  if (!channels.length) {
-    const durationMs = Date.now() - startTime;
-    db.prepare(
-      'UPDATE alert_history SET status = ?, error_message = ?, finished_at = ?, duration_ms = ? WHERE id = ?'
-    ).run('error', 'no_channels', new Date().toISOString(), durationMs, historyId);
-    appendPhase(db, historyId, 'error', 'no_channels');
-    activeDispatches--;
-    return { ok: false, error: 'no_channels' };
-  }
-
   try {
+    eventType = eventType || (ctx.state === 'resolved' ? 'resolve' : 'fire');
+
+    // Создаём записи в истории если ещё нет
+    if (!historyId) {
+      historyId = db.prepare(
+        `INSERT INTO alert_history (rule_id, panel_id, dashboard_id, src, fired_at, value, threshold, condition, severity, status, trigger_type, event_type)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'working', 'auto', ?)`
+      ).run(
+        rule.id, rule.panel_id || '', rule.dashboard_id, rule.src,
+        new Date().toISOString(),
+        ctx.value, ctx.threshold, ctx.condition,
+        ctx.severity || 'warning', eventType
+      ).lastInsertRowid;
+    }
+
+    const startTime = Date.now();
+
+    // Парсим каналы
+    let channels = [];
+    try { channels = JSON.parse(rule.channels || '[]'); } catch (_) { channels = []; }
+    if (!Array.isArray(channels)) channels = [];
+
+    if (!channels.length) {
+      const durationMs = Date.now() - startTime;
+      try {
+        db.prepare(
+          'UPDATE alert_history SET status = ?, error_message = ?, finished_at = ?, duration_ms = ? WHERE id = ?'
+        ).run('error', 'no_channels', new Date().toISOString(), durationMs, historyId);
+        appendPhase(db, historyId, 'error', 'no_channels');
+      } catch (_) {}
+      return { ok: false, error: 'no_channels' };
+    }
+
     appendPhase(db, historyId, 'value_computed', `value=${ctx.value}, condition=${ctx.condition} ${ctx.threshold}`);
 
     // Определяем шаблон (fire vs resolve)
@@ -353,11 +374,13 @@ async function dispatchAlert(db, rule, ctx, historyId, eventType) {
       return { ok: true };
     }
   } catch (e) {
-    const durationMs = Date.now() - startTime;
-    db.prepare(
-      'UPDATE alert_history SET status = ?, error_message = ?, finished_at = ?, duration_ms = ?, event_type = ? WHERE id = ?'
-    ).run('error', String(e.message).slice(0, 500), new Date().toISOString(), durationMs, eventType, historyId);
-    appendPhase(db, historyId, 'error', String(e.message).slice(0, 200));
+    if (historyId) {
+      try {
+        db.prepare('UPDATE alert_history SET status = ?, error_message = ?, finished_at = ? WHERE id = ?')
+          .run('error', String(e.message).slice(0, 500), new Date().toISOString(), historyId);
+        appendPhase(db, historyId, 'error', String(e.message).slice(0, 200));
+      } catch (_) {}
+    }
     console.error(`[alert-dispatch] ✗ exception: ${e.message}`);
     return { ok: false, error: e.message };
   } finally {
