@@ -43,7 +43,7 @@ async function checkAndDispatchReports(db) {
         const localHHMM = formatHHMM(localNow);
         const targetMin = hhmmToMinutes(cfg.schedule_time || '09:00');
         const nowMin = hhmmToMinutes(localHHMM);
-        console.log(`[reports-scheduler] skip config ${cfg.id}: local=${localHHMM}, target=${cfg.schedule_time}, nowMin=${nowMin}, targetMin=${targetMin}, last_sent=${cfg.last_sent_at || 'never'}`);
+        console.log(`[reports-scheduler] skip config ${cfg.id} [dashboard=${cfg.dashboard_id}]: local=${localHHMM}, target_from_db="${cfg.schedule_time}", nowMin=${nowMin}, targetMin=${targetMin}, last_sent=${cfg.last_sent_at || 'never'}`);
         continue;
       }
 
