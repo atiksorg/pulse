@@ -21,7 +21,6 @@ const { Worker } = require('worker_threads');
 const Database = require('better-sqlite3');
 const auth = require('./auth');
 const ai = require('./ai');
-const alertsApi = require('./plugins/alert/server-api');
 
 // ── Настройки ──────────────────────────────────────────
 const PORT                = process.env.PORT              || 3333;
@@ -658,14 +657,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    const url = new URL(req.url, `http://${req.headers.host}`);
-
-    // ── Alerts API (/api/alerts/*) — обрабатываем до всех остальных маршрутов ──
-    if (await alertsApi.handleAlertRequest(req, res, db, req.url)) {
-      return;
-    }
-
-    // Health — лёгкая проверка, без COUNT(*) по таблицам
+    const url = new URL(req.url, `http://${req.headers.host}`);    // Health — лёгкая проверка, без COUNT(*) по таблицам
     if (url.pathname === '/health') {
       const tables = db.prepare(
         "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'events_%'"
@@ -1935,13 +1927,6 @@ const server = http.createServer(async (req, res) => {
 // ── Запуск ─────────────────────────────────────────────
 initKnownTables();
 auth.initAuthTables(db);
-
-// ── Plugins: загрузка плагинов (отчёты, триггеры и т.д.) ──
-// ВАЖНО: загружаем ДО запуска сервера, чтобы таблицы плагинов (alert_rules и т.д.)
-// были созданы до обработки первого запроса. Раньше loadPlugins вызывался после
-// server.listen(), из-за чего /api/alerts/rules падал с 500 (no such table).
-require('./plugins').loadPlugins(server, db);
-
 initWorkerPool();
 initBufferWAL();
 recoverBufferWAL();
@@ -2106,6 +2091,9 @@ cleanupOldTables();
 
 // ── Pulse Self-Analytics: Auto-registration ─────────────
 ensurePulseSrc();
+
+// ── Plugins: загрузка плагинов (отчёты, триггеры и т.д.) ──
+require('./plugins').loadPlugins(server, db);
 
 // ── Pulse Self-Analytics: Timers ───────────────────────
 setInterval(collectSysMetrics, 60 * 1000);     // раз в минуту — системные метрики

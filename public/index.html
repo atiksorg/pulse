@@ -954,22 +954,6 @@ GET https://events.atiks.org/s?src=my_app&type=purchase&group=day&from=2026-06-0
   </div>
 </div>
 
-<!-- ══════════════════ MODAL: ALERTS ══════════════════ -->
-<div class="overlay" id="alertModal">
-  <div class="modal" style="max-width:640px;max-height:85vh;overflow-y:auto;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-      <div>
-        <h2 style="margin:0;">🔔 Уведомления</h2>
-        <p class="sub" style="margin:4px 0 0;" id="alertPanelTitle">—</p>
-      </div>
-      <button class="btn btn-ghost" id="alertCloseBtn">✕</button>
-    </div>
-    <div id="alertContent" style="min-height:120px;">
-      <div style="color:var(--muted-2);font-family:var(--mono);font-size:12px;padding:12px 0;">загрузка…</div>
-    </div>
-  </div>
-</div>
-
 <!-- ══════════════════ MODAL: SHARE ══════════════════ -->
 <div class="overlay" id="shareModal">
   <div class="modal" style="max-width:520px;">
@@ -1107,9 +1091,6 @@ GET https://events.atiks.org/s?src=my_app&type=purchase&group=day&from=2026-06-0
 <!-- ═══ Плагины: отчёты, триггеры и т.д. ═══ -->
 <script src="plugins/reports/reports-modal.js"></script>
 <script src="plugins/reports/reports-ui.js"></script>
-
-<!-- ═══ Плагин: Уведомления (Alerts) ═══ -->
-<script src="plugins/alert/alert-ui.js"></script>
 
 <!-- ═══ Mobile PWA: Device Detector (Progressive Enhancement) ═══ -->
 <!-- Загружает мобильные ресурсы ТОЛЬКО при width < 860px + touch -->
