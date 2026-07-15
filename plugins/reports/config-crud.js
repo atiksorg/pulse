@@ -12,6 +12,7 @@
 
 const crypto = require('crypto');
 const auth   = require('../../auth');
+const { shouldSendNow, parseTimezoneOffset, getLocalTime, formatHHMM, formatDate, hhmmToMinutes } = require('../shared/schedule-utils');
 
 const VALID_SCHEDULE_TYPES = ['daily', 'weekly', 'interval'];
 const VALID_SIZES = ['9:16', '16:9', '1:1', 'A4'];
@@ -225,6 +226,113 @@ function registerRoutes(server, db, deps) {
           error_message: hRow.error_message,
           started_at: hRow.started_at,
           finished_at: hRow.finished_at,
+        });
+      }
+
+      // ── GET /reports/:dashboardId/check-schedule — проверка расписания «прямо сейчас» ──
+      if (req.method === 'GET' && action === 'check-schedule') {
+        const row = db.prepare('SELECT * FROM report_configs WHERE dashboard_id = ?')
+          .get(dashboardId);
+        if (!row) return auth.json(res, 404, { error: 'not_found' });
+        if (row.src !== session.src) return auth.json(res, 403, { error: 'forbidden' });
+
+        const utcNow = new Date();
+        const offset = parseTimezoneOffset(row.timezone);
+        const localNow = getLocalTime(utcNow, offset);
+        const localHHMM = formatHHMM(localNow);
+        const localDate = formatDate(localNow);
+        const localDay = localNow.getUTCDay();
+
+        // Сработал бы таймер прямо сейчас?
+        const wouldSend = shouldSendNow(row, utcNow);
+
+        // Вычисляем когда следующее срабатывание
+        let nextSendAt = null;
+        let minutesUntilNext = null;
+
+        const target = row.schedule_time || '09:00';
+        const targetMin = hhmmToMinutes(target);
+        const nowMin = hhmmToMinutes(localHHMM);
+
+        if (row.schedule_type === 'daily') {
+          // Сегодня или завтра
+          let nextDay = new Date(localNow);
+          if (nowMin < targetMin) {
+            // Сегодня ещё будет
+            nextDay.setUTCHours(parseInt(target.split(':')[0], 10), parseInt(target.split(':')[1], 10), 0, 0);
+          } else {
+            // Уже прошло — завтра
+            nextDay = new Date(nextDay.getTime() + 86400000);
+            nextDay.setUTCHours(parseInt(target.split(':')[0], 10), parseInt(target.split(':')[1], 10), 0, 0);
+          }
+          // Переводим обратно в UTC
+          nextSendAt = new Date(nextDay.getTime() - offset * 3600000).toISOString();
+          minutesUntilNext = Math.round((new Date(nextSendAt).getTime() - utcNow.getTime()) / 60000);
+        }
+
+        if (row.schedule_type === 'weekly') {
+          const allowedDays = String(row.schedule_days || '1,2,3,4,5')
+            .split(',').map(d => parseInt(d.trim(), 10)).filter(d => !isNaN(d));
+
+          // Ищем ближайший подходящий день
+          for (let add = 0; add <= 7; add++) {
+            const candidateDate = new Date(localNow.getTime() + add * 86400000);
+            const candidateDay = candidateDate.getUTCDay();
+            if (!allowedDays.includes(candidateDay)) continue;
+
+            const candidateHHMM = formatHHMM(candidateDate);
+            const candidateMin = hhmmToMinutes(candidateHHMM);
+
+            // Если это сегодня и время уже прошло — пропускаем
+            if (add === 0 && candidateMin >= targetMin) continue;
+
+            candidateDate.setUTCHours(parseInt(target.split(':')[0], 10), parseInt(target.split(':')[1], 10), 0, 0);
+            nextSendAt = new Date(candidateDate.getTime() - offset * 3600000).toISOString();
+            minutesUntilNext = Math.round((new Date(nextSendAt).getTime() - utcNow.getTime()) / 60000);
+            break;
+          }
+        }
+
+        if (row.schedule_type === 'interval') {
+          const hours = Number(row.schedule_hours) || 0;
+          if (hours > 0 && row.last_sent_at) {
+            const lastSent = new Date(row.last_sent_at);
+            const elapsed = utcNow.getTime() - lastSent.getTime();
+            const intervalMs = hours * 3600000;
+            if (elapsed < intervalMs) {
+              nextSendAt = new Date(lastSent.getTime() + intervalMs).toISOString();
+              minutesUntilNext = Math.round((new Date(nextSendAt).getTime() - utcNow.getTime()) / 60000);
+            } else {
+              nextSendAt = utcNow.toISOString();
+              minutesUntilNext = 0;
+            }
+          } else if (hours > 0) {
+            nextSendAt = utcNow.toISOString();
+            minutesUntilNext = 0;
+          }
+        }
+
+        // Форматируем время для отображения
+        const serverTimeStr = utcNow.toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+        const localTimeStr = localDate + ' ' + localHHMM;
+
+        return auth.json(res, 200, {
+          serverTime: utcNow.toISOString(),
+          serverTimeStr,
+          localTime: localTimeStr,
+          localDayOfWeek: localDay,
+          localDayName: ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'][localDay],
+          timezone: row.timezone,
+          timezoneOffset: offset,
+          scheduleType: row.schedule_type,
+          scheduleTime: row.schedule_time,
+          scheduleDays: row.schedule_days,
+          scheduleHours: row.schedule_hours,
+          lastSentAt: row.last_sent_at,
+          isActive: !!row.is_active,
+          wouldSendNow: wouldSend,
+          nextSendAt: nextSendAt,
+          minutesUntilNext: minutesUntilNext,
         });
       }
 
