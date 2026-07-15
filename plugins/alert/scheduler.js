@@ -22,7 +22,7 @@
 'use strict';
 
 const { evaluatePanelMetric, checkNoData, evaluateRateOfChange, findPanelInDashboard, getActiveEvals } = require('./metric-evaluator');
-const { dispatchAlert, recordCooldownSkip, getActiveDispatches } = require('./dispatcher');
+const { dispatchAlert, recordCooldownSkip, getActiveDispatches, getAdapter } = require('./dispatcher');
 
 const CHECK_INTERVAL_MS = 60 * 1000; // глобальный rate-limit (не чаще раза в минуту)
 let lastCheckTime = 0;
@@ -414,7 +414,6 @@ function _processQueue(db) {
         if (grabbed.changes !== 1) continue;
 
         // Отправляем через адаптер
-        const { registerAdapter, getAdapter } = require('./dispatcher');
         const adapter = getAdapter(item.channel_type);
         if (!adapter) {
           db.prepare(
