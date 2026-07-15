@@ -2,7 +2,7 @@
  * plugins/reports/dispatcher.js — Отправка отчёта: XML → API → polling → логирование
  *
  * Ограничивает параллелизм (макс. 3 одновременных отправки),
- * логирует результат в report_history.
+ * логирует результат в report_history с фазами (phases JSON).
  */
 'use strict';
 
@@ -11,6 +11,24 @@ const { runReportFunction }    = require('./api-client');
 
 const MAX_PARALLEL = 3;
 let activeDispatches = 0;
+
+/**
+ * Добавить фазу в phases JSON записи report_history.
+ */
+function appendPhase(db, historyId, phase, detail) {
+  try {
+    const row = db.prepare('SELECT phases FROM report_history WHERE id = ?').get(historyId);
+    let phases = [];
+    try { phases = JSON.parse(row.phases || '[]'); } catch (_) {}
+    phases.push({
+      phase,
+      detail: detail || '',
+      at: new Date().toISOString(),
+    });
+    db.prepare('UPDATE report_history SET phases = ? WHERE id = ?')
+      .run(JSON.stringify(phases), historyId);
+  } catch (_) {}
+}
 
 /**
  * Отправить отчёт по конфигу.
@@ -44,14 +62,21 @@ async function dispatchReport(db, config, historyId) {
     ).lastInsertRowid;
   }
 
+  const startTime = Date.now();
+
   try {
     // 1. Генерируем XML-снимок
     console.log(`[reports-dispatch] generating XML for dashboard ${config.dashboard_id}...`);
+    appendPhase(db, historyId, 'xml_start', `dashboard=${config.dashboard_id}`);
     const xml = await generateDashboardXml(db, config.dashboard_id);
+    const xmlSizeKB = (xml.length / 1024).toFixed(1);
+    appendPhase(db, historyId, 'xml_generated', `${xmlSizeKB} KB, ${xml.length} chars`);
     console.log(`[reports-dispatch] XML generated (${xml.length} chars)`);
 
     // 2. Отправляем во внешний API и ждём результата
     console.log(`[reports-dispatch] calling external API (bot_id=${config.bot_id}, func=${config.function_id || 697})...`);
+    appendPhase(db, historyId, 'api_call', `bot_id=${config.bot_id}, func=${config.function_id || 697}`);
+    let pollCount = 0;
     const result = await runReportFunction({
       bot_id:            config.bot_id,
       bot_token:         config.bot_token,
@@ -64,33 +89,45 @@ async function dispatchReport(db, config, historyId) {
       chat_ids:          config.chat_ids,
       emails:            config.emails,
       onPoll: (status) => {
-        // Обновляем статус в истории
-        if (status === 'working') {
-          // Не спамим обновлениями — только логируем
+        pollCount++;
+        if (status === 'working' && pollCount % 5 === 1) {
+          appendPhase(db, historyId, 'polling', `poll #${pollCount}, status=${status}`);
         }
       },
     });
+    appendPhase(db, historyId, 'api_done', `polls=${pollCount}, image=${result.image_url || 'none'}`);
 
     // 3. Успех — обновляем историю и last_sent_at
+    const durationMs = Date.now() - startTime;
     db.prepare(
-      'UPDATE report_history SET status = ?, image_url = ?, finished_at = ? WHERE id = ?'
-    ).run('done', result.image_url || null, new Date().toISOString(), historyId);
+      'UPDATE report_history SET status = ?, image_url = ?, finished_at = ?, duration_ms = ? WHERE id = ?'
+    ).run('done', result.image_url || null, new Date().toISOString(), durationMs, historyId);
 
     db.prepare('UPDATE report_configs SET last_sent_at = ? WHERE id = ?')
       .run(new Date().toISOString(), config.id);
 
-    console.log(`[reports-dispatch] ✓ report done: ${config.dashboard_id} → ${result.image_url || '(no image)'}`);
+    appendPhase(db, historyId, 'done', `total ${durationMs}ms`);
+    console.log(`[reports-dispatch] ✓ report done: ${config.dashboard_id} → ${result.image_url || '(no image)'} (${durationMs}ms)`);
 
   } catch (err) {
+    const durationMs = Date.now() - startTime;
     // Ошибка — логируем, но НЕ откатываем last_sent_at (повтор в следующем окне)
     db.prepare(
-      'UPDATE report_history SET status = ?, error_message = ?, finished_at = ? WHERE id = ?'
-    ).run('error', String(err.message).slice(0, 500), new Date().toISOString(), historyId);
+      'UPDATE report_history SET status = ?, error_message = ?, finished_at = ?, duration_ms = ? WHERE id = ?'
+    ).run('error', String(err.message).slice(0, 500), new Date().toISOString(), durationMs, historyId);
 
-    console.error(`[reports-dispatch] ✗ report error: ${err.message}`);
+    appendPhase(db, historyId, 'error', String(err.message).slice(0, 200));
+    console.error(`[reports-dispatch] ✗ report error: ${err.message} (${durationMs}ms)`);
   } finally {
     activeDispatches--;
   }
 }
 
-module.exports = { dispatchReport };
+/**
+ * Получить количество текущих параллельных отправок.
+ */
+function getActiveDispatches() {
+  return activeDispatches;
+}
+
+module.exports = { dispatchReport, getActiveDispatches };
