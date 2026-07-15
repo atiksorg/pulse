@@ -331,25 +331,22 @@ function getActiveEvals() {
 
 /**
  * Найти панель в дашборде по panel_id.
+ * Использует то же подключение, что и _ensureDb() — не создаёт дублирующих
+ * read-only соединений (это было причиной зависаний при блокировках WAL).
+ *
  * @param {string} dashboardId
  * @param {string} panelId
  * @returns {object|null} панель или null
  */
 function findPanelInDashboard(dashboardId, panelId) {
-  if (!db) {
-    try {
-      const p = _dbPath();
-      if (!fs.existsSync(p)) return null;
-      db = new Database(p, { readonly: true, fileMustExist: true });
-      db.pragma('journal_mode = WAL');
-      db.pragma('cache_size = -16000');
-      db.pragma('temp_store = MEMORY');
-    } catch (_) {
-      return null;
-    }
-  }
   try {
-    const row = db.prepare(
+    const database = _ensureDb();
+    // _ensureDb() может вернуть Promise (при первом вызове) —
+    // в этом случае синхронно вернём null (панель не найдена).
+    // Обычно к моменту HTTP-запроса _ensureDb() уже инициализирован.
+    if (!database || typeof database.prepare !== 'function') return null;
+
+    const row = database.prepare(
       'SELECT id, name, src, panels_json FROM dashboards WHERE id = ?'
     ).get(dashboardId);
     if (!row) return null;
