@@ -29,8 +29,8 @@ async function runSchedulerTick(db) {
             if (updateInfo.changes === 0) continue; // Кто-то другой уже захватил
 
             try {
-                // Вычисляем метрику
-                const value = await evaluateRule(rule);
+                // Вычисляем метрику (реальный SQL-запрос к events_YYYY_MM)
+                const value = await evaluateRule(rule, db);
                 
                 // Пропускаем через FSM
                 processFSM(rule, value, db);
