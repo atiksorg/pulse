@@ -66,6 +66,10 @@ function bindPanelMenuActions(card, p, src){
   card.querySelector('[data-act="example"]') && (card.querySelector('[data-act="example"]').onclick=function(){ showExampleToast(p, src); });
   card.querySelector('[data-act="ai-optimize"]') && (card.querySelector('[data-act="ai-optimize"]').onclick=function(){ optimizePanelWithAI(p, src); });
   card.querySelector('[data-act="ai-discover"]') && (card.querySelector('[data-act="ai-discover"]').onclick=function(){ discoverPanelsFromLogs(p, src); });
+  card.querySelector('[data-act="alerts"]') && (card.querySelector('[data-act="alerts"]').onclick=function(){
+    var db = getActiveDashboard();
+    window.AlertsUI.open(p, db.id);
+  });
 }
 
 /* ── Toggle panel lock (pin) — in-place, no full re-render ── */
