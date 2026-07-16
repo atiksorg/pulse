@@ -78,9 +78,9 @@ async function checkAlertConfig(db, cfg, opts = {}) {
     }, cfg.src);
   } catch (e) {
     db.prepare(
-      `INSERT INTO alert_history (config_id, dashboard_id, panel_id, src, ts, value, direction, status, error_message, trigger_type)
-       VALUES (?, ?, ?, ?, ?, NULL, NULL, 'error', ?, ?)`
-    ).run(cfg.id, cfg.dashboard_id, cfg.panel_id, cfg.src, now, e.message.slice(0, 300), triggerType);
+      `INSERT INTO alert_history (config_id, dashboard_id, panel_id, src, ts, value, direction, status, error_message, trigger_type, fired_at)
+       VALUES (?, ?, ?, ?, ?, NULL, NULL, 'error', ?, ?, ?)`
+    ).run(cfg.id, cfg.dashboard_id, cfg.panel_id, cfg.src, now, e.message.slice(0, 300), triggerType, now);
     return { ok: false, error: e.message };
   }
 
@@ -141,9 +141,9 @@ function logHistory(db, cfg, ts, value, direction, telegramResult, triggerType) 
     : (telegramResult.errors ? telegramResult.errors.join('; ').slice(0, 400) : (telegramResult.error || 'unknown_error'));
 
   db.prepare(
-    `INSERT INTO alert_history (config_id, dashboard_id, panel_id, src, ts, value, direction, status, error_message, trigger_type)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(cfg.id, cfg.dashboard_id, cfg.panel_id, cfg.src, ts, value, direction, status, errorMessage, triggerType);
+    `INSERT INTO alert_history (config_id, dashboard_id, panel_id, src, ts, value, direction, status, error_message, trigger_type, fired_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(cfg.id, cfg.dashboard_id, cfg.panel_id, cfg.src, ts, value, direction, status, errorMessage, triggerType, ts);
 }
 
 function safeParseFilters(json) {
