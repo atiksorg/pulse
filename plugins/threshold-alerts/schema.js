@@ -10,26 +10,35 @@
 function initAlertTables(db) {
   // ── Миграции: добавляем колонки, которых может не быть в уже созданных таблицах ──
   const migrations = [
-    // alert_configs — новые колонки
+    // alert_configs — все колонки, кроме PK (id, dashboard_id, panel_id, created_at, updated_at были в оригинале)
+    `ALTER TABLE alert_configs ADD COLUMN src TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE alert_configs ADD COLUMN is_active INTEGER DEFAULT 0`,
     `ALTER TABLE alert_configs ADD COLUMN label TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE alert_configs ADD COLUMN panel_type TEXT DEFAULT ''`,
+    `ALTER TABLE alert_configs ADD COLUMN panel_agg TEXT DEFAULT 'count'`,
+    `ALTER TABLE alert_configs ADD COLUMN panel_aggfield TEXT DEFAULT ''`,
+    `ALTER TABLE alert_configs ADD COLUMN panel_range TEXT DEFAULT '24h'`,
+    `ALTER TABLE alert_configs ADD COLUMN panel_filters TEXT DEFAULT '[]'`,
+    `ALTER TABLE alert_configs ADD COLUMN min_value REAL`,
+    `ALTER TABLE alert_configs ADD COLUMN max_value REAL`,
+    `ALTER TABLE alert_configs ADD COLUMN telegram_bot_token TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE alert_configs ADD COLUMN chat_ids TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE alert_configs ADD COLUMN check_interval_sec INTEGER NOT NULL DEFAULT 60`,
     `ALTER TABLE alert_configs ADD COLUMN cooldown_sec INTEGER NOT NULL DEFAULT 900`,
     `ALTER TABLE alert_configs ADD COLUMN notify_on_recovery INTEGER DEFAULT 1`,
     `ALTER TABLE alert_configs ADD COLUMN state TEXT NOT NULL DEFAULT 'ok'`,
     `ALTER TABLE alert_configs ADD COLUMN last_value REAL`,
     `ALTER TABLE alert_configs ADD COLUMN last_checked_at TEXT`,
     `ALTER TABLE alert_configs ADD COLUMN last_notified_at TEXT`,
-    `ALTER TABLE alert_configs ADD COLUMN src TEXT NOT NULL DEFAULT ''`,
-    `ALTER TABLE alert_configs ADD COLUMN panel_type TEXT DEFAULT ''`,
-    `ALTER TABLE alert_configs ADD COLUMN panel_agg TEXT DEFAULT 'count'`,
-    `ALTER TABLE alert_configs ADD COLUMN panel_aggfield TEXT DEFAULT ''`,
-    `ALTER TABLE alert_configs ADD COLUMN panel_range TEXT DEFAULT '24h'`,
-    `ALTER TABLE alert_configs ADD COLUMN panel_filters TEXT DEFAULT '[]'`,
-    // alert_history — новые колонки
-    `ALTER TABLE alert_history ADD COLUMN ts TEXT NOT NULL DEFAULT ''`,
-    `ALTER TABLE alert_history ADD COLUMN trigger_type TEXT DEFAULT 'schedule'`,
+    // alert_history — все колонки, кроме PK (id, config_id были в оригинале)
     `ALTER TABLE alert_history ADD COLUMN dashboard_id TEXT NOT NULL DEFAULT ''`,
     `ALTER TABLE alert_history ADD COLUMN src TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE alert_history ADD COLUMN ts TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE alert_history ADD COLUMN value REAL`,
+    `ALTER TABLE alert_history ADD COLUMN direction TEXT`,
+    `ALTER TABLE alert_history ADD COLUMN status TEXT NOT NULL DEFAULT 'sent'`,
     `ALTER TABLE alert_history ADD COLUMN error_message TEXT`,
+    `ALTER TABLE alert_history ADD COLUMN trigger_type TEXT DEFAULT 'schedule'`,
   ];
   for (const sql of migrations) {
     try { db.exec(sql); } catch (_) { /* column already exists */ }
