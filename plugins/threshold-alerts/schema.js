@@ -39,6 +39,7 @@ function initAlertTables(db) {
     `ALTER TABLE alert_history ADD COLUMN status TEXT NOT NULL DEFAULT 'sent'`,
     `ALTER TABLE alert_history ADD COLUMN error_message TEXT`,
     `ALTER TABLE alert_history ADD COLUMN trigger_type TEXT DEFAULT 'schedule'`,
+    `ALTER TABLE alert_history ADD COLUMN panel_id TEXT DEFAULT ''`,
   ];
   for (const sql of migrations) {
     try { db.exec(sql); } catch (_) { /* column already exists */ }
@@ -80,6 +81,7 @@ function initAlertTables(db) {
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
       config_id     TEXT NOT NULL,
       dashboard_id  TEXT NOT NULL,
+      panel_id      TEXT DEFAULT '',
       src           TEXT NOT NULL,
       ts            TEXT NOT NULL,
       value         REAL,
