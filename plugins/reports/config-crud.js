@@ -442,17 +442,22 @@ function registerRoutes(server, db, deps) {
       }
 
       // ── POST /reports/:dashboardId/preview-xml — предпросмотр XML ──
+      // mode: 'summary' (по умолчанию — то, что реально уйдёт в EG) или 'full'
       if (req.method === 'POST' && action === 'preview-xml') {
         const row = db.prepare('SELECT * FROM report_configs WHERE dashboard_id = ?')
           .get(dashboardId);
         if (!row) return auth.json(res, 404, { error: 'not_found' });
         if (row.src !== session.src) return auth.json(res, 403, { error: 'forbidden' });
 
+        let mode = url.searchParams.get('mode') || 'summary';
+        if (mode !== 'full' && mode !== 'summary') mode = 'summary';
+
         try {
           const { generateDashboardXml } = require('./xml-generator');
-          const xml = await generateDashboardXml(db, dashboardId);
+          const xml = await generateDashboardXml(db, dashboardId, mode);
           return auth.json(res, 200, {
             xml: xml,
+            mode: mode,
             length: xml.length,
             sizeKB: (xml.length / 1024).toFixed(1),
           });
