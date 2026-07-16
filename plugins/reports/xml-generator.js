@@ -1,9 +1,12 @@
 /**
  * plugins/reports/xml-generator.js — Серверная генерация XML-снимка дашборда
  *
- * Аналог клиентского exportXml(fullMode=true) из panels-edit.js,
- * но выполняется на сервере: загружает панели из БД, делает SQL-запросы
- * для получения актуальных данных, собирает XML.
+ * Два режима:
+ *   'full'    — полный снимок (точки, события, строки таблиц). Для отладки/импорта.
+ *   'summary' — выжимка для рендерера картинки (EG): одна панель = одна строка
+ *               <p v="тип" t="заголовок" x="главный показатель" d="тренд"/>.
+ *               Вся агрегация и форматирование — на сервере, EG получает
+ *               готовые строки и просто рисует карточки.
  */
 'use strict';
 
@@ -15,12 +18,14 @@ const MAX_POINTS_PER_PANEL = 200;
 const MAX_TABLE_ROWS       = 50;
 
 /**
- * Сгенерировать полный XML-снимок дашборда.
+ * Сгенерировать XML-снимок дашборда.
  * @param {object} db          — better-sqlite3 Database
  * @param {string} dashboardId
+ * @param {string} [mode]      — 'full' (по умолчанию) или 'summary'
  * @returns {Promise<string>}  — XML-строка
  */
-async function generateDashboardXml(db, dashboardId) {
+async function generateDashboardXml(db, dashboardId, mode) {
+  const summary = mode === 'summary';
   const dash = db.prepare(
     'SELECT id, name, src, panels_json FROM dashboards WHERE id = ?'
   ).get(dashboardId);
@@ -33,11 +38,28 @@ async function generateDashboardXml(db, dashboardId) {
 
   const L = [];
   L.push('<?xml version="1.0" encoding="UTF-8"?>');
+
+  if (summary) {
+    // Компактный корневой тег для EG
+    L.push(`<dash name="${xa(dash.name)}" src="${xa(src)}" ts="${xa(now)}">`);
+    for (const p of panels) {
+      try {
+        const data = await queryPanelData(db, p, src, true);
+        L.push(buildPanelSummaryXml(p, data));
+      } catch (e) {
+        console.error(`[xml-gen] panel "${p.title}" error:`, e.message);
+        L.push(`  <p v="${xa(p.viz || '')}" t="${xa(p.title || '')}" x="—" s="err"/>`);
+      }
+    }
+    L.push('</dash>');
+    return L.join('\n');
+  }
+
   L.push(`<pulse-dashboard name="${xa(dash.name)}" src="${xa(src)}" exported="${xa(now)}">`);
 
   for (const p of panels) {
     try {
-      const data = await queryPanelData(db, p, src);
+      const data = await queryPanelData(db, p, src, false);
       L.push(...buildPanelXml(p, data));
     } catch (e) {
       console.error(`[xml-gen] panel "${p.title}" error:`, e.message);
@@ -51,8 +73,9 @@ async function generateDashboardXml(db, dashboardId) {
 
 /**
  * Выполнить SQL-запрос для одной панели (серверный аналог loadPanel на клиенте).
+ * @param {boolean} [summary] — лёгкий режим: минимум данных для headline-показателя
  */
-async function queryPanelData(db, panel, src) {
+async function queryPanelData(db, panel, src, summary) {
   const viz  = panel.viz  || 'line';
   const type = panel.type || '';
   const group = panel.group || '';
@@ -112,6 +135,19 @@ async function queryPanelData(db, panel, src) {
 
   // ── logs: raw events ──
   if (viz === 'logs') {
+    // summary: только количество событий, без payload
+    if (summary) {
+      let total = 0;
+      for (const { name } of filteredTables) {
+        try {
+          const row = db.prepare(
+            `SELECT COUNT(*) AS cnt FROM "${name}" WHERE ${where.join(' AND ')}`
+          ).get(...params);
+          if (row) total += (row.cnt || 0);
+        } catch (_) {}
+      }
+      return { type: 'logs', count: total };
+    }
     const rawLimit = Math.min(MAX_EVENTS_PER_PANEL, 50);
     const events = [];
     for (const { name } of filteredTables) {
@@ -270,8 +306,12 @@ async function queryPanelData(db, panel, src) {
       value: aggMode === 'avg' ? Math.round(v * 100) / 100 : v,
     }));
 
+    const isTimeGroup = ['day','hour','minute','week','month'].includes(group);
     const sort = panel.sort || 'key';
-    if (sort === 'value_desc') groups.sort((a, b) => b.value - a.value);
+    // В summary-режиме для time-series всегда хронологический порядок:
+    // headline = последняя точка, тренд = last vs first.
+    if (summary && isTimeGroup) groups.sort((a, b) => String(a.key).localeCompare(String(b.key)));
+    else if (sort === 'value_desc') groups.sort((a, b) => b.value - a.value);
     else if (sort === 'value_asc') groups.sort((a, b) => a.value - b.value);
     else groups.sort((a, b) => String(a.key).localeCompare(String(b.key)));
 
@@ -335,7 +375,78 @@ function buildPanelXml(panel, data) {
   return L;
 }
 
+/**
+ * Собрать summary-строку для одной панели (режим 'summary').
+ * Одна панель = один тег <p/>:
+ *   v — тип визуализации, t — заголовок,
+ *   x — главный показатель (уже отформатированная строка),
+ *   d — тренд/дельта (опционально, только для time-series).
+ */
+function buildPanelSummaryXml(panel, data) {
+  const viz = panel.viz || '';
+  const title = panel.title || '';
+  let x = '—';
+  let d = '';
+
+  if (data.type === 'kpi') {
+    x = fmtNum(data.total);
+  }
+  else if (data.type === 'logs') {
+    x = fmtNum(data.count != null ? data.count : (data.events ? data.events.length : 0));
+  }
+  else if (data.type === 'table') {
+    if (data.groups && data.groups.length) {
+      const top = data.groups[0];
+      const share = data.total > 0 ? Math.round((top.value / data.total) * 100) : 0;
+      x = `${top.key} — ${fmtNum(top.value)}`;
+      if (data.groups.length > 1) d = `${share}%`;
+    } else {
+      x = '0';
+    }
+  }
+  else if (data.type === 'series') {
+    const groups = data.groups || [];
+    if (groups.length) {
+      const isTimeGroup = ['day','hour','minute','week','month'].includes(panel.group);
+      if (isTimeGroup) {
+        // Time-series: headline = последнее значение, тренд = last vs first
+        const last = groups[groups.length - 1].value;
+        const first = groups[0].value;
+        x = fmtNum(last);
+        if (first > 0 && groups.length > 1) {
+          const pct = Math.round(((last - first) / first) * 100);
+          d = (pct >= 0 ? '+' : '') + pct + '%';
+        }
+      } else {
+        // Распределение по полю (pie/bar): топ-1 сегмент + доля
+        const sorted = groups.slice().sort((a, b) => b.value - a.value);
+        const top = sorted[0];
+        const share = data.total > 0 ? Math.round((top.value / data.total) * 100) : 0;
+        x = `${top.key} — ${share}%`;
+      }
+    } else {
+      x = '0';
+    }
+  }
+
+  const dAttr = d ? ` d="${xa(d)}"` : '';
+  return `  <p v="${xa(viz)}" t="${xa(title)}" x="${xa(x)}"${dAttr}/>`;
+}
+
 // ── Вспомогательные функции ──
+
+/**
+ * Компактное форматирование числа для карточки: 1234 → "1.2K", 2500000 → "2.5M".
+ * EG получает готовую строку и не занимается rounding.
+ */
+function fmtNum(n) {
+  const v = Number(n) || 0;
+  const abs = Math.abs(v);
+  if (abs >= 1e6) return (v / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
+  if (abs >= 1e3) return (v / 1e3).toFixed(1).replace(/\.0$/, '') + 'K';
+  if (Number.isInteger(v)) return String(v);
+  return String(Math.round(v * 100) / 100);
+}
 
 function safeField(name) {
   return IDENT_RE.test(name) ? name : null;
