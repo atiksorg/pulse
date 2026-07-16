@@ -40,6 +40,7 @@ function initAlertTables(db) {
     `ALTER TABLE alert_history ADD COLUMN error_message TEXT`,
     `ALTER TABLE alert_history ADD COLUMN trigger_type TEXT DEFAULT 'schedule'`,
     `ALTER TABLE alert_history ADD COLUMN panel_id TEXT DEFAULT ''`,
+    `ALTER TABLE alert_history ADD COLUMN fired_at TEXT NOT NULL DEFAULT ''`,
   ];
   for (const sql of migrations) {
     try { db.exec(sql); } catch (_) { /* column already exists */ }
@@ -88,7 +89,8 @@ function initAlertTables(db) {
       direction     TEXT,             -- 'above' | 'below' | 'recovered'
       status        TEXT NOT NULL,    -- 'sent' | 'error' | 'skipped'
       error_message TEXT,
-      trigger_type  TEXT DEFAULT 'schedule'  -- 'schedule' | 'test'
+      trigger_type  TEXT DEFAULT 'schedule', -- 'schedule' | 'test'
+      fired_at      TEXT NOT NULL DEFAULT ''
     );
     CREATE INDEX IF NOT EXISTS idx_ah_config ON alert_history(config_id, ts DESC);
     CREATE INDEX IF NOT EXISTS idx_ah_src ON alert_history(src, ts DESC);
