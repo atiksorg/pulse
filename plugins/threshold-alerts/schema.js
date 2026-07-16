@@ -8,6 +8,33 @@
 'use strict';
 
 function initAlertTables(db) {
+  // ── Миграции: добавляем колонки, которых может не быть в уже созданных таблицах ──
+  const migrations = [
+    // alert_configs — новые колонки
+    `ALTER TABLE alert_configs ADD COLUMN label TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE alert_configs ADD COLUMN cooldown_sec INTEGER NOT NULL DEFAULT 900`,
+    `ALTER TABLE alert_configs ADD COLUMN notify_on_recovery INTEGER DEFAULT 1`,
+    `ALTER TABLE alert_configs ADD COLUMN state TEXT NOT NULL DEFAULT 'ok'`,
+    `ALTER TABLE alert_configs ADD COLUMN last_value REAL`,
+    `ALTER TABLE alert_configs ADD COLUMN last_checked_at TEXT`,
+    `ALTER TABLE alert_configs ADD COLUMN last_notified_at TEXT`,
+    `ALTER TABLE alert_configs ADD COLUMN src TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE alert_configs ADD COLUMN panel_type TEXT DEFAULT ''`,
+    `ALTER TABLE alert_configs ADD COLUMN panel_agg TEXT DEFAULT 'count'`,
+    `ALTER TABLE alert_configs ADD COLUMN panel_aggfield TEXT DEFAULT ''`,
+    `ALTER TABLE alert_configs ADD COLUMN panel_range TEXT DEFAULT '24h'`,
+    `ALTER TABLE alert_configs ADD COLUMN panel_filters TEXT DEFAULT '[]'`,
+    // alert_history — новые колонки
+    `ALTER TABLE alert_history ADD COLUMN ts TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE alert_history ADD COLUMN trigger_type TEXT DEFAULT 'schedule'`,
+    `ALTER TABLE alert_history ADD COLUMN dashboard_id TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE alert_history ADD COLUMN src TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE alert_history ADD COLUMN error_message TEXT`,
+  ];
+  for (const sql of migrations) {
+    try { db.exec(sql); } catch (_) { /* column already exists */ }
+  }
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS alert_configs (
       id                 TEXT PRIMARY KEY,
