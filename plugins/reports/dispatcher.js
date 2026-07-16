@@ -75,10 +75,10 @@ async function dispatchReport(db, config, historyId) {
   const startTime = Date.now();
 
   try {
-    // 1. Генерируем XML-снимок
+    // 1. Генерируем XML-снимок (summary-режим: выжимка для рендерера картинки)
     console.log(`[reports-dispatch] generating XML for dashboard ${config.dashboard_id}...`);
     appendPhase(db, historyId, 'xml_start', `dashboard=${config.dashboard_id}`);
-    const xml = await generateDashboardXml(db, config.dashboard_id);
+    const xml = await generateDashboardXml(db, config.dashboard_id, 'summary');
     const xmlSizeKB = (xml.length / 1024).toFixed(1);
     appendPhase(db, historyId, 'xml_generated', `${xmlSizeKB} KB, ${xml.length} chars`);
     console.log(`[reports-dispatch] XML generated (${xml.length} chars)`);
