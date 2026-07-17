@@ -30,6 +30,14 @@ function initAlertTables(db) {
     `ALTER TABLE alert_configs ADD COLUMN last_value REAL`,
     `ALTER TABLE alert_configs ADD COLUMN last_checked_at TEXT`,
     `ALTER TABLE alert_configs ADD COLUMN last_notified_at TEXT`,
+    // ── Новые поля для расширенных алертов ──
+    `ALTER TABLE alert_configs ADD COLUMN group_field TEXT DEFAULT ''`,
+    `ALTER TABLE alert_configs ADD COLUMN group_value TEXT DEFAULT ''`,
+    `ALTER TABLE alert_configs ADD COLUMN check_mode TEXT DEFAULT 'absolute'`,
+    `ALTER TABLE alert_configs ADD COLUMN delta_range TEXT DEFAULT '1h'`,
+    `ALTER TABLE alert_configs ADD COLUMN anomaly_window INTEGER DEFAULT 7`,
+    `ALTER TABLE alert_configs ADD COLUMN on_empty TEXT DEFAULT 'treat_as_zero'`,
+    `ALTER TABLE alert_configs ADD COLUMN thresholds_json TEXT DEFAULT '[]'`,
     // alert_history — все колонки, кроме PK (id, config_id были в оригинале)
     `ALTER TABLE alert_history ADD COLUMN dashboard_id TEXT NOT NULL DEFAULT ''`,
     `ALTER TABLE alert_history ADD COLUMN src TEXT NOT NULL DEFAULT ''`,
@@ -70,6 +78,13 @@ function initAlertTables(db) {
       last_value          REAL,
       last_checked_at     TEXT,
       last_notified_at    TEXT,
+      group_field         TEXT DEFAULT '',
+      group_value         TEXT DEFAULT '',
+      check_mode          TEXT DEFAULT 'absolute',
+      delta_range         TEXT DEFAULT '1h',
+      anomaly_window      INTEGER DEFAULT 7,
+      on_empty            TEXT DEFAULT 'treat_as_zero',
+      thresholds_json     TEXT DEFAULT '[]',
       created_at          TEXT NOT NULL,
       updated_at          TEXT NOT NULL
     );
