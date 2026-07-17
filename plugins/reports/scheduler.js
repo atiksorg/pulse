@@ -52,6 +52,17 @@ function checkRetryable(db, cfg, utcNow) {
     return { retryable: false, attempt: errorsToday, maxRetries: MAX_RETRIES };
   }
 
+  // Если есть активная (незавершённая) отправка — не ретраить.
+  // Иначе каждый следующий тик (раз в минуту) будет запускать дубль,
+  // пока первый отчёт ещё выполняется (XML + API polling ~2-3 мин).
+  const activeWork = db.prepare(
+    "SELECT id FROM report_history WHERE config_id = ? AND status = 'working' AND started_at > ? LIMIT 1"
+  ).get(cfg.id, todayStartUtc);
+
+  if (activeWork) {
+    return { retryable: false, attempt: errorsToday, maxRetries: MAX_RETRIES };
+  }
+
   if (errorsToday >= MAX_RETRIES) {
     return { retryable: false, attempt: errorsToday, maxRetries: MAX_RETRIES };
   }
