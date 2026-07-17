@@ -16,7 +16,10 @@ const auth   = require('../../auth');
 const { checkAlertConfig } = require('./checker');
 
 const VALID_AGG = ['count', 'sum', 'avg', 'max', 'min'];
-const VALID_RANGE = ['24h', '7d', '30d', 'all'];
+const VALID_RANGE = ['1h', '6h', '24h', '7d', '30d', 'all'];
+const VALID_CHECK_MODE = ['absolute', 'delta_pct', 'anomaly'];
+const VALID_ON_EMPTY = ['treat_as_zero', 'alert', 'ignore'];
+const VALID_DELTA_RANGE = ['1h', '6h', '24h', '7d', '30d'];
 
 function registerRoutes(server, db) {
   const origListener = server.listeners('request')[0];
@@ -30,8 +33,6 @@ function registerRoutes(server, db) {
 
       const url = new URL(req.url, `http://${req.headers.host}`);
       const segments = url.pathname.split('/').filter(Boolean);
-      // ['alerts', dashboardId] | ['alerts', dashboardId, panelId]
-      // ['alerts', 'config', configId] | ['alerts', 'config', configId, 'test'|'history']
 
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, DELETE, POST, OPTIONS');
@@ -104,13 +105,18 @@ function registerRoutes(server, db) {
               is_active = ?, label = ?, panel_type = ?, panel_agg = ?, panel_aggfield = ?,
               panel_range = ?, panel_filters = ?, min_value = ?, max_value = ?,
               telegram_bot_token = ?, chat_ids = ?, check_interval_sec = ?, cooldown_sec = ?,
-              notify_on_recovery = ?, updated_at = ?
+              notify_on_recovery = ?, group_field = ?, group_value = ?, check_mode = ?,
+              delta_range = ?, anomaly_window = ?, on_empty = ?, thresholds_json = ?,
+              updated_at = ?
             WHERE panel_id = ?
           `).run(
             cfg.is_active ? 1 : 0, cfg.label, cfg.panel_type, cfg.panel_agg, cfg.panel_aggfield,
             cfg.panel_range, cfg.panel_filters, cfg.min_value, cfg.max_value,
             finalToken, cfg.chat_ids, cfg.check_interval_sec, cfg.cooldown_sec,
-            cfg.notify_on_recovery ? 1 : 0, now, panelId
+            cfg.notify_on_recovery ? 1 : 0,
+            cfg.group_field, cfg.group_value, cfg.check_mode,
+            cfg.delta_range, cfg.anomaly_window, cfg.on_empty, cfg.thresholds_json,
+            now, panelId
           );
         } else {
           if (!cfg.telegram_bot_token) return auth.json(res, 400, { error: 'invalid_bot_token' });
@@ -123,8 +129,10 @@ function registerRoutes(server, db) {
               panel_type, panel_agg, panel_aggfield, panel_range, panel_filters,
               min_value, max_value, telegram_bot_token, chat_ids,
               check_interval_sec, cooldown_sec, notify_on_recovery,
+              group_field, group_value, check_mode, delta_range,
+              anomaly_window, on_empty, thresholds_json,
               state, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?)
             ON CONFLICT(panel_id) DO UPDATE SET
               is_active = excluded.is_active, label = excluded.label,
               panel_type = excluded.panel_type, panel_agg = excluded.panel_agg,
@@ -133,12 +141,18 @@ function registerRoutes(server, db) {
               max_value = excluded.max_value, telegram_bot_token = excluded.telegram_bot_token,
               chat_ids = excluded.chat_ids, check_interval_sec = excluded.check_interval_sec,
               cooldown_sec = excluded.cooldown_sec, notify_on_recovery = excluded.notify_on_recovery,
+              group_field = excluded.group_field, group_value = excluded.group_value,
+              check_mode = excluded.check_mode, delta_range = excluded.delta_range,
+              anomaly_window = excluded.anomaly_window, on_empty = excluded.on_empty,
+              thresholds_json = excluded.thresholds_json,
               updated_at = excluded.updated_at
           `).run(
             id, dashboardId, panelId, session.src, cfg.is_active ? 1 : 0, cfg.label,
             cfg.panel_type, cfg.panel_agg, cfg.panel_aggfield, cfg.panel_range, cfg.panel_filters,
             cfg.min_value, cfg.max_value, cfg.telegram_bot_token, cfg.chat_ids,
             cfg.check_interval_sec, cfg.cooldown_sec, cfg.notify_on_recovery ? 1 : 0,
+            cfg.group_field, cfg.group_value, cfg.check_mode, cfg.delta_range,
+            cfg.anomaly_window, cfg.on_empty, cfg.thresholds_json,
             now, now
           );
         }
@@ -190,7 +204,9 @@ function getOwnedConfig(db, configId, src) {
  * Валидация тела запроса PUT.
  * Ожидаемые поля: is_active, label, panel_type, panel_agg, panel_aggfield,
  * panel_range, filters(array), min_value, max_value, telegram_bot_token,
- * chat_ids, check_interval_sec, cooldown_sec, notify_on_recovery
+ * chat_ids, check_interval_sec, cooldown_sec, notify_on_recovery,
+ * group_field, group_value, check_mode, delta_range, anomaly_window,
+ * on_empty, thresholds_json
  */
 function validateConfig(body, isUpdate, existingRow) {
   if (!body || typeof body !== 'object') return { ok: false, error: 'invalid_body' };
@@ -220,6 +236,31 @@ function validateConfig(body, isUpdate, existingRow) {
   let filters = [];
   if (Array.isArray(body.filters)) filters = body.filters.slice(0, 5);
 
+  // ── Новые поля ──
+  const checkMode = VALID_CHECK_MODE.includes(body.check_mode) ? body.check_mode : 'absolute';
+  const onEmpty = VALID_ON_EMPTY.includes(body.on_empty) ? body.on_empty : 'treat_as_zero';
+  const deltaRange = VALID_DELTA_RANGE.includes(body.delta_range) ? body.delta_range : '1h';
+  const anomalyWindow = Math.max(2, Math.min(30, Number(body.anomaly_window) || 7));
+  const groupField = String(body.group_field || '').trim().slice(0, 64);
+  const groupValue = String(body.group_value || '').trim().slice(0, 256);
+
+  // thresholds_json: валидируем структуру
+  let thresholdsJson = '[]';
+  if (body.thresholds_json && Array.isArray(body.thresholds_json)) {
+    const cleaned = body.thresholds_json.slice(0, 10).map(t => ({
+      min: t.min !== null && t.min !== undefined && t.min !== '' ? Number(t.min) : null,
+      max: t.max !== null && t.max !== undefined && t.max !== '' ? Number(t.max) : null,
+      severity: ['critical', 'warning', 'info'].includes(t.severity) ? t.severity : 'warning',
+      chat_ids: typeof t.chat_ids === 'string' ? t.chat_ids.trim() : '',
+    }));
+    thresholdsJson = JSON.stringify(cleaned);
+  } else if (typeof body.thresholds_json === 'string') {
+    try {
+      const parsed = JSON.parse(body.thresholds_json);
+      if (Array.isArray(parsed)) thresholdsJson = body.thresholds_json;
+    } catch (_) { /* invalid JSON, use default */ }
+  }
+
   return {
     ok: true,
     config: {
@@ -237,6 +278,13 @@ function validateConfig(body, isUpdate, existingRow) {
       check_interval_sec: checkInterval,
       cooldown_sec: cooldown,
       notify_on_recovery: body.notify_on_recovery !== false,
+      group_field: groupField,
+      group_value: groupValue,
+      check_mode: checkMode,
+      delta_range: deltaRange,
+      anomaly_window: anomalyWindow,
+      on_empty: onEmpty,
+      thresholds_json: thresholdsJson,
     },
   };
 }
@@ -250,6 +298,7 @@ function sanitizeConfig(row) {
   }
   delete out.telegram_bot_token;
   out.panel_filters = safeParse(out.panel_filters);
+  out.thresholds_json = safeParse(out.thresholds_json);
   return out;
 }
 
