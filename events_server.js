@@ -294,7 +294,7 @@ function parsePayload(qs) {
 // ── Filter helpers for /s ──────────────────────────────
 const MAX_FILTERS = 5;
 const MAX_IN_VALUES = 20;
-const ALLOWED_FILTER_OPS = ['eq', 'neq', 'gt', 'lt', 'in', 'contains'];
+const ALLOWED_FILTER_OPS = ['eq', 'neq', 'gt', 'lt', 'in', 'contains', 'notcontains'];
 const ALLOWED_SORT_MODES = ['key', 'value_desc', 'value_asc'];
 
 function parseFiltersParam(filtersStr) {
@@ -320,6 +320,9 @@ function parseFiltersParam(filtersStr) {
       value = Number(value);
       if (isNaN(value)) return null;
     } else if (op === 'contains') {
+      value = String(value);
+      if (value.length > 200) return null;
+    } else if (op === 'notcontains') {
       value = String(value);
       if (value.length > 200) return null;
     } else {
@@ -357,6 +360,9 @@ function buildFilterWhereClauses(filters, params) {
     } else if (f.op === 'contains') {
       clauses.push(`${col} LIKE ?`);
       params.push('%' + f.value + '%');
+    } else if (f.op === 'notcontains') {
+      clauses.push(`(${col} NOT LIKE ? OR ${col} IS NULL)`);
+      params.push('%' + f.value + '%');
     }
   }
   return clauses;
@@ -371,6 +377,7 @@ function applyFiltersToValue(fieldValue, f) {
   if (f.op === 'lt') return Number(sv) < f.value;
   if (f.op === 'in') return f.value.includes(sv);
   if (f.op === 'contains') return sv.includes(f.value);
+  if (f.op === 'notcontains') return !sv.includes(f.value);
   return true;
 }
 
