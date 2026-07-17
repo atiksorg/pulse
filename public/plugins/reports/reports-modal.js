@@ -108,7 +108,6 @@
     var $ = function(id) { return document.getElementById(id); };
     $('r_botId').value        = cfg.bot_id || '';
     $('r_botToken').value     = '';  // заполнится через _loadTokens()
-    $('r_functionId').value   = cfg.function_id || 697;
     $('r_prompt').value       = cfg.prompt || '';
     $('r_size').value         = cfg.size || '9:16';
     $('r_filesUrl').value     = cfg.files_url || '';
@@ -134,7 +133,6 @@
     var $ = function(id) { return document.getElementById(id); };
     $('r_botId').value        = '';
     $('r_botToken').value     = '';
-    $('r_functionId').value   = '697';
     $('r_prompt').value       = 'Визуализируй на одном листе все приложенные данные ничего не додумывая, а точно опираясь на указанные цифры.';
     $('r_size').value         = '9:16';
     $('r_filesUrl').value     = '';
@@ -472,7 +470,7 @@
     var $ = function(id) { return document.getElementById(id); };
     var body = {
       bot_id:            Number($('r_botId').value) || 0,
-      function_id:       Number($('r_functionId').value) || 697,
+      function_id:       697,
       prompt:            $('r_prompt').value.trim(),
       size:              $('r_size').value,
       files_url:         $('r_filesUrl').value.trim(),
