@@ -65,7 +65,15 @@
 
       _configId = cfg.id;
       _fillForm(cfg);
-      if (statusEl) statusEl.textContent = cfg.is_active ? ('активно · ' + _stateLabel(cfg.state)) : 'выключено';
+      if (statusEl) {
+        if (cfg.is_active) {
+          var stateColor = cfg.state === 'breached' ? 'var(--red,#FF6B6B)' : 'var(--green,#4CAF50)';
+          statusEl.innerHTML = '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:' + stateColor + ';margin-right:4px;vertical-align:middle;"></span>' +
+            '<span style="color:' + stateColor + ';">' + (cfg.state === 'breached' ? 'вне диапазона' : 'в норме') + '</span>';
+        } else {
+          statusEl.innerHTML = '<span style="color:var(--muted-2);">выключено</span>';
+        }
+      }
 
       var delBtn = document.getElementById('aBtnDelete');
       if (delBtn) delBtn.style.display = '';
@@ -253,23 +261,25 @@
         return;
       }
 
-      var html = '<table style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr>' +
-        '<th style="text-align:left;padding:4px 6px;">Дата</th>' +
-        '<th style="text-align:left;padding:4px 6px;">Значение</th>' +
-        '<th style="text-align:left;padding:4px 6px;">Направление</th>' +
-        '<th style="text-align:left;padding:4px 6px;">Статус</th>' +
-        '<th style="text-align:left;padding:4px 6px;">Тип</th>' +
+      var html = '<table style="width:100%;border-collapse:separate;border-spacing:0;font-size:11px;border-radius:6px;overflow:hidden;">' +
+        '<thead><tr>' +
+        '<th style="text-align:left;padding:6px 8px;background:var(--card-bg,#141921);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted-2);">Дата</th>' +
+        '<th style="text-align:left;padding:6px 8px;background:var(--card-bg,#141921);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted-2);">Значение</th>' +
+        '<th style="text-align:left;padding:6px 8px;background:var(--card-bg,#141921);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted-2);">Направление</th>' +
+        '<th style="text-align:left;padding:6px 8px;background:var(--card-bg,#141921);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted-2);">Статус</th>' +
+        '<th style="text-align:left;padding:6px 8px;background:var(--card-bg,#141921);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted-2);">Тип</th>' +
         '</tr></thead><tbody>';
-      data.history.forEach(function(h) {
+      data.history.forEach(function(h, idx) {
         var dt = h.ts ? new Date(h.ts).toLocaleString('ru-RU') : '—';
         var dirIcon = h.direction === 'above' ? '⬆️' : (h.direction === 'below' ? '⬇️' : (h.direction === 'recovered' ? '✅' : '—'));
         var statusIcon = h.status === 'sent' ? '📨' : (h.status === 'error' ? '❌' : '⏭');
-        html += '<tr style="border-bottom:1px solid var(--border,#1A2130);">' +
-          '<td style="padding:4px 6px;white-space:nowrap;">' + escapeHtml(dt) + '</td>' +
-          '<td style="padding:4px 6px;">' + (h.value !== null && h.value !== undefined ? h.value : '—') + '</td>' +
-          '<td style="padding:4px 6px;">' + dirIcon + ' ' + escapeHtml(h.direction || '—') + '</td>' +
-          '<td style="padding:4px 6px;" title="' + escapeHtml(h.error_message || '') + '">' + statusIcon + ' ' + escapeHtml(h.status) + '</td>' +
-          '<td style="padding:4px 6px;color:var(--muted-2);">' + escapeHtml(h.trigger_type || '—') + '</td>' +
+        var rowBg = idx % 2 === 0 ? '' : 'background:rgba(255,255,255,0.02);';
+        html += '<tr style="border-bottom:1px solid var(--border,#1A2130);' + rowBg + '">' +
+          '<td style="padding:6px 8px;white-space:nowrap;">' + escapeHtml(dt) + '</td>' +
+          '<td style="padding:6px 8px;font-weight:500;">' + (h.value !== null && h.value !== undefined ? h.value : '—') + '</td>' +
+          '<td style="padding:6px 8px;">' + dirIcon + ' ' + escapeHtml(h.direction || '—') + '</td>' +
+          '<td style="padding:6px 8px;" title="' + escapeHtml(h.error_message || '') + '">' + statusIcon + ' ' + escapeHtml(h.status) + '</td>' +
+          '<td style="padding:6px 8px;color:var(--muted-2);">' + escapeHtml(h.trigger_type || '—') + '</td>' +
           '</tr>';
       });
       html += '</tbody></table>';
