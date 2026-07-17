@@ -423,7 +423,8 @@ var FILTER_OPS = [
   { value:'gt', label:'>' },
   { value:'lt', label:'<' },
   { value:'in', label:'in' },
-  { value:'contains', label:'содержит' }
+  { value:'contains', label:'содержит' },
+  { value:'notcontains', label:'не содержит' }
 ];
 
 function renderFilterRows(filters){
@@ -1324,7 +1325,7 @@ function buildPanelSummary(p, src){
     p.filters.forEach(function(f){
       var fv = Array.isArray(f.value) ? f.value.join(',') : String(f.value);
       if(fv.length > 20) fv = fv.slice(0,18)+'…';
-      parts.push(f.field+({'eq':'=','neq':'≠','gt':'>','lt':'<','in':'∈','contains':'~'}[f.op]||f.op)+fv);
+      parts.push(f.field+({'eq':'=','neq':'≠','gt':'>','lt':'<','in':'∈','contains':'~','notcontains':'∄'}[f.op]||f.op)+fv);
     });
   }
 
