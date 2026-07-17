@@ -1480,7 +1480,7 @@ function exportXml(fullMode){
           try {
             var pl = JSON.parse(ev.payload);
             var pkeys = Object.keys(pl);
-            msg = pkeys.slice(0, 3).map(function(k){ return k + '=' + String(pl[k]); }).join(', ');
+            msg = pkeys.slice(0, 10).map(function(k){ return k + '=' + String(pl[k]); }).join(', ');
           } catch(_){
             msg = String(ev.payload || '');
           }
