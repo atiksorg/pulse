@@ -18,7 +18,7 @@
  */
 'use strict';
 
-const { queryMetricValue, queryDeltaValue, queryAnomalyValue } = require('./metric-query');
+const { queryMetricValue, queryDeltaValue, queryAnomalyValue, FormulaEvaluator, resolveFormulaMetrics } = require('./metric-query');
 const { broadcastTelegramMessage } = require('./telegram-client');
 
 /**
@@ -92,6 +92,18 @@ function formatMessage(cfg, value, direction, extra) {
     ].join('\n');
   }
 
+  // ── Formula mode ──
+  if (cfg.check_mode === 'formula' && ex.formulaMetrics) {
+    const icon = ex.severity ? (severityIcon[ex.severity] || '⚠️') : '⚠️';
+    const metricParts = Object.entries(ex.formulaMetrics).map(([k, v]) => `${k}=${v}`).join(' | ');
+    return [
+      `${icon} <b>${escapeHtml(label)}</b> — формула сработала`,
+      `Результат: <b>${value}</b>`,
+      metricParts ? `Метрики: ${metricParts}` : '',
+      `Формула: ${escapeHtml(ex.formula || '')}`,
+    ].filter(Boolean).join('\n');
+  }
+
   // ── Empty data ──
   if (ex.empty) {
     return [
@@ -151,6 +163,11 @@ async function checkAlertConfig(db, cfg, opts = {}) {
       const anomaly = queryAnomalyValue(db, cfg, cfg.src);
       value = anomaly.zScore;
       extra = { current: anomaly.current, mean: anomaly.mean, stdDev: anomaly.stdDev, zScore: anomaly.zScore };
+    } else if (checkMode === 'formula') {
+      // ── Formula mode ──
+      const formulaResult = resolveFormulaMetrics(db, cfg, cfg.src);
+      value = formulaResult.result;
+      extra = { formulaMetrics: formulaResult.metrics, formulaResult: formulaResult.result, formula: formulaResult.formula };
     } else {
       // ── Absolute mode (default) ──
       value = queryMetricValue(db, {
@@ -171,8 +188,8 @@ async function checkAlertConfig(db, cfg, opts = {}) {
     return { ok: false, error: e.message };
   }
 
-  // ── Обработка пустых данных (только для absolute/delta_pct) ──
-  const isEmpty = (checkMode !== 'anomaly') && (value === 0 || value === null || value === undefined);
+  // ── Обработка пустых данных (не для anomaly и formula) ──
+  const isEmpty = (checkMode !== 'anomaly') && (checkMode !== 'formula') && (value === 0 || value === null || value === undefined);
   if (isEmpty && onEmpty === 'ignore') {
     db.prepare('UPDATE alert_configs SET last_value = ?, last_checked_at = ? WHERE id = ?')
       .run(value, now, cfg.id);
