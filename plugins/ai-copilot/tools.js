@@ -75,7 +75,7 @@ const TOOL_SCHEMAS = [
     parameters: {
       type: 'object',
       properties: {
-        type:       { type: 'string', description: 'Тип события (purchase, signup, error и т.д.) или пустая строка — все типы' },
+        type:       { type: 'string', description: 'Тип события (purchase, signup, error и т.д.). Пустая строка "" = все типы. Никогда не используй "*"' },
         group:      { type: 'string', enum: ['day', 'hour', 'minute', 'week', 'month', ''], description: 'Группировка' },
         agg:        { type: 'string', description: 'Агрегация: count, sum:ПОЛЕ, avg:ПОЛЕ' },
         range:      { type: 'string', enum: ['24h', '7d', '30d', 'all'], description: 'Диапазон' },
