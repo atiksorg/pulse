@@ -14,10 +14,11 @@
 const crypto = require('crypto');
 const auth   = require('../../auth');
 const { checkAlertConfig } = require('./checker');
+const { FormulaEvaluator, resolveFormulaMetrics } = require('./metric-query');
 
 const VALID_AGG = ['count', 'sum', 'avg', 'max', 'min'];
 const VALID_RANGE = ['1h', '6h', '24h', '7d', '30d', 'all'];
-const VALID_CHECK_MODE = ['absolute', 'delta_pct', 'anomaly'];
+const VALID_CHECK_MODE = ['absolute', 'delta_pct', 'anomaly', 'formula'];
 const VALID_ON_EMPTY = ['treat_as_zero', 'alert', 'ignore'];
 const VALID_DELTA_RANGE = ['1h', '6h', '24h', '7d', '30d'];
 
@@ -107,6 +108,7 @@ function registerRoutes(server, db) {
               telegram_bot_token = ?, chat_ids = ?, check_interval_sec = ?, cooldown_sec = ?,
               notify_on_recovery = ?, group_field = ?, group_value = ?, check_mode = ?,
               delta_range = ?, anomaly_window = ?, on_empty = ?, thresholds_json = ?,
+              formula_text = ?, formula_conditions = ?,
               updated_at = ?
             WHERE panel_id = ?
           `).run(
@@ -116,6 +118,7 @@ function registerRoutes(server, db) {
             cfg.notify_on_recovery ? 1 : 0,
             cfg.group_field, cfg.group_value, cfg.check_mode,
             cfg.delta_range, cfg.anomaly_window, cfg.on_empty, cfg.thresholds_json,
+            cfg.formula_text || '', cfg.formula_conditions || '[]',
             now, panelId
           );
         } else {
@@ -131,8 +134,9 @@ function registerRoutes(server, db) {
               check_interval_sec, cooldown_sec, notify_on_recovery,
               group_field, group_value, check_mode, delta_range,
               anomaly_window, on_empty, thresholds_json,
+              formula_text, formula_conditions,
               state, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?)
             ON CONFLICT(panel_id) DO UPDATE SET
               is_active = excluded.is_active, label = excluded.label,
               panel_type = excluded.panel_type, panel_agg = excluded.panel_agg,
@@ -145,6 +149,7 @@ function registerRoutes(server, db) {
               check_mode = excluded.check_mode, delta_range = excluded.delta_range,
               anomaly_window = excluded.anomaly_window, on_empty = excluded.on_empty,
               thresholds_json = excluded.thresholds_json,
+              formula_text = excluded.formula_text, formula_conditions = excluded.formula_conditions,
               updated_at = excluded.updated_at
           `).run(
             id, dashboardId, panelId, session.src, cfg.is_active ? 1 : 0, cfg.label,
@@ -153,6 +158,7 @@ function registerRoutes(server, db) {
             cfg.check_interval_sec, cfg.cooldown_sec, cfg.notify_on_recovery ? 1 : 0,
             cfg.group_field, cfg.group_value, cfg.check_mode, cfg.delta_range,
             cfg.anomaly_window, cfg.on_empty, cfg.thresholds_json,
+            cfg.formula_text || '', cfg.formula_conditions || '[]',
             now, now
           );
         }
@@ -185,6 +191,43 @@ function registerRoutes(server, db) {
         return auth.json(res, 200, { result, config: sanitizeConfig(updated) });
       }
 
+      // ── POST /alerts/config/:configId/formula-eval — тестовый расчёт формулы ──
+      if (req.method === 'POST' && segments[1] === 'config' && segments[3] === 'formula-eval') {
+        const row = getOwnedConfig(db, segments[2], session.src);
+        if (row.error) return auth.json(res, row.code, { error: row.error });
+
+        let body;
+        try { body = await auth.readJsonBody(req); }
+        catch (_) { body = {}; }
+
+        const formulaText = (body && body.formula_text) || row.config.formula_text || '';
+        const formulaConditions = (body && body.formula_conditions) || row.config.formula_conditions || '[]';
+        if (!formulaText) return auth.json(res, 400, { error: 'no_formula' });
+
+        const fv = FormulaEvaluator.validate(formulaText);
+        if (!fv.valid) return auth.json(res, 400, { error: 'formula_syntax_error', detail: fv.error });
+
+        try {
+          const evalResult = resolveFormulaMetrics(
+            db,
+            {
+              ...row.config,
+              formula_text: formulaText,
+              formula_conditions: typeof formulaConditions === 'string' ? formulaConditions : JSON.stringify(formulaConditions),
+            },
+            session.src
+          );
+          return auth.json(res, 200, {
+            result: evalResult.result,
+            metrics: evalResult.metrics,
+            formula: evalResult.formula,
+            breach: evalResult.result > 0,
+          });
+        } catch (e) {
+          return auth.json(res, 400, { error: 'formula_eval_error', detail: e.message });
+        }
+      }
+
       return auth.json(res, 404, { error: 'not_found' });
     } catch (e) {
       console.error('[threshold-alerts-crud] error:', e.message);
@@ -198,6 +241,19 @@ function getOwnedConfig(db, configId, src) {
   if (!config) return { error: 'not_found', code: 404 };
   if (config.src !== src) return { error: 'forbidden', code: 403 };
   return { config };
+}
+
+/** Санитизация метрики-алиаса для хранения в formula_conditions */
+function _cleanMetricAlias(m) {
+  if (!m || typeof m !== 'object') return null;
+  const VALID_AGG_M = ['count', 'sum', 'avg', 'max', 'min'];
+  return {
+    type: 'metric',
+    name: String(m.name || '').trim().slice(0, 32),
+    agg: VALID_AGG_M.includes(m.agg) ? m.agg : 'count',
+    aggfield: String(m.aggfield || '').trim().slice(0, 64),
+    range: VALID_RANGE.includes(m.range) ? m.range : undefined,
+  };
 }
 
 /**
@@ -243,6 +299,52 @@ function validateConfig(body, isUpdate, existingRow) {
   const anomalyWindow = Math.max(2, Math.min(30, Number(body.anomaly_window) || 7));
   const groupField = String(body.group_field || '').trim().slice(0, 64);
   const groupValue = String(body.group_value || '').trim().slice(0, 256);
+
+  // ── Formula mode: ранний возврат (formula_text + formula_conditions) ──
+  if (checkMode === 'formula') {
+    const formulaText = String(body.formula_text || '').trim();
+    if (!formulaText) return { ok: false, error: 'formula_text_required' };
+    const fv = FormulaEvaluator.validate(formulaText);
+    if (!fv.valid) return { ok: false, error: 'formula_syntax_error', detail: fv.error };
+    const formulaVars = FormulaEvaluator.extractVariables(formulaText);
+    if (formulaVars.length === 0) return { ok: false, error: 'formula_no_variables' };
+    if (formulaVars.length > 20) return { ok: false, error: 'formula_too_many_variables' };
+
+    let formulaConditions = '[]';
+    if (Array.isArray(body.formula_conditions)) {
+      const cleaned = body.formula_conditions.slice(0, 20).map(c => ({
+        left_metric: _cleanMetricAlias(c.left_metric),
+        operator: ['>', '<', '>=', '<=', '==', '!='].includes(c.operator) ? c.operator : '>',
+        right_metric: _cleanMetricAlias(c.right_metric),
+        logic: ['AND', 'OR'].includes(c.logic) ? c.logic : 'AND',
+      }));
+      formulaConditions = JSON.stringify(cleaned);
+    } else if (typeof body.formula_conditions === 'string') {
+      try {
+        const parsed = JSON.parse(body.formula_conditions);
+        if (Array.isArray(parsed)) formulaConditions = body.formula_conditions;
+      } catch (_) {}
+    }
+
+    return {
+      ok: true,
+      config: {
+        is_active: !!body.is_active,
+        label: String(body.label || '').slice(0, 200),
+        panel_type: String(body.panel_type || ''),
+        panel_agg: agg, panel_aggfield: String(body.panel_aggfield || ''),
+        panel_range: range, panel_filters: JSON.stringify(filters),
+        min_value: 0, max_value: null,
+        telegram_bot_token: typeof body.telegram_bot_token === 'string' ? body.telegram_bot_token.trim() : '',
+        chat_ids: chatIds, check_interval_sec: checkInterval, cooldown_sec: cooldown,
+        notify_on_recovery: body.notify_on_recovery !== false,
+        group_field: groupField, group_value: groupValue,
+        check_mode: 'formula', delta_range: deltaRange, anomaly_window: anomalyWindow,
+        on_empty: onEmpty, thresholds_json: '[]',
+        formula_text: formulaText, formula_conditions: formulaConditions,
+      },
+    };
+  }
 
   // thresholds_json: валидируем структуру
   let thresholdsJson = '[]';
