@@ -73,13 +73,6 @@
     // New session button
     document.getElementById('cpBtnNewSession').addEventListener('click', createNewSession);
 
-    // Clear history button
-    document.getElementById('cpBtnClear').addEventListener('click', function(){
-      if (!currentSessionId) return;
-      if (!confirm('Очистить историю чата?')) return;
-      clearHistory();
-    });
-
     // Brain button — показать контекст (XML текущего дашборда)
     var brainBtn = document.getElementById('cpBtnBrain');
     if (brainBtn) {
@@ -169,6 +162,37 @@
   function clearHistory() {
     apiRequest('POST', '/session/' + currentSessionId + '/clear').then(function() {
       renderMessages([]);
+    });
+  }
+
+  function deleteSession(sessionId) {
+    apiRequest('DELETE', '/session/' + sessionId).then(function() {
+      sessions = sessions.filter(function(s) { return s.id !== sessionId; });
+      if (currentSessionId === sessionId) {
+        currentSessionId = null;
+        if (sessions.length > 0) {
+          selectSession(sessions[0].id);
+        } else {
+          createNewSession();
+        }
+      }
+      renderSessions();
+    }).catch(function(e) {
+      console.error('[copilot] delete session error:', e);
+    });
+  }
+
+  function renameSession(sessionId, newTitle) {
+    apiRequest('POST', '/session/' + sessionId + '/rename', { title: newTitle }).then(function(data) {
+      for (var i = 0; i < sessions.length; i++) {
+        if (sessions[i].id === sessionId) {
+          sessions[i].title = data.title || newTitle;
+          break;
+        }
+      }
+      renderSessions();
+    }).catch(function(e) {
+      console.error('[copilot] rename session error:', e);
     });
   }
 
@@ -263,23 +287,123 @@
     if (!elSessions) return;
     elSessions.innerHTML = '';
 
-    // New session button
-    var newBtn = document.createElement('div');
-    newBtn.className = 'cp-session-new';
-    newBtn.textContent = '＋ Новый чат';
-    newBtn.addEventListener('click', createNewSession);
-    elSessions.appendChild(newBtn);
-
-    for (var i = 0; i < Math.min(sessions.length, 10); i++) {
+    for (var i = 0; i < Math.min(sessions.length, 20); i++) {
       var s = sessions[i];
       var item = document.createElement('div');
       item.className = 'cp-session-item' + (s.id === currentSessionId ? ' active' : '');
-      item.innerHTML = '<span class="cp-session-title">' + escapeHtml(s.title || 'Чат') + '</span>';
+
+      var titleSpan = document.createElement('span');
+      titleSpan.className = 'cp-session-title';
+      titleSpan.textContent = s.title || 'Чат';
+      item.appendChild(titleSpan);
+
+      // Action buttons (visible on hover)
+      var actions = document.createElement('div');
+      actions.className = 'cp-session-actions';
+
+      var renameBtn = document.createElement('button');
+      renameBtn.className = 'cp-session-act-btn';
+      renameBtn.textContent = '✎';
+      renameBtn.title = 'Переименовать';
+      (function(sid, currentTitle){
+        renameBtn.addEventListener('click', function(e){
+          e.stopPropagation();
+          _startInlineRename(sid, currentTitle);
+        });
+      })(s.id, s.title || 'Чат');
+
+      var deleteBtn = document.createElement('button');
+      deleteBtn.className = 'cp-session-act-btn cp-act-delete';
+      deleteBtn.textContent = '✕';
+      deleteBtn.title = 'Удалить';
       (function(sid){
-        item.addEventListener('click', function(){ selectSession(sid); });
+        deleteBtn.addEventListener('click', function(e){
+          e.stopPropagation();
+          if (confirm('Удалить чат?')) deleteSession(sid);
+        });
+      })(s.id);
+
+      actions.appendChild(renameBtn);
+      actions.appendChild(deleteBtn);
+      item.appendChild(actions);
+
+      (function(sid){
+        item.addEventListener('click', function(e){
+          // Don't select if clicking on action buttons
+          if (e.target.closest('.cp-session-actions')) return;
+          selectSession(sid);
+        });
       })(s.id);
       elSessions.appendChild(item);
     }
+  }
+
+  function _startInlineRename(sessionId, currentTitle) {
+    var item = elSessions.querySelector('.cp-session-item.active');
+    if (!item) {
+      // Find by iterating
+      var items = elSessions.querySelectorAll('.cp-session-item');
+      for (var i = 0; i < items.length; i++) {
+        // We'll just use the title span approach
+      }
+    }
+    // Find the title span of the session being renamed
+    var allItems = elSessions.querySelectorAll('.cp-session-item');
+    var targetItem = null;
+    // We need to identify which item corresponds to sessionId
+    // Since we don't have data attributes, find by matching the session
+    var sessionIndex = -1;
+    for (var i = 0; i < sessions.length; i++) {
+      if (sessions[i].id === sessionId) { sessionIndex = i; break; }
+    }
+    if (sessionIndex === -1) return;
+
+    // Re-render to get fresh DOM, then find the right item
+    renderSessions();
+    var freshItems = elSessions.querySelectorAll('.cp-session-item');
+    if (sessionIndex >= freshItems.length) return;
+    targetItem = freshItems[sessionIndex];
+    if (!targetItem) return;
+
+    var titleSpan = targetItem.querySelector('.cp-session-title');
+    if (!titleSpan) return;
+
+    // Replace title with input
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'cp-session-rename-input';
+    input.value = currentTitle;
+    titleSpan.style.display = 'none';
+    targetItem.insertBefore(input, titleSpan);
+
+    // Hide action buttons during rename
+    var actDiv = targetItem.querySelector('.cp-session-actions');
+    if (actDiv) actDiv.style.display = 'none';
+
+    input.focus();
+    input.select();
+
+    function finishRename() {
+      var newTitle = input.value.trim();
+      if (newTitle && newTitle !== currentTitle) {
+        renameSession(sessionId, newTitle);
+      } else {
+        renderSessions();
+      }
+    }
+
+    input.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        finishRename();
+      }
+      if (e.key === 'Escape') {
+        renderSessions();
+      }
+    });
+    input.addEventListener('blur', function() {
+      finishRename();
+    });
   }
 
   function renderMessages(messages) {
@@ -469,7 +593,7 @@
       lines.push('  <panel id="' + esc(p.id) + '">');
       lines.push('    <title>' + esc(p.title || '') + '</title>');
       lines.push('    <viz>' + esc(p.viz || 'kpi') + '</viz>');
-      lines.push('    <type>' + esc(p.type || '*') + '</type>');
+      lines.push('    <type>' + esc(p.type || '') + '</type>');
       lines.push('    <group>' + esc(p.group || '') + '</group>');
       if (p.field) lines.push('    <field>' + esc(p.field) + '</field>');
       lines.push('    <agg>' + esc(p.agg || 'count') + '</agg>');
