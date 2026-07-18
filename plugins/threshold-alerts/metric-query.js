@@ -299,4 +299,321 @@ function safeParseFilters(json) {
   try { return typeof json === 'string' ? JSON.parse(json) : json; } catch (_) { return []; }
 }
 
-module.exports = { queryMetricValue, queryGroupValues, queryDeltaValue, queryAnomalyValue, resolveRange, rangeMs };
+// ═══════════════════════════════════════════════════
+// Formula Mode: Safe Expression Evaluator
+// ═══════════════════════════════════════════════════
+
+/**
+ * FormulaEvaluator — безопасный парсер и вычислитель математических формул.
+ * Поддерживает: числа, переменные {name}, операторы + - * / % ^,
+ * сравнения > < >= <= == !=, скобки, функции min/max/abs/ceil/floor/round.
+ */
+class FormulaEvaluator {
+  constructor(formula) {
+    this.formula = formula;
+    this.pos = 0;
+    this.tokens = this.tokenize(formula);
+    this.tokPos = 0;
+  }
+
+  tokenize(s) {
+    const tokens = [];
+    let i = 0;
+    while (i < s.length) {
+      if (/\s/.test(s[i])) { i++; continue; }
+      if (s[i] === '{') {
+        const end = s.indexOf('}', i);
+        if (end === -1) throw new Error('Незакрытая { на позиции ' + i);
+        tokens.push({ type: 'var', value: s.slice(i + 1, end) });
+        i = end + 1;
+        continue;
+      }
+      if (/[0-9.]/.test(s[i])) {
+        let num = '';
+        while (i < s.length && /[0-9.]/.test(s[i])) { num += s[i]; i++; }
+        tokens.push({ type: 'num', value: parseFloat(num) });
+        continue;
+      }
+      if (/[a-zA-Z_]/.test(s[i])) {
+        let name = '';
+        while (i < s.length && /[a-zA-Z_0-9]/.test(s[i])) { name += s[i]; i++; }
+        tokens.push({ type: 'ident', value: name });
+        continue;
+      }
+      const two = s.slice(i, i + 2);
+      if (['>=', '<=', '==', '!='].includes(two)) {
+        tokens.push({ type: 'op', value: two }); i += 2; continue;
+      }
+      if ('+-*/%^()>'.includes(s[i])) {
+        if (s[i] === '<' || s[i] === '>') {
+          tokens.push({ type: 'op', value: s[i] });
+        } else {
+          tokens.push({ type: 'punc', value: s[i] });
+        }
+        i++; continue;
+      }
+      throw new Error('Неизвестный символ: ' + s[i] + ' на позиции ' + i);
+    }
+    return tokens;
+  }
+
+  peek() { return this.tokPos < this.tokens.length ? this.tokens[this.tokPos] : null; }
+  next() { return this.tokens[this.tokPos++]; }
+
+  parse() { const e = this.parseLogic(); return e; }
+
+  parseLogic() {
+    let left = this.parseComparison();
+    while (true) {
+      const t = this.peek();
+      if (t && t.type === 'ident' && (t.value === 'AND' || t.value === 'OR')) {
+        this.next();
+        const right = this.parseComparison();
+        left = { type: 'binop', op: t.value, left, right };
+      } else break;
+    }
+    return left;
+  }
+
+  parseComparison() {
+    let left = this.parseExpression();
+    const t = this.peek();
+    if (t && t.type === 'op' && ['>', '<', '>=', '<=', '==', '!='].includes(t.value)) {
+      this.next();
+      const right = this.parseExpression();
+      return { type: 'binop', op: t.value, left, right };
+    }
+    return left;
+  }
+
+  parseExpression() {
+    let left = this.parseTerm();
+    while (true) {
+      const t = this.peek();
+      if (t && t.type === 'punc' && (t.value === '+' || t.value === '-')) {
+        this.next();
+        const right = this.parseTerm();
+        left = { type: 'binop', op: t.value, left, right };
+      } else break;
+    }
+    return left;
+  }
+
+  parseTerm() {
+    let left = this.parseUnary();
+    while (true) {
+      const t = this.peek();
+      if (t && t.type === 'punc' && (t.value === '*' || t.value === '/' || t.value === '%')) {
+        this.next();
+        const right = this.parseUnary();
+        left = { type: 'binop', op: t.value, left, right };
+      } else break;
+    }
+    return left;
+  }
+
+  parseUnary() {
+    const t = this.peek();
+    if (t && t.type === 'punc' && t.value === '-') {
+      this.next();
+      const expr = this.parsePower();
+      return { type: 'unary', op: '-', expr };
+    }
+    return this.parsePower();
+  }
+
+  parsePower() {
+    let base = this.parseFactor();
+    const t = this.peek();
+    if (t && t.type === 'punc' && t.value === '^') {
+      this.next();
+      const exp = this.parseUnary();
+      return { type: 'binop', op: '^', left: base, right: exp };
+    }
+    return base;
+  }
+
+  parseFactor() {
+    const t = this.peek();
+    if (!t) throw new Error('Неожиданный конец формулы');
+    if (t.type === 'num') { this.next(); return { type: 'num', value: t.value }; }
+    if (t.type === 'var') { this.next(); return { type: 'var', name: t.value }; }
+    if (t.type === 'punc' && t.value === '(') {
+      this.next();
+      const expr = this.parseComparison();
+      if (!this.peek() || this.peek().value !== ')') throw new Error('Ожидается )');
+      this.next();
+      return expr;
+    }
+    if (t.type === 'ident') {
+      this.next();
+      const funcs = ['min', 'max', 'abs', 'ceil', 'floor', 'round', 'sqrt', 'log'];
+      if (funcs.includes(t.value)) {
+        if (!this.peek() || this.peek().value !== '(') throw new Error('Ожидается ( после ' + t.value);
+        this.next();
+        const args = [];
+        if (this.peek() && this.peek().value !== ')') {
+          args.push(this.parseComparison());
+          while (this.peek() && this.peek().type === 'punc' && this.peek().value === ',') {
+            this.next();
+            args.push(this.parseComparison());
+          }
+        }
+        if (!this.peek() || this.peek().value !== ')') throw new Error('Ожидается )');
+        this.next();
+        return { type: 'call', name: t.value, args };
+      }
+      return { type: 'var', name: t.value };
+    }
+    throw new Error('Неожиданный токен: ' + JSON.stringify(t));
+  }
+
+  eval(node, vars) {
+    if (node.type === 'num') return node.value;
+    if (node.type === 'var') {
+      if (vars && vars[node.name] !== undefined) return vars[node.name];
+      throw new Error('Переменная {' + node.name + '} не найдена');
+    }
+    if (node.type === 'unary') return -this.eval(node.expr, vars);
+    if (node.type === 'binop') {
+      const l = this.eval(node.left, vars);
+      const r = this.eval(node.right, vars);
+      if (node.op === '+') return l + r;
+      if (node.op === '-') return l - r;
+      if (node.op === '*') return l * r;
+      if (node.op === '/') return r === 0 ? (l >= 0 ? Infinity : -Infinity) : l / r;
+      if (node.op === '%') return r === 0 ? 0 : l % r;
+      if (node.op === '^') return Math.pow(l, r);
+      if (node.op === '>') return l > r ? 1 : 0;
+      if (node.op === '<') return l < r ? 1 : 0;
+      if (node.op === '>=') return l >= r ? 1 : 0;
+      if (node.op === '<=') return l <= r ? 1 : 0;
+      if (node.op === '==') return l === r ? 1 : 0;
+      if (node.op === '!=') return l !== r ? 1 : 0;
+      if (node.op === 'AND') return (l > 0 && r > 0) ? 1 : 0;
+      if (node.op === 'OR') return (l > 0 || r > 0) ? 1 : 0;
+    }
+    if (node.type === 'call') {
+      const args = node.args.map(a => this.eval(a, vars));
+      if (node.name === 'min') return Math.min(...args);
+      if (node.name === 'max') return Math.max(...args);
+      if (node.name === 'abs') return Math.abs(args[0]);
+      if (node.name === 'ceil') return Math.ceil(args[0]);
+      if (node.name === 'floor') return Math.floor(args[0]);
+      if (node.name === 'round') return Math.round(args[0] * 100) / 100;
+      if (node.name === 'sqrt') return Math.sqrt(args[0]);
+      if (node.name === 'log') return Math.log(args[0]);
+      throw new Error('Неизвестная функция: ' + node.name);
+    }
+    throw new Error('Неизвестный узел: ' + JSON.stringify(node));
+  }
+
+  evaluate(vars) {
+    this.tokPos = 0;
+    const ast = this.parse();
+    if (this.tokPos < this.tokens.length) {
+      throw new Error('Лишние токены после позиции ' + this.tokPos);
+    }
+    return this.eval(ast, vars);
+  }
+
+  /**
+   * Валидация формулы: проверить синтаксис без вычисления.
+   * Возвращает { valid, error }
+   */
+  static validate(formula) {
+    try {
+      const ev = new FormulaEvaluator(formula);
+      ev.tokPos = 0;
+      const ast = ev.parse();
+      if (ev.tokPos < ev.tokens.length) {
+        return { valid: false, error: 'Лишние символы в позиции ' + ev.tokPos };
+      }
+      return { valid: true, error: null };
+    } catch (e) {
+      return { valid: false, error: e.message };
+    }
+  }
+
+  /** Извлечь имена переменных {var} из формулы */
+  static extractVariables(formula) {
+    const vars = new Set();
+    const re = /\{([^}]+)\}/g;
+    let m;
+    while ((m = re.exec(formula)) !== null) {
+      vars.add(m[1]);
+    }
+    return Array.from(vars);
+  }
+}
+
+/**
+ * Получить текущие значения всех метрик-алиасов из formula_conditions,
+ * подставить в формулу и вычислить результат.
+ *
+ * @param {object} db
+ * @param {object} cfg — alert_config row
+ * @param {string} src
+ * @returns {{ result: number, metrics: Object, formula: string }}
+ */
+function resolveFormulaMetrics(db, cfg, src) {
+  const formulaText = cfg.formula_text || '';
+  if (!formulaText) throw new Error('formula_text пуст');
+
+  let conditions = [];
+  try {
+    conditions = typeof cfg.formula_conditions === 'string'
+      ? JSON.parse(cfg.formula_conditions) : cfg.formula_conditions;
+  } catch (_) { conditions = []; }
+  if (!Array.isArray(conditions)) conditions = [];
+
+  // Собираем уникальные метрики из conditions
+  const metricMap = {};
+  const range = cfg.panel_range || '24h';
+
+  for (const cond of conditions) {
+    for (const sideKey of ['left_metric', 'right_metric']) {
+      const m = cond[sideKey];
+      if (!m || m.type !== 'metric' || !m.name) continue;
+      if (metricMap[m.name]) continue;
+      metricMap[m.name] = {
+        type: cfg.panel_type || '',
+        agg: m.agg || 'count',
+        aggfield: m.aggfield || '',
+        range: m.range || range,
+        filters: safeParseFilters(cfg.panel_filters),
+        groupField: cfg.group_field,
+        groupValue: cfg.group_value,
+      };
+    }
+  }
+
+  // Если метрик нет — возвращаем 0
+  if (Object.keys(metricMap).length === 0) {
+    return { result: 0, metrics: {}, formula: formulaText };
+  }
+
+  const metrics = {};
+  for (const [name, panel] of Object.entries(metricMap)) {
+    try {
+      metrics[name] = queryMetricValue(db, panel, src);
+    } catch (_) {
+      metrics[name] = 0;
+    }
+  }
+
+  const ev = new FormulaEvaluator(formulaText);
+  const result = ev.evaluate(metrics);
+
+  return {
+    result: Math.round((isNaN(result) ? 0 : result) * 100) / 100,
+    metrics,
+    formula: formulaText,
+  };
+}
+
+module.exports = {
+  queryMetricValue, queryGroupValues, queryDeltaValue, queryAnomalyValue,
+  resolveRange, rangeMs,
+  FormulaEvaluator, resolveFormulaMetrics
+};
