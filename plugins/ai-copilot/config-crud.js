@@ -125,6 +125,8 @@ function registerRoutes(server, db) {
 
         const sessionId = (body && body.session_id) || '';
         const userMessage = (body && typeof body.message === 'string') ? body.message.trim() : '';
+        // dashboardXml — XML-контекст текущего дашборда (опционально)
+        const dashboardXml = (body && typeof body.dashboardXml === 'string') ? body.dashboardXml : null;
         if (!sessionId || !SAFE_ID_RE.test(sessionId)) return auth.json(res, 400, { error: 'session_id_required' });
         if (!userMessage) return auth.json(res, 400, { error: 'empty_message' });
         if (userMessage.length > 4000) return auth.json(res, 400, { error: 'message_too_long' });
@@ -155,10 +157,10 @@ function registerRoutes(server, db) {
 
         const history = historyRows.map(r => ({ role: r.role, content: r.content }));
 
-        // Запускаем agentic loop
+        // Запускаем agentic loop (с контекстом текущего дашборда)
         let result;
         try {
-          result = await processMessage(userMessage, { src: session.src, token }, history, { db });
+          result = await processMessage(userMessage, { src: session.src, token }, history, { db }, dashboardXml);
         } catch (e) {
           result = { reply: `⚠️ Ошибка: ${e.message}`, toolCalls: [], error: true };
         }
