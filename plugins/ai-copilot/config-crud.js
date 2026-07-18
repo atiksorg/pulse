@@ -14,7 +14,7 @@
 
 const crypto = require('crypto');
 const auth = require('../../auth');
-const { processMessage, executeConfirmedTool } = require('./chat-engine');
+const { processMessage, executeConfirmedTool, buildSystemPrompt } = require('./chat-engine');
 const { llmRateLimit } = require('../shared/llm-client');
 
 const MAX_MESSAGES_PER_SESSION = 500;
@@ -348,6 +348,40 @@ function registerRoutes(server, db) {
           .run(new Date().toISOString(), resourceId);
 
         return auth.json(res, 200, { ok: true, deleted: result.changes });
+      }
+
+      // ── GET /ai-copilot/context — полный контекст агента (system prompt + tools) ──
+      if (req.method === 'GET' && resource === 'context' && !resourceId) {
+        const { TOOL_SCHEMAS } = require('./tools');
+
+        // Собираем system prompt с мок-XML для демонстрации
+        const sampleXml = '<!-- XML передаётся клиентом с каждым запросом -->';
+        const systemPrompt = buildSystemPrompt(sampleXml);
+
+        // Описание инструментов отдельно
+        const tools = TOOL_SCHEMAS.map(t => ({
+          name: t.name,
+          description: t.description,
+          needsConfirm: t.needsConfirm,
+          parameters: t.parameters,
+        }));
+
+        return auth.json(res, 200, {
+          systemPrompt,
+          tools,
+          api: {
+            endpoints: [
+              { method: 'GET', path: '/e', desc: 'Запись события (query params)' },
+              { method: 'POST', path: '/e', desc: 'Запись события (JSON body)' },
+              { method: 'POST', path: '/e/batch', desc: 'Пакетная запись до 1000' },
+              { method: 'GET', path: '/s', desc: 'Агрегированная статистика' },
+            ],
+            vizTypes: ['line', 'bar', 'pie', 'kpi', 'table', 'logs', 'gauge', 'heatmap'],
+            groupTypes: ['day', 'hour', 'minute', 'week', 'month', 'field:ИМЯ'],
+            aggTypes: ['count', 'sum:ПОЛЕ', 'avg:ПОЛЕ'],
+            rangeTypes: ['24h', '7d', '30d', 'all'],
+          },
+        });
       }
 
       // Не совпавшие маршруты
