@@ -531,7 +531,7 @@
 
     // 0. Сначала извлекаем {btn:...} кнопки и заменяем на плейсхолдеры
     var buttons = [];
-    html = html.replace(/\{btn:([^|]*)\|([^|]*)\|([^}]*)\}/g, function(_, label, action, params) {
+    html = html.replace(/\{btn:([^|]*)\|([^|]*)\|(\{(?:[^{}]|\{[^{}]*\})*\}|[^}]*)\}/g, function(_, label, action, params) {
       var idx = buttons.length;
       buttons.push({ label: label.trim(), action: action.trim(), params: params.trim() });
       return '%%BTN_' + idx + '%%';
@@ -651,9 +651,25 @@
 
     // Все остальные actions — отправляем как сообщение в чат,
     // используя формат который парсится как tool_call
+    var parsedArgs;
+    try {
+      parsedArgs = JSON.parse(paramsStr || '{}');
+    } catch (parseErr) {
+      console.warn('[copilot] Invalid button params JSON:', paramsStr, parseErr);
+      // Пробуем восстановить: дописать недостающие закрывающие скобки
+      try {
+        var fixed = paramsStr.replace(/\}+$/, '');
+        var openCount = (fixed.match(/\{/g) || []).length;
+        var closeCount = (fixed.match(/\}/g) || []).length;
+        while (closeCount < openCount) { fixed += '}'; closeCount++; }
+        parsedArgs = JSON.parse(fixed);
+      } catch (_) {
+        parsedArgs = {};
+      }
+    }
     var toolMsg = JSON.stringify({
       tool_call: action,
-      args: JSON.parse(paramsStr || '{}')
+      args: parsedArgs
     });
 
     // Показываем как системное сообщение
