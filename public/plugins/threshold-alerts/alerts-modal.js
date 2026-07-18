@@ -869,6 +869,189 @@
     toast('Шаблон применён — настройте имена метрик');
   }
 
+  /* ═══════════════════════════════════════════════════
+     AI Formula Assistant
+     ═══════════════════════════════════════════════════ */
+
+  var _aiFormulaResult = null; // последний результат AI
+
+  function _toggleAiArea() {
+    var area = document.getElementById('aAiFormulaArea');
+    if (!area) return;
+    var isOpen = area.style.display !== 'none';
+    area.style.display = isOpen ? 'none' : '';
+    // Скрыть превью при повторном открытии
+    if (!isOpen) {
+      var preview = document.getElementById('aAiFormulaPreview');
+      if (preview) preview.style.display = 'none';
+      var status = document.getElementById('aAiFormulaStatus');
+      if (status) { status.innerHTML = ''; status.style.display = 'none'; }
+      _aiFormulaResult = null;
+      // Фокус на инпут
+      var prompt = document.getElementById('aAiFormulaPrompt');
+      if (prompt) { prompt.value = ''; setTimeout(function() { prompt.focus(); }, 80); }
+    }
+  }
+
+  async function _askAiForFormula() {
+    var promptEl = document.getElementById('aAiFormulaPrompt');
+    var statusEl = document.getElementById('aAiFormulaStatus');
+    var previewEl = document.getElementById('aAiFormulaPreview');
+    var askBtn = document.getElementById('aAiFormulaAsk');
+
+    var promptText = promptEl ? promptEl.value.trim() : '';
+    if (!promptText) {
+      if (statusEl) { statusEl.innerHTML = '<span style="color:var(--coral,#F2664F);">Введите запрос — что хотите контролировать?</span>'; statusEl.style.display = ''; }
+      return;
+    }
+
+    var sess = getSession();
+    if (!sess) { toast('Войдите в кабинет — AI работает только для авторизованных'); return; }
+
+    // Скрываем предыдущий результат
+    if (previewEl) previewEl.style.display = 'none';
+    _aiFormulaResult = null;
+
+    // Показываем спиннер
+    if (askBtn) { askBtn.disabled = true; askBtn.textContent = '⏳'; }
+    if (statusEl) { statusEl.innerHTML = '<span style="color:var(--muted-2);">🧠 AI думает…</span>'; statusEl.style.display = ''; }
+
+    // Собираем контекст панели
+    var panelContext = {
+      title: _panel ? (_panel.title || '') : '',
+      type: _panel ? (_panel.type || '') : '',
+      agg: document.getElementById('a_agg') ? document.getElementById('a_agg').value : 'count',
+      aggfield: document.getElementById('a_aggfield') ? document.getElementById('a_aggfield').value.trim() : '',
+      range: document.getElementById('a_range') ? document.getElementById('a_range').value : '24h',
+      field: _panel ? (_panel.field || '') : '',
+      filters: _panel ? (Array.isArray(_panel.filters) ? _panel.filters : []) : [],
+    };
+
+    try {
+      var r = await fetch(API + '/ai/suggest-alert-formula', {
+        method: 'POST',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+        body: JSON.stringify({ prompt: promptText, panelContext: panelContext })
+      });
+
+      if (r.status === 401) { clearSession(); toast('Сессия истекла'); return; }
+      if (r.status === 429) {
+        var d = await r.json().catch(function() { return {}; });
+        var sec = d.remainSec || 60;
+        if (statusEl) statusEl.innerHTML = '<span style="color:var(--coral);">Слишком часто — подождите ' + sec + ' сек.</span>';
+        return;
+      }
+      if (!r.ok) {
+        var e = await r.json().catch(function() { return {}; });
+        if (statusEl) statusEl.innerHTML = '<span style="color:var(--coral);">✗ Ошибка: ' + escapeHtml(e.error || e.message || String(r.status)) + '</span>';
+        return;
+      }
+
+      var data = await r.json();
+      _aiFormulaResult = data;
+
+      // Показываем результат
+      if (statusEl) { statusEl.innerHTML = ''; statusEl.style.display = 'none'; }
+      if (previewEl) {
+        var esc = escapeHtml;
+        var html = '';
+
+        // Объяснение
+        html += '<div style="font-size:13px;color:var(--text);margin-bottom:10px;line-height:1.6;">' + esc(data.explanation || 'AI предложил формулу') + '</div>';
+
+        // Формула
+        html += '<div style="margin-bottom:8px;">';
+        html += '<span style="font-size:10px;color:var(--muted-2);text-transform:uppercase;letter-spacing:0.5px;">Формула:</span><br>';
+        html += '<code style="display:block;margin-top:4px;padding:8px 10px;background:var(--input-bg,#0D1117);border:1px solid var(--border,#1A2130);border-radius:6px;font-size:13px;color:var(--teal,#4DECC7);word-break:break-all;">' + esc(data.formula_text || '') + '</code>';
+        html += '</div>';
+
+        // Метрики
+        if (data.metrics && data.metrics.length) {
+          html += '<div style="margin-bottom:10px;">';
+          html += '<span style="font-size:10px;color:var(--muted-2);text-transform:uppercase;letter-spacing:0.5px;">Метрики:</span>';
+          data.metrics.forEach(function(m) {
+            var aggLabel = m.agg + (m.aggfield ? ':' + m.aggfield : '');
+            html += '<div style="margin-top:4px;font-size:11px;font-family:var(--mono);">';
+            html += '<span style="color:var(--teal,#4DECC7);">{' + esc(m.name) + '}</span>';
+            html += ' <span style="color:var(--muted-2);">=</span> ';
+            html += '<span style="color:var(--amber,#FFB74D);">' + esc(aggLabel) + '</span>';
+            html += ' <span style="color:var(--muted-2);">за</span> ';
+            html += '<span style="color:#5B8DEF;">' + esc(m.range) + '</span>';
+            html += '</div>';
+          });
+          html += '</div>';
+        }
+
+        previewEl.innerHTML = html;
+        previewEl.style.display = '';
+      }
+
+    } catch (err) {
+      if (statusEl) statusEl.innerHTML = '<span style="color:var(--coral);">✗ Ошибка сети: ' + escapeHtml(err.message) + '</span>';
+    } finally {
+      if (askBtn) { askBtn.disabled = false; askBtn.textContent = 'Спросить'; }
+    }
+  }
+
+  function _applyAiFormula() {
+    if (!_aiFormulaResult) return;
+    var data = _aiFormulaResult;
+
+    // 1. Переключаем режим на formula
+    var checkModeEl = document.getElementById('a_checkMode');
+    if (checkModeEl) {
+      checkModeEl.value = 'formula';
+      _onCheckModeChange();
+    }
+
+    // 2. Устанавливаем label
+    if (data.label) {
+      var labelEl = document.getElementById('a_label');
+      if (labelEl) labelEl.value = data.label;
+    }
+
+    // 3. Устанавливаем метрики
+    _formulaAliases = [];
+    if (data.metrics && data.metrics.length) {
+      data.metrics.forEach(function(m) {
+        _formulaAliases.push({
+          name: m.name,
+          label: '',
+          agg: m.agg || 'count',
+          aggfield: m.aggfield || '',
+          range: m.range || '24h',
+        });
+      });
+    }
+    _renderMetricRows();
+
+    // 4. Устанавливаем текст формулы
+    var ft = document.getElementById('a_formulaText');
+    if (ft) ft.value = data.formula_text || '';
+
+    // 5. Обновляем расписание если AI предложил
+    if (data.check_interval_sec) {
+      var ciEl = document.getElementById('a_checkInterval');
+      if (ciEl) ciEl.value = data.check_interval_sec;
+    }
+    if (data.cooldown_sec) {
+      var cdEl = document.getElementById('a_cooldown');
+      if (cdEl) cdEl.value = Math.round(data.cooldown_sec / 60);
+    }
+
+    // 6. Обновляем UI
+    _syncFormulaFromText();
+    _validateFormulaText();
+    _updatePreview();
+
+    // 7. Скрываем AI area
+    var area = document.getElementById('aAiFormulaArea');
+    if (area) area.style.display = 'none';
+
+    _aiFormulaResult = null;
+    toast('✨ Формула применена из AI');
+  }
+
   /* ── Test evaluation ── */
   async function _testFormula() {
     if (!_configId) { toast('Сначала сохраните правило'); return; }
@@ -1169,6 +1352,34 @@
     document.querySelectorAll('.a-fm-tpl').forEach(function(btn) {
       btn.addEventListener('click', function() { _applyTemplate(btn.getAttribute('data-tpl')); });
     });
+
+    // ── AI Formula Assistant handlers ──
+    var aiFormulaBtn = document.getElementById('aAiFormulaBtn');
+    if (aiFormulaBtn) aiFormulaBtn.addEventListener('click', _toggleAiArea);
+
+    var aiFormulaAsk = document.getElementById('aAiFormulaAsk');
+    if (aiFormulaAsk) aiFormulaAsk.addEventListener('click', _askAiForFormula);
+
+    var aiFormulaApply = document.getElementById('aAiFormulaApply');
+    if (aiFormulaApply) aiFormulaApply.addEventListener('click', _applyAiFormula);
+
+    var aiFormulaRetry = document.getElementById('aAiFormulaRetry');
+    if (aiFormulaRetry) aiFormulaRetry.addEventListener('click', function() {
+      var preview = document.getElementById('aAiFormulaPreview');
+      if (preview) preview.style.display = 'none';
+      var status = document.getElementById('aAiFormulaStatus');
+      if (status) { status.innerHTML = ''; status.style.display = 'none'; }
+      _aiFormulaResult = null;
+      var prompt = document.getElementById('aAiFormulaPrompt');
+      if (prompt) { prompt.value = ''; setTimeout(function() { prompt.focus(); }, 50); }
+    });
+
+    var aiFormulaPrompt = document.getElementById('aAiFormulaPrompt');
+    if (aiFormulaPrompt) {
+      aiFormulaPrompt.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); _askAiForFormula(); }
+      });
+    }
 
     var formulaTestBtn = document.getElementById('aFormulaTestBtn');
     if (formulaTestBtn) formulaTestBtn.addEventListener('click', _testFormula);
