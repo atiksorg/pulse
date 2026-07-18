@@ -649,6 +649,43 @@
       return;
     }
 
+    // ═══════════════════════════════════════════════════
+    // _add_panel — МГНОВЕННОЕ добавление панели на дашборд
+    // Не ходит к LLM — работает чисто на клиенте.
+    // ═══════════════════════════════════════════════════
+    if (action === '_add_panel') {
+      var parsedPanelArgs;
+      try {
+        parsedPanelArgs = JSON.parse(paramsStr || '{}');
+      } catch (parseErr) {
+        try {
+          var fixed2 = paramsStr.replace(/\}+$/, '');
+          var openCnt = (fixed2.match(/\{/g) || []).length;
+          var closeCnt = (fixed2.match(/\}/g) || []).length;
+          while (closeCnt < openCnt) { fixed2 += '}'; closeCnt++; }
+          parsedPanelArgs = JSON.parse(fixed2);
+        } catch (_) {
+          parsedPanelArgs = {};
+        }
+      }
+      _clientAddPanel(parsedPanelArgs, btn);
+      return;
+    }
+
+    // ═══════════════════════════════════════════════════
+    // _remove_panel — МГНОВЕННОЕ удаление панели по ID
+    // ═══════════════════════════════════════════════════
+    if (action === '_remove_panel') {
+      var parsedRemoveArgs;
+      try {
+        parsedRemoveArgs = JSON.parse(paramsStr || '{}');
+      } catch (parseErr) {
+        parsedRemoveArgs = {};
+      }
+      _clientRemovePanel(parsedRemoveArgs, btn);
+      return;
+    }
+
     // Все остальные actions — отправляем как сообщение в чат,
     // используя формат который парсится как tool_call
     var parsedArgs;
@@ -709,6 +746,197 @@
     }).finally(function() {
       btn.classList.remove('cp-btn-pending');
     });
+  }
+
+  // ═══════════════════════════════════════════════════
+  // _clientAddPanel — мгновенное добавление панели на активный дашборд
+  //
+  // Работает полностью на клиенте: берёт AppState.activeId,
+  // создаёт panel object, сохраняет на сервер, перерисовывает.
+  // Никаких round-trip к LLM.
+  // ═══════════════════════════════════════════════════
+  function _clientAddPanel(args, btn) {
+    // 1. Получаем активный дашборд
+    var db = null;
+    try {
+      if (typeof getActiveDashboard === 'function') {
+        db = getActiveDashboard();
+      }
+    } catch(_) {}
+
+    if (!db) {
+      appendMessage({
+        role: 'error',
+        content: '⚠️ Нет активного дашборда. Откройте дашборд и попробуйте снова.',
+        created_at: new Date().toISOString()
+      });
+      if (btn) { btn.classList.remove('cp-btn-pending'); btn.textContent = btn.textContent.replace('⏳ ', ''); }
+      return;
+    }
+
+    // 2. Генерируем уникальный ID и Z-index
+    var panelId = (typeof uid === 'function') ? uid('panel') : 'cp_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,6);
+    var maxZ = 0;
+    if (typeof getMaxPanelZ === 'function') {
+      maxZ = getMaxPanelZ(db.panels);
+    } else {
+      (db.panels || []).forEach(function(p) {
+        if (p.cz && p.cz > maxZ) maxZ = p.cz;
+      });
+    }
+    var newZ = Math.min(maxZ + 1, 890);
+
+    // 3. Создаём объект панели с дефолтами
+    var newPanel = {
+      id: panelId,
+      title: args.title || 'Новая панель',
+      viz: args.viz || 'kpi',
+      type: args.type || '',
+      group: args.group || '',
+      field: args.field || '',
+      agg: args.agg || 'count',
+      aggfield: args.aggfield || '',
+      range: args.range || '7d',
+      width: args.width || 6,
+      sort: args.sort || 'key',
+      limit: (args.limit != null && args.limit !== undefined) ? args.limit : null,
+      autorefresh: args.autorefresh || 0,
+      color: args.color || '',
+      unit: args.unit || '',
+      formatType: args.formatType || 'number',
+      lineStyle: args.lineStyle || '',
+      tension: (args.viz === 'line' && typeof args.tension === 'number') ? args.tension : undefined,
+      cz: newZ
+    };
+
+    // Копируем опциональные поля
+    if (args.stacked) newPanel.stacked = true;
+    if (args.cumulative) newPanel.cumulative = true;
+    if (args.compare) newPanel.compare = true;
+    if (args.secondAxis) newPanel.secondAxis = true;
+    if (args.breakdownfield) newPanel.breakdownfield = args.breakdownfield;
+    if (args.filters && Array.isArray(args.filters)) newPanel.filters = args.filters;
+    if (args.thresholds && Array.isArray(args.thresholds)) newPanel.thresholds = args.thresholds;
+    if (args.gaugeMin !== undefined) newPanel.gaugeMin = args.gaugeMin;
+    if (args.gaugeMax !== undefined) newPanel.gaugeMax = args.gaugeMax;
+
+    // 4. Canvas: размещение по центру viewport
+    var mobile = (typeof isMobile === 'function') ? isMobile() : (window.innerWidth < 860);
+    var canvasModeActive = (typeof getLayoutMode === 'function') ? getLayoutMode() : true;
+
+    if (canvasModeActive && !mobile && typeof interactiveCanvas !== 'undefined' && interactiveCanvas && !interactiveCanvas._destroyed) {
+      var vp = interactiveCanvas.viewport.getBoundingClientRect();
+      var cw = newPanel.cw || 380;
+      var ch = newPanel.ch || 280;
+      // Заполняем cw/ch из пресетов если доступны
+      if (typeof getVizPreset === 'function') {
+        var pr = getVizPreset(newPanel.viz);
+        if (!newPanel.cw) cw = pr.cw;
+        if (!newPanel.ch) ch = pr.ch;
+      }
+      var centerX = (vp.width / 2 - interactiveCanvas.offsetX) / interactiveCanvas.scale - cw / 2;
+      var centerY = (vp.height / 2 - interactiveCanvas.offsetY) / interactiveCanvas.scale - ch / 2;
+      newPanel.cx = Math.round(centerX / 20) * 20;
+      newPanel.cy = Math.round(centerY / 20) * 20;
+      newPanel.cw = cw;
+      newPanel.ch = ch;
+    }
+
+    // 5. Сохраняем viewport перед перерисовкой
+    if (typeof _saveCanvasViewport === 'function') {
+      _saveCanvasViewport();
+    }
+
+    // 6. Добавляем в массив panels
+    if (!Array.isArray(db.panels)) db.panels = [];
+    db.panels.push(newPanel);
+
+    // 7. Сохраняем на сервер и перерисовываем
+    if (typeof updateDashboardOnServer === 'function') {
+      updateDashboardOnServer(db).then(function() {
+        // Перерисовываем
+        if (typeof renderPanels === 'function') {
+          renderPanels();
+        }
+        // Обновляем XML-контекст для будущих запросов
+        appendMessage({
+          role: 'assistant',
+          content: '✅ Панель **' + (newPanel.title || 'Панель') + '** добавлена на дашборд.',
+          created_at: new Date().toISOString()
+        });
+        if (typeof toast === 'function') {
+          toast('✨ Панель «' + (newPanel.title || 'Панель') + '» добавлена');
+        }
+      }).catch(function(err) {
+        // Откатываем: удаляем из массива
+        db.panels = db.panels.filter(function(x) { return x.id !== panelId; });
+        appendMessage({
+          role: 'error',
+          content: '⚠️ Ошибка сохранения: ' + (err.message || err),
+          created_at: new Date().toISOString()
+        });
+      }).finally(function() {
+        if (btn) { btn.classList.remove('cp-btn-pending'); }
+      });
+    } else {
+      // updateDashboardOnServer недоступна
+      appendMessage({
+        role: 'error',
+        content: '⚠️ Dashboard API недоступен. Откройте дашборд и попробуйте снова.',
+        created_at: new Date().toISOString()
+      });
+      if (btn) { btn.classList.remove('cp-btn-pending'); }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════
+  // _clientRemovePanel — мгновенное удаление панели
+  // ═══════════════════════════════════════════════════
+  function _clientRemovePanel(args, btn) {
+    if (!args.panel_id) {
+      appendMessage({
+        role: 'error',
+        content: '⚠️ Не указан panel_id для удаления.',
+        created_at: new Date().toISOString()
+      });
+      if (btn) { btn.classList.remove('cp-btn-pending'); }
+      return;
+    }
+
+    var db = null;
+    try { db = getActiveDashboard(); } catch(_) {}
+    if (!db) {
+      appendMessage({ role: 'error', content: '⚠️ Нет активного дашборда.', created_at: new Date().toISOString() });
+      if (btn) { btn.classList.remove('cp-btn-pending'); }
+      return;
+    }
+
+    var found = db.panels.find(function(x) { return x.id === args.panel_id; });
+    if (!found) {
+      appendMessage({ role: 'error', content: '⚠️ Панель ' + args.panel_id + ' не найдена.', created_at: new Date().toISOString() });
+      if (btn) { btn.classList.remove('cp-btn-pending'); }
+      return;
+    }
+
+    var removedTitle = found.title || args.panel_id;
+    if (typeof _saveCanvasViewport === 'function') _saveCanvasViewport();
+    db.panels = db.panels.filter(function(x) { return x.id !== args.panel_id; });
+
+    if (typeof updateDashboardOnServer === 'function') {
+      updateDashboardOnServer(db).then(function() {
+        if (typeof renderPanels === 'function') renderPanels();
+        appendMessage({
+          role: 'assistant',
+          content: '✅ Панель **' + removedTitle + '** удалена.',
+          created_at: new Date().toISOString()
+        });
+        if (typeof toast === 'function') toast('🗑 Панель удалена');
+      }).catch(function(err) {
+        appendMessage({ role: 'error', content: '⚠️ Ошибка: ' + err.message, created_at: new Date().toISOString() });
+      }).finally(function() {
+        if (btn) { btn.classList.remove('cp-btn-pending'); }
+      });
+    }
   }
 
   // Event delegation для кнопок в сообщениях
