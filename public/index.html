@@ -758,194 +758,242 @@ GET https://events.atiks.org/s?src=my_app&type=purchase&group=day&from=2026-06-0
 
 <!-- ══════════════════ MODAL: ADD/EDIT PANEL ══════════════════ -->
 <div class="overlay" id="panelModal">
-  <div class="modal">
+  <div class="modal modal-wide">
     <h2 id="modalTitle">Новая панель</h2>
-    <p class="sub">Выберите готовый шаблон или настройте вручную.</p>
+    <p class="sub" id="modalSub">Выберите готовый шаблон или настройте вручную.</p>
 
+    <!-- Шаблоны (только при создании) -->
     <div class="tpl-grid" id="tplGrid"></div>
-
     <button class="adv-toggle" id="advToggle">Настроить вручную →</button>
 
+    <!-- ═══ Основная форма ═══ -->
     <div class="adv-form" id="advForm">
-      <div class="field-row">
-        <div class="field"><label>Название панели</label><input id="f_title" placeholder="Например: Регистрации по дням"></div>
-        <div class="field"><label>Тип визуализации</label>
-          <select id="f_viz">
-            <option value="line">Линейный график</option>
-            <option value="bar">Столбчатая диаграмма</option>
-            <option value="pie">Круговая диаграмма</option>
-            <option value="kpi">Число (KPI)</option>
-            <option value="gauge">Индикатор (gauge)</option>
-            <option value="heatmap">Тепловая карта</option>
-            <option value="table">Таблица (агрегация)</option>
-            <option value="logs">Логи (события)</option>
-          </select>
-        </div>
-      </div>
-      <div class="field-row">
-        <div class="field"><label>Тип события (type)</label><input id="f_type" list="typeSuggestions" placeholder="например purchase, оставьте пустым — все"></div>
-        <datalist id="typeSuggestions"></datalist>
-        <div class="field"><label>Группировка</label>
-          <select id="f_group">
-            <option value="">Без группировки (итого)</option>
-            <option value="day">По дням</option>
-            <option value="hour">По часам</option>
-            <option value="minute">По минутам</option>
-            <option value="week">По неделям</option>
-            <option value="month">По месяцам</option>
-            <option value="__field">По полю payload…</option>
-          </select>
-        </div>
-      </div>
-      <div class="field-row">
-        <div class="field" id="fieldNameWrap" style="display:none;"><label>Название поля</label><input id="f_fieldname" list="fieldSuggestions" placeholder="например country"></div>
-        <datalist id="fieldSuggestions"></datalist>
-        <div class="field"><label>Агрегация</label>
-          <select id="f_agg">
-            <option value="count">Количество (count)</option>
-            <option value="sum">Сумма поля (sum)</option>
-            <option value="avg">Среднее по полю (avg)</option>
-            <option value="min">Минимум (min)</option>
-            <option value="max">Максимум (max)</option>
-            <option value="median">Медиана (median)</option>
-            <option value="p95">Перцентиль 95 (p95)</option>
-            <option value="p99">Перцентиль 99 (p99)</option>
-          </select>
-        </div>
-      </div>
-      <div class="field-row">
-        <div class="field" id="aggFieldWrap" style="display:none;"><label>Поле для агрегации</label><input id="f_aggfield" list="fieldSuggestions" placeholder="например amount"></div>
-        <div class="field"><label>Диапазон</label>
-          <select id="f_range">
-            <option value="24h">Последние 24 часа</option>
-            <option value="7d" selected>Последние 7 дней</option>
-            <option value="30d">Последние 30 дней</option>
-            <option value="all">Всё время</option>
-            <option value="custom">Произвольный период…</option>
-          </select>
-        </div>
-        <div class="field" id="customRangeWrap" style="display:none;">
-          <label>С / По</label>
-          <div style="display:flex;gap:8px;">
-            <input type="date" id="f_from" style="flex:1;">
-            <input type="date" id="f_to" style="flex:1;">
+
+      <!-- Двухколоночный layout: редактор + предпросмотр -->
+      <div class="pm-layout">
+
+        <!-- Левая колонка: редактор -->
+        <div class="pm-editor">
+
+          <!-- ── Секция 0: Визуализация (плитка) ── -->
+          <div class="pm-section">
+            <div class="pm-section-head"><span class="pm-section-num">1</span> Тип визуализации</div>
+            <div class="viz-tiles" id="vizTiles">
+              <button class="viz-tile active" data-viz="line" title="Линейный график"><span class="vt-icon">📈</span><span class="vt-label">Линия</span></button>
+              <button class="viz-tile" data-viz="bar" title="Столбчатая диаграмма"><span class="vt-icon">📊</span><span class="vt-label">Столбцы</span></button>
+              <button class="viz-tile" data-viz="pie" title="Круговая диаграмма"><span class="vt-icon">🥧</span><span class="vt-label">Круговая</span></button>
+              <button class="viz-tile" data-viz="kpi" title="Одно число (KPI)"><span class="vt-icon">🔢</span><span class="vt-label">KPI</span></button>
+              <button class="viz-tile" data-viz="gauge" title="Шкала-индикатор"><span class="vt-icon">⏲</span><span class="vt-label">Gauge</span></button>
+              <button class="viz-tile" data-viz="heatmap" title="Тепловая карта"><span class="vt-icon">🗺️</span><span class="vt-label">Тепло</span></button>
+              <button class="viz-tile" data-viz="table" title="Таблица агрегаций"><span class="vt-icon">📋</span><span class="vt-label">Таблица</span></button>
+              <button class="viz-tile" data-viz="logs" title="Логи (события)"><span class="vt-icon">📝</span><span class="vt-label">Логи</span></button>
+            </div>
+            <!-- Скрытый select для обратной совместимости (заполняется из плитки) -->
+            <select id="f_viz" style="display:none;">
+              <option value="line">Линейный график</option>
+              <option value="bar">Столбчатая диаграмма</option>
+              <option value="pie">Круговая диаграмма</option>
+              <option value="kpi">Число (KPI)</option>
+              <option value="gauge">Индикатор (gauge)</option>
+              <option value="heatmap">Тепловая карта</option>
+              <option value="table">Таблица (агрегация)</option>
+              <option value="logs">Логи (события)</option>
+            </select>
+          </div>
+
+          <!-- ── Секция 1: Источник данных + Фильтры ── -->
+          <div class="pm-section">
+            <div class="pm-section-head"><span class="pm-section-num">2</span> Источник данных</div>
+            <div class="field-row">
+              <div class="field"><label>Название панели</label><input id="f_title" placeholder="Например: Регистрации по дням"></div>
+              <div class="field"><label>Тип события (type)</label><input id="f_type" list="typeSuggestions" placeholder="например purchase, оставьте пустым — все"></div>
+              <datalist id="typeSuggestions"></datalist>
+            </div>
+            <div class="field-row">
+              <div class="field"><label>Группировка</label>
+                <select id="f_group">
+                  <option value="">Без группировки (итого)</option>
+                  <option value="day">По дням</option>
+                  <option value="hour">По часам</option>
+                  <option value="minute">По минутам</option>
+                  <option value="week">По неделям</option>
+                  <option value="month">По месяцам</option>
+                  <option value="__field">По полю payload…</option>
+                </select>
+              </div>
+              <div class="field" id="fieldNameWrap" style="display:none;"><label>Название поля</label><input id="f_fieldname" list="fieldSuggestions" placeholder="например country"></div>
+              <datalist id="fieldSuggestions"></datalist>
+              <div class="field"><label>Агрегация</label>
+                <select id="f_agg">
+                  <option value="count">Количество (count)</option>
+                  <option value="sum">Сумма поля (sum)</option>
+                  <option value="avg">Среднее по полю (avg)</option>
+                  <option value="min">Минимум (min)</option>
+                  <option value="max">Максимум (max)</option>
+                  <option value="median">Медиана (median)</option>
+                  <option value="p95">Перцентиль 95 (p95)</option>
+                  <option value="p99">Перцентиль 99 (p99)</option>
+                </select>
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field" id="aggFieldWrap" style="display:none;"><label>Поле для агрегации</label><input id="f_aggfield" list="fieldSuggestions" placeholder="например amount"></div>
+              <div class="field"><label>Диапазон</label>
+                <select id="f_range">
+                  <option value="24h">Последние 24 часа</option>
+                  <option value="7d" selected>Последние 7 дней</option>
+                  <option value="30d">Последние 30 дней</option>
+                  <option value="all">Всё время</option>
+                  <option value="custom">Произвольный период…</option>
+                </select>
+              </div>
+              <div class="field" id="customRangeWrap" style="display:none;">
+                <label>С / По</label>
+                <div style="display:flex;gap:8px;">
+                  <input type="date" id="f_from" style="flex:1;">
+                  <input type="date" id="f_to" style="flex:1;">
+                </div>
+              </div>
+            </div>
+            <!-- Фильтры — сразу после источника данных -->
+            <div class="filters-section">
+              <div class="filters-header">
+                <label>Фильтры по полям payload</label>
+                <button type="button" class="btn btn-ghost" id="btnAddFilter" style="font-size:11px;padding:5px 10px;">+ условие</button>
+              </div>
+              <div id="filterRows" class="filter-rows"></div>
+            </div>
+          </div>
+
+          <!-- ── Секция 2: Разбивка и сортировка (line/bar/heatmap) ── -->
+          <div class="pm-section" id="sectionBreakdown">
+            <div class="pm-section-head"><span class="pm-section-num">3</span> Разбивка и сортировка</div>
+            <div class="field-row">
+              <div class="field" id="breakdownWrap" style="display:none;"><label>Разбить по полю (multi-series)</label><input id="f_breakdownfield" list="fieldSuggestions" placeholder="например plan, region, status"></div>
+            </div>
+            <div class="field-row">
+              <div class="field"><label>Сортировка групп</label>
+                <select id="f_sort">
+                  <option value="key">По ключу (А→Я)</option>
+                  <option value="value_desc">По значению ↓ (топ-first)</option>
+                  <option value="value_asc">По значению ↑ (мин-first)</option>
+                </select>
+              </div>
+              <div class="field"><label>Показать топ N (0 = все)</label>
+                <input id="f_limit" type="number" min="0" max="500" placeholder="0 — без лимита">
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Секция 3: Оформление ── -->
+          <div class="pm-section">
+            <div class="pm-section-head"><span class="pm-section-num">4</span> Оформление</div>
+            <div class="field-row">
+              <div class="field"><label>Единица измерения (tooltip)</label>
+                <input id="f_unit" placeholder="например ₽, $, шт, %">
+              </div>
+              <div class="field"><label>Цвет графика</label>
+                <input id="f_color" type="color" value="#4DECC7" style="height:38px;padding:4px;cursor:pointer;">
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field"><label>Формат значений</label>
+                <select id="f_format">
+                  <option value="number">Число</option>
+                  <option value="money">Деньги (K/M)</option>
+                  <option value="percent">Проценты</option>
+                  <option value="ms">Миллисекунды</option>
+                </select>
+              </div>
+            </div>
+            <!-- Стиль линии + tension (только line) -->
+            <div id="lineStyleWrap" style="display:none;">
+              <div class="field-row">
+                <div class="field"><label>Стиль линии</label>
+                  <select id="f_linestyle">
+                    <option value="smooth">Сглаженная</option>
+                    <option value="straight">Прямая</option>
+                    <option value="stepped">Ступенчатая</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field-row" id="tensionWrap">
+                <div class="field">
+                  <label>Плавность (tension): <span id="f_tension_val" style="color:var(--teal);font-family:var(--mono);">0.35</span></label>
+                  <input id="f_tension" type="range" min="0" max="1" step="0.05" value="0.35" style="padding:0;cursor:pointer;">
+                </div>
+              </div>
+            </div>
+            <!-- Gauge min/max (только gauge) -->
+            <div class="field-row" id="gaugeWrap" style="display:none;">
+              <div class="field"><label>Минимум gauge</label><input id="f_gaugeMin" type="number" placeholder="0"></div>
+              <div class="field"><label>Максимум gauge</label><input id="f_gaugeMax" type="number" placeholder="100"></div>
+            </div>
+          </div>
+
+          <!-- ── Секция 4: Пороги и опции графика (line/bar) ── -->
+          <div class="pm-section" id="sectionChartOpts">
+            <div class="pm-section-head"><span class="pm-section-num">5</span> Пороги и опции графика</div>
+            <div class="field-row" id="chartOptsWrap">
+              <div class="field"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                <input type="checkbox" id="f_stacked"> Stacked (суммировать серии)
+              </label></div>
+              <div class="field"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                <input type="checkbox" id="f_cumulative"> Нарастающий итог
+              </label></div>
+              <div class="field"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                <input type="checkbox" id="f_compare"> Сравнить с пред. периодом
+              </label></div>
+              <div class="field"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                <input type="checkbox" id="f_secondaxis"> Вторая ось Y
+              </label></div>
+            </div>
+            <div class="field-row" id="thresholdsWrap">
+              <div class="field" style="flex:1;">
+                <label>Пороговые линии (thresholds)</label>
+                <div id="thresholdRows" style="display:flex;flex-direction:column;gap:6px;"></div>
+                <button type="button" class="btn btn-ghost" id="btnAddThreshold" style="font-size:11px;padding:5px 10px;margin-top:4px;">+ линия</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Секция 5: Поведение на дашборде ── -->
+          <div class="pm-section">
+            <div class="pm-section-head"><span class="pm-section-num">6</span> Поведение на дашборде</div>
+            <div class="field-row">
+              <div class="field"><label>Ширина панели (из 12)</label>
+                <select id="f_width">
+                  <option value="4">Узкая (4)</option>
+                  <option value="6" selected>Средняя (6)</option>
+                  <option value="12">Во всю ширину (12)</option>
+                </select>
+              </div>
+              <div class="field"><label>Автообновление</label>
+                <select id="f_autorefresh">
+                  <option value="0">Выключено</option>
+                  <option value="10">Каждые 10 сек</option>
+                  <option value="30">Каждые 30 сек</option>
+                  <option value="60">Каждую минуту</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /pm-editor -->
+
+        <!-- Правая колонка: живой предпросмотр -->
+        <div class="pm-preview" id="pmPreview">
+          <div class="pm-preview-head">
+            <span class="pm-preview-title">Предпросмотр</span>
+            <span class="pm-preview-status" id="pmPreviewStatus"></span>
+          </div>
+          <div class="pm-preview-body" id="pmPreviewBody">
+            <div class="pm-preview-empty">Настройте параметры — график появится здесь</div>
           </div>
         </div>
-      </div>
-      <div class="field-row">
-        <div class="field"><label>Ширина панели (из 12)</label>
-          <select id="f_width">
-            <option value="4">Узкая (4)</option>
-            <option value="6" selected>Средняя (6)</option>
-            <option value="12">Во всю ширину (12)</option>
-          </select>
-        </div>
-        <div class="field"><label>Автообновление</label>
-          <select id="f_autorefresh">
-            <option value="0">Выключено</option>
-            <option value="10">Каждые 10 сек</option>
-            <option value="30">Каждые 30 сек</option>
-            <option value="60">Каждую минуту</option>
-          </select>
-        </div>
-      </div>
 
-      <!-- Разбивка (breakdown) -->
-      <div class="field-row">
-        <div class="field" id="breakdownWrap" style="display:none;"><label>Разбить по полю (multi-series)</label><input id="f_breakdownfield" list="fieldSuggestions" placeholder="например plan, region, status"></div>
-      </div>
-
-      <!-- Сортировка и лимит -->
-      <div class="field-row">
-        <div class="field"><label>Сортировка групп</label>
-          <select id="f_sort">
-            <option value="key">По ключу (А→Я)</option>
-            <option value="value_desc">По значению ↓ (топ-first)</option>
-            <option value="value_asc">По значению ↑ (мин-first)</option>
-          </select>
-        </div>
-        <div class="field"><label>Показать топ N (0 = все)</label>
-          <input id="f_limit" type="number" min="0" max="500" placeholder="0 — без лимита">
-        </div>
-      </div>
-
-      <!-- Единицы измерения и цвет -->
-      <div class="field-row">
-        <div class="field"><label>Единица измерения (для tooltip)</label>
-          <input id="f_unit" placeholder="например ₽, $, шт, %">
-        </div>
-        <div class="field"><label>Цвет графика</label>
-          <input id="f_color" type="color" value="#4DECC7" style="height:38px;padding:4px;cursor:pointer;">
-        </div>
-      </div>
-
-      <!-- Стиль линии и формат значений -->
-      <div class="field-row">
-        <div class="field"><label>Стиль линии (для линейного графика)</label>
-          <select id="f_linestyle">
-            <option value="smooth">Сглаженная</option>
-            <option value="straight">Прямая</option>
-            <option value="stepped">Ступенчатая</option>
-          </select>
-        </div>
-        <div class="field"><label>Формат значений</label>
-          <select id="f_format">
-            <option value="number">Число</option>
-            <option value="money">Деньги (K/M)</option>
-            <option value="percent">Проценты</option>
-            <option value="ms">Миллисекунды</option>
-          </select>
-        </div>
-      </div>
-
-      <!-- Слайдер tension (только для line) -->
-      <div class="field-row" id="tensionWrap" style="display:none;">
-        <div class="field">
-          <label>Плавность линии (tension): <span id="f_tension_val" style="color:var(--teal);font-family:var(--mono);">0.35</span></label>
-          <input id="f_tension" type="range" min="0" max="1" step="0.05" value="0.35" style="padding:0;cursor:pointer;">
-        </div>
-      </div>
-
-      <!-- Фильтры -->
-      <div class="filters-section">
-        <div class="filters-header">
-          <label>Фильтры по полям payload</label>
-          <button type="button" class="btn btn-ghost" id="btnAddFilter" style="font-size:11px;padding:5px 10px;">+ условие</button>
-        </div>
-        <div id="filterRows" class="filter-rows"></div>
-      </div>
-
-      <!-- Опции графиков: stacked, cumulative, compare, secondAxis -->
-      <div class="field-row" id="chartOptsWrap" style="display:none;">
-        <div class="field"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-          <input type="checkbox" id="f_stacked"> Stacked (суммировать серии)
-        </label></div>
-        <div class="field"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-          <input type="checkbox" id="f_cumulative"> Нарастающий итог
-        </label></div>
-        <div class="field"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-          <input type="checkbox" id="f_compare"> Сравнить с пред. периодом
-        </label></div>
-        <div class="field"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-          <input type="checkbox" id="f_secondaxis"> Вторая ось Y
-        </label></div>
-      </div>
-
-      <!-- Gauge: min/max диапазон -->
-      <div class="field-row" id="gaugeWrap" style="display:none;">
-        <div class="field"><label>Минимум gauge</label><input id="f_gaugeMin" type="number" placeholder="0"></div>
-        <div class="field"><label>Максимум gauge</label><input id="f_gaugeMax" type="number" placeholder="100"></div>
-      </div>
-
-      <!-- Thresholds: пороговые линии -->
-      <div class="field-row" id="thresholdsWrap" style="display:none;">
-        <div class="field" style="flex:1;">
-          <label>Пороговые линии (thresholds)</label>
-          <div id="thresholdRows" style="display:flex;flex-direction:column;gap:6px;"></div>
-          <button type="button" class="btn btn-ghost" id="btnAddThreshold" style="font-size:11px;padding:5px 10px;margin-top:4px;">+ линия</button>
-        </div>
-      </div>
-    </div>
+      </div><!-- /pm-layout -->
+    </div><!-- /adv-form -->
 
     <div class="modal-actions">
       <button class="btn btn-ghost" id="btnCancelPanel">Отмена</button>
