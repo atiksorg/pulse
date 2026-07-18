@@ -1785,6 +1785,42 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // POST /ai/suggest-alert-formula (auth) — AI подбор формулы для алертов
+    if (url.pathname === '/ai/suggest-alert-formula' && req.method === 'POST') {
+      const token = auth.extractToken(req);
+      const session = auth.resolveSession(db, token);
+      if (!session) return auth.json(res, 401, { error: 'unauthorized' });
+
+      // Rate-limit per src (тот же пул что и остальные AI-эндпоинты)
+      const rl = ai.checkRateLimit(session.src);
+      if (!rl.ok) {
+        res.setHeader('Retry-After', String(rl.remainSec || 60));
+        return auth.json(res, 429, { error: 'rate_limited', remainSec: rl.remainSec });
+      }
+
+      let body;
+      try { body = await auth.readJsonBody(req); }
+      catch (_) { return auth.json(res, 400, { error: 'invalid json' }); }
+
+      const prompt = (body && typeof body.prompt === 'string') ? body.prompt.trim() : '';
+      if (!prompt) return auth.json(res, 400, { error: 'empty_prompt' });
+
+      const panelContext = (body && typeof body.panelContext === 'object') ? body.panelContext : {};
+
+      try {
+        const result = await ai.suggestAlertFormula(prompt, panelContext);
+        auth.json(res, 200, result);
+      } catch (e) {
+        const code = (e && e.code) ? e.code : 'unknown';
+        const msg = (e && e.message) ? e.message : 'unknown';
+        if (msg.startsWith('ai_') || msg === 'timeout' || msg === 'fetch_failed') {
+          return auth.json(res, 502, { error: 'ai_invalid_response', code, message: msg });
+        }
+        auth.json(res, 500, { error: 'internal', message: msg });
+      }
+      return;
+    }
+
     // GET /public/:share_id (без auth) — read-only конфиг дашборда
     // GET /public/:share_id (без auth) — read-only конфиг дашборда
     if (url.pathname.startsWith('/public/') && req.method === 'GET') {
