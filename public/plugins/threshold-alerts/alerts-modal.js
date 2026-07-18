@@ -29,6 +29,7 @@
 
     _switchTab('settings');
     _loadConfig();
+    _renderPanelConditionsSummary();
   }
 
   function closeAlertsModal() {
@@ -80,6 +81,7 @@
 
       var delBtn = document.getElementById('aBtnDelete');
       if (delBtn) delBtn.style.display = '';
+      _renderPanelConditionsSummary();
     } catch (_) {
       if (statusEl) statusEl.textContent = 'сеть недоступна';
     }
@@ -204,6 +206,7 @@
     _onCheckModeChange();
     _onAggChange();
     _updatePreview();
+    _renderPanelConditionsSummary();
 
     var gaugeEl = document.getElementById('aGaugeIndicator');
     if (gaugeEl) gaugeEl.style.display = 'none';
@@ -213,6 +216,9 @@
 
     var delBtn = document.getElementById('aBtnDelete');
     if (delBtn) delBtn.style.display = 'none';
+
+    // Подгружаем значения категории сразу при открытии модалки
+    _loadGroupValues();
   }
 
   /* ── Скопировать настройки из панели ── */
@@ -227,7 +233,107 @@
     _onAggChange();
     _loadGroupValues();
     _updatePreview();
+    _renderPanelConditionsSummary();
     toast('Настройки скопированы из панели');
+  }
+
+  /* ── Отобразить условия из панели (тип, агрегация, фильтры, группировка) ── */
+  function _renderPanelConditionsSummary() {
+    var container = document.getElementById('aPanelConditions');
+    if (!container) return;
+
+    if (!_panel) { container.style.display = 'none'; return; }
+
+    var $ = function(id) { var el = document.getElementById(id); return el ? el.value : ''; };
+    var aggLabels = { count: 'Кол-во событий', sum: 'Сумма', avg: 'Среднее', max: 'Максимум', min: 'Минимум' };
+    var rangeLabels = { '1h': '1 час', '6h': '6 часов', '24h': '24 часа', '7d': '7 дней', '30d': '30 дней', 'all': 'всё время' };
+
+    // Берём текущие значения из полей формы (что реально уйдёт в запрос алерта)
+    var formAgg = $('a_agg') || 'count';
+    var formAggfield = $('a_aggfield').trim();
+    var formRange = $('a_range') || '24h';
+    var formGroupField = $('a_groupField').trim();
+    var formGroupValue = $('a_groupValue').trim();
+
+    var html = '';
+    html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">';
+    html += '<span style="font-size:13px;">📐</span>';
+    html += '<span style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Условия проверки алерта</span>';
+    html += '</div>';
+
+    html += '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">';
+
+    // Тип события (всегда из _panel.type)
+    if (_panel.type) {
+      html += '<span style="display:inline-flex;align-items:center;gap:3px;padding:3px 8px;background:rgba(77,236,199,0.08);border:1px solid rgba(77,236,199,0.2);border-radius:4px;">';
+      html += '<span style="color:var(--muted-2);font-size:10px;">type</span> ';
+      html += '<span style="color:var(--teal,#4DECC7);font-family:var(--mono);font-size:11px;">' + escapeHtml(_panel.type) + '</span>';
+      html += '</span>';
+    }
+
+    // Агрегация (из текущего значения формы)
+    var aggText = aggLabels[formAgg] || formAgg;
+    if (formAgg !== 'count' && formAggfield) {
+      aggText += '(' + formAggfield + ')';
+    }
+    html += '<span style="display:inline-flex;align-items:center;gap:3px;padding:3px 8px;background:rgba(255,183,77,0.08);border:1px solid rgba(255,183,77,0.2);border-radius:4px;">';
+    html += '<span style="color:var(--muted-2);font-size:10px;">agg</span> ';
+    html += '<span style="color:var(--amber,#FFB74D);font-family:var(--mono);font-size:11px;">' + escapeHtml(aggText) + '</span>';
+    html += '</span>';
+
+    // Диапазон (из текущего значения формы)
+    var rangeText = rangeLabels[formRange] || formRange;
+    html += '<span style="display:inline-flex;align-items:center;gap:3px;padding:3px 8px;background:rgba(91,141,239,0.08);border:1px solid rgba(91,141,239,0.2);border-radius:4px;">';
+    html += '<span style="color:var(--muted-2);font-size:10px;">range</span> ';
+    html += '<span style="color:#5B8DEF;font-family:var(--mono);font-size:11px;">' + escapeHtml(rangeText) + '</span>';
+    html += '</span>';
+
+    // Группировка (из текущего значения формы)
+    if (formGroupField) {
+      html += '<span style="display:inline-flex;align-items:center;gap:3px;padding:3px 8px;background:rgba(187,134,252,0.08);border:1px solid rgba(187,134,252,0.2);border-radius:4px;">';
+      html += '<span style="color:var(--muted-2);font-size:10px;">group</span> ';
+      html += '<span style="color:#BB86FC;font-family:var(--mono);font-size:11px;">' + escapeHtml(formGroupField);
+      if (formGroupValue) html += ' = ' + escapeHtml(formGroupValue);
+      html += '</span>';
+      html += '</span>';
+    }
+
+    html += '</div>';
+
+    // Фильтры (всегда из _panel.filters — это фильтры исходной панели)
+    var filters = Array.isArray(_panel.filters) ? _panel.filters : [];
+    if (filters.length > 0) {
+      html += '<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;">';
+      html += '<span style="font-size:10px;color:var(--muted-2);margin-right:2px;">фильтры:</span>';
+      filters.forEach(function(f) {
+        if (!f || !f.field) return;
+        var filterStr = escapeHtml(f.field) + ' ' + escapeHtml(f.op || '=') + ' ' + escapeHtml(String(f.value || ''));
+        html += '<span style="display:inline-block;padding:2px 6px;background:rgba(255,255,255,0.04);border:1px solid var(--border,#1A2130);border-radius:3px;font-size:10px;font-family:var(--mono);color:var(--muted);">' + filterStr + '</span>';
+      });
+      html += '</div>';
+    }
+
+    // Предупреждение о stacked/cumulative/compare
+    var hasClientTransforms = !!(_panel.stacked || _panel.cumulative || _panel.compare);
+    if (hasClientTransforms) {
+      html += '<div style="margin-top:10px;padding:8px 10px;background:rgba(255,183,77,0.06);border:1px solid rgba(255,183,77,0.2);border-radius:6px;">';
+      html += '<div style="display:flex;align-items:flex-start;gap:6px;">';
+      html += '<span style="font-size:14px;line-height:1;">⚠️</span>';
+      html += '<div style="font-size:11px;line-height:1.5;color:var(--amber,#FFB74D);">';
+      html += '<b>Алерт использует сырые данные.</b> ';
+      var transforms = [];
+      if (_panel.stacked) transforms.push('stacked');
+      if (_panel.cumulative) transforms.push('нарастающий итог');
+      if (_panel.compare) transforms.push('сравнение периодов');
+      html += 'Трансформации графика (' + escapeHtml(transforms.join(', ')) + ') ';
+      html += 'применяются только при визуализации и <b>не влияют</b> на значение, проверяемое алертом.';
+      html += '</div>';
+      html += '</div>';
+      html += '</div>';
+    }
+
+    container.innerHTML = html;
+    container.style.display = '';
   }
 
   /* ── Динамическое переключение полей по check_mode ── */
@@ -255,6 +361,7 @@
     var agg = document.getElementById('a_agg').value;
     var row = document.getElementById('a_aggfieldRow');
     if (row) row.style.display = (agg === 'count') ? 'none' : '';
+    _renderPanelConditionsSummary();
   }
 
   /* ── Загрузка значений категории для group_value ── */
@@ -1029,6 +1136,9 @@
     var aggSel = document.getElementById('a_agg');
     if (aggSel) aggSel.addEventListener('change', _onAggChange);
 
+    var rangeSel = document.getElementById('a_range');
+    if (rangeSel) rangeSel.addEventListener('change', function() { _updatePreview(); _renderPanelConditionsSummary(); });
+
     // ── Новые обработчики ──
     var checkModeSel = document.getElementById('a_checkMode');
     if (checkModeSel) checkModeSel.addEventListener('change', _onCheckModeChange);
@@ -1085,17 +1195,18 @@
 
     var groupFieldInput = document.getElementById('a_groupField');
     if (groupFieldInput) {
-      groupFieldInput.addEventListener('change', _loadGroupValues);
-      groupFieldInput.addEventListener('blur', _loadGroupValues);
+      groupFieldInput.addEventListener('change', function() { _loadGroupValues(); _renderPanelConditionsSummary(); });
+      groupFieldInput.addEventListener('blur', function() { _loadGroupValues(); _renderPanelConditionsSummary(); });
     }
 
     // Обновляем превью при изменении полей
-    ['a_label', 'a_minValue', 'a_maxValue', 'a_minValueDelta', 'a_maxValueDelta', 'a_maxValueAnomaly', 'a_checkMode', 'a_groupField', 'a_groupValue'].forEach(function(id) {
+    ['a_label', 'a_aggfield', 'a_minValue', 'a_maxValue', 'a_minValueDelta', 'a_maxValueDelta', 'a_maxValueAnomaly', 'a_checkMode', 'a_groupField', 'a_groupValue'].forEach(function(id) {
       var el = document.getElementById(id);
       if (el) {
         el.addEventListener('input', _updatePreview);
         el.addEventListener('change', function() {
           _updatePreview();
+          _renderPanelConditionsSummary();
           // Обновить gauge
           var body = _collectBody();
           _updateGaugeIndicator(null); // скрыть gauge при изменении порогов
