@@ -3,6 +3,9 @@
  *
  * Инжектит floating-иконку в нижний правый угол + панель чата.
  * Не зависит от других модулей — самодостаточный виджет.
+ *
+ * ВАЖНО: Виджет показывается ТОЛЬКО в личном кабинете (route === 'dashboard').
+ * На лендинге и публичных страницах — скрыт.
  */
 'use strict';
 
@@ -32,6 +35,9 @@
       font-size: 24px;
       z-index: 9998;
       transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .copilot-fab-hidden {
+      display: none !important;
     }
     .copilot-fab:hover {
       transform: scale(1.1);
@@ -114,6 +120,10 @@
     .cp-header-btn:hover {
       background: var(--bg-hover, #2a2a3a);
       color: var(--text, #e8e8f0);
+    }
+    .cp-header-btn.cp-brain-active {
+      color: #4DECC7;
+      background: rgba(77,236,199,0.12);
     }
 
     /* Messages area */
@@ -371,6 +381,41 @@
       background: rgba(77,236,199,0.08);
     }
 
+    /* ═══ Brain Context Panel ═══ */
+    .cp-brain-panel {
+      display: none;
+      border-bottom: 1px solid var(--border, #2a2a3a);
+      background: #0d0d14;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .cp-brain-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #4DECC7;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid rgba(77,236,199,0.15);
+    }
+    .cp-brain-header span {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .cp-brain-code {
+      padding: 10px 12px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      line-height: 1.5;
+      color: #a0a0b0;
+      white-space: pre;
+      overflow-x: auto;
+    }
+
     /* Mobile responsive */
     @media (max-width: 500px) {
       .copilot-panel {
@@ -384,9 +429,20 @@
   `;
   document.head.appendChild(style);
 
+  // ── Определяем текущий роут ──────────────────────
+  function _currentRoute() {
+    var hash = location.hash.replace(/^#/, '') || 'docs';
+    return hash.split('?')[0];
+  }
+
+  function _isDashboardRoute() {
+    var r = _currentRoute();
+    return r === 'dashboard';
+  }
+
   // ── FAB (Floating Action Button) ─────────────────
   var fab = document.createElement('button');
-  fab.className = 'copilot-fab';
+  fab.className = 'copilot-fab' + (_isDashboardRoute() ? '' : ' copilot-fab-hidden');
   fab.id = 'copilotFab';
   fab.title = 'AI-копилот';
   fab.innerHTML = '<div class="fab-pulse"></div>🤖';
@@ -400,10 +456,17 @@
     <div class="cp-header">
       <div class="cp-header-title"><span class="cp-dot"></span> AI-копилот</div>
       <div class="cp-header-actions">
+        <button class="cp-header-btn" id="cpBtnBrain" title="Контекст: XML текущего дашборда">🧠</button>
         <button class="cp-header-btn" id="cpBtnNewSession" title="Новая сессия">＋</button>
         <button class="cp-header-btn" id="cpBtnClear" title="Очистить историю">🗑</button>
         <button class="cp-header-btn" id="cpBtnClose" title="Закрыть">✕</button>
       </div>
+    </div>
+    <div class="cp-brain-panel" id="cpBrainPanel">
+      <div class="cp-brain-header">
+        <span>🧠 Контекст агента (XML текущего дашборда)</span>
+      </div>
+      <pre class="cp-brain-code"><!-- загрузка... --></pre>
     </div>
     <div class="cp-sessions" id="cpSessions"></div>
     <div class="cp-messages" id="cpMessages"></div>
@@ -433,9 +496,29 @@
     panel.classList.remove('open');
   });
 
+  // ── Route change → show/hide FAB ─────────────────
+  function _updateVisibility() {
+    var isDash = _isDashboardRoute();
+    if (isDash) {
+      fab.classList.remove('copilot-fab-hidden');
+    } else {
+      fab.classList.add('copilot-fab-hidden');
+      // Закрываем панель при уходе с dashboard
+      if (panelOpen) {
+        panelOpen = false;
+        panel.classList.remove('open');
+      }
+    }
+  }
+
+  window.addEventListener('hashchange', _updateVisibility);
+  // Первичная проверка
+  _updateVisibility();
+
   // ── Public API ───────────────────────────────────
   window._copilotWidget = {
     open: function(){
+      if (!_isDashboardRoute()) return; // не открываем вне dashboard
       panelOpen = true;
       panel.classList.add('open');
       if (typeof window._copilotModalInit === 'function') {
@@ -447,8 +530,12 @@
       panel.classList.remove('open');
     },
     toggle: function(){
+      if (!_isDashboardRoute()) return;
       panelOpen = !panelOpen;
       panel.classList.toggle('open', panelOpen);
+      if (panelOpen && typeof window._copilotModalInit === 'function') {
+        window._copilotModalInit();
+      }
     },
     isOpen: function(){ return panelOpen; }
   };
