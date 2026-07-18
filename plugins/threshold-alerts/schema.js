@@ -38,6 +38,8 @@ function initAlertTables(db) {
     `ALTER TABLE alert_configs ADD COLUMN anomaly_window INTEGER DEFAULT 7`,
     `ALTER TABLE alert_configs ADD COLUMN on_empty TEXT DEFAULT 'treat_as_zero'`,
     `ALTER TABLE alert_configs ADD COLUMN thresholds_json TEXT DEFAULT '[]'`,
+    `ALTER TABLE alert_configs ADD COLUMN formula_text TEXT DEFAULT ''`,
+    `ALTER TABLE alert_configs ADD COLUMN formula_conditions TEXT DEFAULT '[]'`,
     // alert_history — все колонки, кроме PK (id, config_id были в оригинале)
     `ALTER TABLE alert_history ADD COLUMN dashboard_id TEXT NOT NULL DEFAULT ''`,
     `ALTER TABLE alert_history ADD COLUMN src TEXT NOT NULL DEFAULT ''`,
@@ -85,6 +87,8 @@ function initAlertTables(db) {
       anomaly_window      INTEGER DEFAULT 7,
       on_empty            TEXT DEFAULT 'treat_as_zero',
       thresholds_json     TEXT DEFAULT '[]',
+      formula_text        TEXT DEFAULT '',
+      formula_conditions  TEXT DEFAULT '[]',
       created_at          TEXT NOT NULL,
       updated_at          TEXT NOT NULL
     );
