@@ -22,6 +22,27 @@
   // ── Elements ─────────────────────────────────────
   var elMessages, elInput, elSendBtn, elSessions;
 
+  // ── Получение токена авторизации ────────────────
+  // Токен хранится в sessionStorage через core.js getSession()
+  function _getAuthToken() {
+    // 1. Пробуем getSession() из core.js
+    if (typeof getSession === 'function') {
+      var sess = getSession();
+      if (sess && sess.token) return sess.token;
+    }
+    // 2. Fallback: window._pulseToken (старый вариант)
+    if (window._pulseToken) return window._pulseToken;
+    // 3. Fallback: прямое чтение sessionStorage
+    try {
+      var raw = sessionStorage.getItem('pulse_session');
+      if (raw) {
+        var parsed = JSON.parse(raw);
+        if (parsed && parsed.token) return parsed.token;
+      }
+    } catch(_) {}
+    return null;
+  }
+
   // ── Init (called once when panel first opens) ────
   window._copilotModalInit = function(){
     if (initialized) return;
@@ -32,7 +53,7 @@
     elSendBtn  = document.getElementById('cpSendBtn');
     elSessions = document.getElementById('cpSessions');
 
-    // Send button
+    // Send button — СТАВИМ ДО проверки токена, чтобы кнопка всегда была готова
     elSendBtn.addEventListener('click', sendMessage);
 
     // Enter to send (Shift+Enter = newline)
@@ -59,8 +80,15 @@
       clearHistory();
     });
 
-    // Check if user is authenticated
-    if (!window._pulseToken) {
+    // Brain button — показать контекст (XML текущего дашборда)
+    var brainBtn = document.getElementById('cpBtnBrain');
+    if (brainBtn) {
+      brainBtn.addEventListener('click', toggleBrainContext);
+    }
+
+    // Проверяем авторизацию
+    var token = _getAuthToken();
+    if (!token) {
       showEmptyState('Войдите в аккаунт', 'Чтобы использовать AI-копилот, авторизуйтесь через PIN');
       return;
     }
@@ -75,8 +103,9 @@
       method: method,
       headers: { 'Content-Type': 'application/json' }
     };
-    if (window._pulseToken) {
-      opts.headers['Authorization'] = 'Bearer ' + window._pulseToken;
+    var token = _getAuthToken();
+    if (token) {
+      opts.headers['Authorization'] = 'Bearer ' + token;
     }
     if (body) opts.body = JSON.stringify(body);
 
@@ -156,9 +185,18 @@
     // Show typing indicator
     var typingEl = showTyping();
 
+    // Генерируем XML текущего дашборда для контекста LLM
+    var dashXml = null;
+    try {
+      if (typeof window._copilotGetDashboardXml === 'function') {
+        dashXml = window._copilotGetDashboardXml();
+      }
+    } catch(_) {}
+
     apiRequest('POST', '/chat', {
       session_id: currentSessionId,
-      message: text
+      message: text,
+      dashboardXml: dashXml
     }).then(function(data) {
       removeTyping(typingEl);
 
@@ -375,6 +413,97 @@
   function scrollToBottom() {
     if (elMessages) elMessages.scrollTop = elMessages.scrollHeight;
   }
+
+  // ── Brain Context: показать текущий XML дашборда ──
+  function toggleBrainContext() {
+    var panel = document.getElementById('cpBrainPanel');
+    if (!panel) return;
+    var isOpen = panel.style.display !== 'none';
+    if (isOpen) {
+      panel.style.display = 'none';
+      return;
+    }
+    // Генерируем XML текущего дашборда
+    var xml = _generateDashboardXml();
+    var codeEl = panel.querySelector('.cp-brain-code');
+    if (codeEl) codeEl.textContent = xml;
+    panel.style.display = 'block';
+  }
+
+  /**
+   * Сгенерировать XML-описание текущего активного дашборда.
+   * Используется для показа в панели «мозг» и для передачи в system prompt.
+   */
+  function _generateDashboardXml() {
+    var dash = null;
+    try {
+      if (typeof getActiveDashboard === 'function') {
+        dash = getActiveDashboard();
+      }
+    } catch(_) {}
+
+    if (!dash) return '<!-- Нет активного дашборда -->';
+
+    var lines = [];
+    lines.push('<dashboard id="' + esc(dash.id) + '" name="' + esc(dash.name) + '">');
+
+    var panels = dash.panels || [];
+    for (var i = 0; i < panels.length; i++) {
+      var p = panels[i];
+      lines.push('  <panel id="' + esc(p.id) + '">');
+      lines.push('    <title>' + esc(p.title || '') + '</title>');
+      lines.push('    <viz>' + esc(p.viz || 'kpi') + '</viz>');
+      lines.push('    <type>' + esc(p.type || '*') + '</type>');
+      lines.push('    <group>' + esc(p.group || '') + '</group>');
+      if (p.field) lines.push('    <field>' + esc(p.field) + '</field>');
+      lines.push('    <agg>' + esc(p.agg || 'count') + '</agg>');
+      if (p.aggfield) lines.push('    <aggfield>' + esc(p.aggfield) + '</aggfield>');
+      lines.push('    <range>' + esc(p.range || '24h') + '</range>');
+      lines.push('    <width>' + (p.width || 6) + '</width>');
+      if (p.sort && p.sort !== 'key') lines.push('    <sort>' + esc(p.sort) + '</sort>');
+      if (p.limit) lines.push('    <limit>' + p.limit + '</limit>');
+      if (p.unit) lines.push('    <unit>' + esc(p.unit) + '</unit>');
+      if (p.color) lines.push('    <color>' + esc(p.color) + '</color>');
+      if (p.autorefresh) lines.push('    <autorefresh>' + p.autorefresh + '</autorefresh>');
+      lines.push('  </panel>');
+    }
+
+    lines.push('</dashboard>');
+    return lines.join('\n');
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  /**
+   * Получить XML текущего дашборда (для использования в system prompt).
+   */
+  window._copilotGetDashboardXml = function() {
+    return _generateDashboardXml();
+  };
+
+  /**
+   * Получить текущий src пользователя.
+   */
+  window._copilotGetSrc = function() {
+    if (typeof getSession === 'function') {
+      var sess = getSession();
+      if (sess && sess.src) return sess.src;
+    }
+    try {
+      var raw = sessionStorage.getItem('pulse_session');
+      if (raw) {
+        var parsed = JSON.parse(raw);
+        if (parsed && parsed.src) return parsed.src;
+      }
+    } catch(_) {}
+    return null;
+  };
 
   // ── Utilities ────────────────────────────────────
   function escapeHtml(str) {
