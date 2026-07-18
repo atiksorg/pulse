@@ -114,6 +114,10 @@
       /* ═══ Pane: Settings ═══ */
       '    <div class="atab-pane active" data-pane="settings">',
 
+      /* ── Блок 0: Условия из панели ── */
+      '      <div id="aPanelConditions" style="display:none;margin-bottom:16px;padding:10px 12px;background:var(--card-bg,#141921);border:1px solid var(--border,#1A2130);border-radius:8px;font-size:11px;">',
+      '      </div>',
+
       /* ── Блок 1: Что отслеживаем ── */
       '      <div class="a-section">',
       '        <div class="a-section-hdr">',
