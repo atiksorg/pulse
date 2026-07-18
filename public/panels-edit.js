@@ -180,8 +180,8 @@ function showExampleToast(p, src){
 
 /* ── Add / Edit panel modal ──────────────────────── */
 function openAddPanel(){ editingPanelId=null; $('#modalTitle').textContent='Новая панель'; buildTemplateGrid(); resetAdvForm(); populateSuggestions(); $('#advForm').classList.remove('active'); $('#advToggle').textContent='Настроить вручную →'; $('#panelModal').classList.add('active'); }
-function openEditPanel(p){ editingPanelId=p.id; $('#modalTitle').textContent='Изменить панель'; $('#tplGrid').innerHTML=''; $('#advToggle').style.display='none'; $('#advForm').classList.add('active'); populateSuggestions(); fillAdvForm(p); $('#panelModal').classList.add('active'); }
-function closePanelModal(){ $('#panelModal').classList.remove('active'); $('#advToggle').style.display=''; editingPanelId=null; }
+function openEditPanel(p){ editingPanelId=p.id; $('#modalTitle').textContent='Изменить панель'; $('#tplGrid').innerHTML=''; $('#advToggle').style.display='none'; $('#advForm').classList.add('active'); populateSuggestions(); fillAdvForm(p); $('#panelModal').classList.add('active'); _updatePreview(); }
+function closePanelModal(){ $('#panelModal').classList.remove('active'); $('#advToggle').style.display=''; editingPanelId=null; _clearPreviewTimer(); }
 $('#btnCancelPanel') && ($('#btnCancelPanel').onclick=closePanelModal);
 $('#btnAddPanel') && ($('#btnAddPanel').onclick=openAddPanel);
 $('#advToggle') && ($('#advToggle').onclick=function(){ var f=$('#advForm'); f.classList.toggle('active'); $('#advToggle').textContent=f.classList.contains('active')?'Скрыть ручные настройки':'Настроить вручную →'; });
@@ -214,7 +214,8 @@ function populateSuggestions(){
 }
 
 function resetAdvForm(){
-  $('#f_title').value=''; $('#f_viz').value='line'; $('#f_type').value=''; $('#f_group').value='day';
+  $('#f_title').value=''; $('#f_viz').value='line'; _syncVizTile('line');
+  $('#f_type').value=''; $('#f_group').value='day';
   $('#f_fieldname').value=''; $('#f_agg').value='count'; $('#f_aggfield').value='';
   $('#f_range').value='7d'; $('#f_width').value='6'; $('#f_autorefresh').value='0';
   $('#f_sort').value='key'; $('#f_limit').value=''; $('#f_unit').value='';
@@ -233,7 +234,7 @@ function resetAdvForm(){
 }
 
 function fillAdvForm(p){
-  $('#f_title').value=p.title; $('#f_viz').value=p.viz; $('#f_type').value=p.type||'';
+  $('#f_title').value=p.title; $('#f_viz').value=p.viz; _syncVizTile(p.viz); $('#f_type').value=p.type||'';
   $('#f_group').value=p.group==='__field'?'__field':(p.group||'');
   $('#f_fieldname').value=p.field||''; $('#f_agg').value=p.agg||'count';
   $('#f_aggfield').value=p.aggfield||'';
@@ -269,39 +270,143 @@ function fillAdvForm(p){
   toggleCondFields();
 }
 
+/* ── Sync viz tile UI with hidden select ── */
+function _syncVizTile(viz){
+  var tiles = $('.viz-tile');
+  tiles.forEach(function(t){ t.classList.toggle('active', t.dataset.viz === viz); });
+  var sel = $('#f_viz'); if(sel) sel.value = viz;
+}
+
+/* ── Viz tile click handler ── */
+$('.viz-tile').forEach(function(tile){
+  tile.addEventListener('click', function(){
+    _syncVizTile(tile.dataset.viz);
+    toggleCondFields();
+    _debouncePreview();
+  });
+});
+
 function toggleCondFields(){
   $('#fieldNameWrap').style.display=$('#f_group').value==='__field'?'flex':'none';
   // aggFieldWrap нужен для count НЕ нужен, а для всех остальных — нужен
   $('#aggFieldWrap').style.display=$('#f_agg').value!=='count'?'flex':'none';
   var cr=$('#customRangeWrap'); if(cr)cr.style.display=$('#f_range').value==='custom'?'flex':'none';
   var viz=$('#f_viz').value;
+
+  // ── Секция «Разбивка и сортировка» — для line/bar/heatmap ──
+  var showBreakdownSection = (viz==='line'||viz==='bar'||viz==='heatmap');
+  var sBreakdown=$('#sectionBreakdown');
+  if(sBreakdown) sBreakdown.style.display = showBreakdownSection ? '' : 'none';
+
   var bw=$('#breakdownWrap');
   if(bw){
-    var showBreakdown = (viz==='line'||viz==='bar'||viz==='heatmap');
-    bw.style.display=showBreakdown?'flex':'none';
-    if(!showBreakdown){
+    bw.style.display=showBreakdownSection?'flex':'none';
+    if(!showBreakdownSection){
       var dbf=$('#f_breakdownfield');
       if(dbf) dbf.value='';
     }
   }
-  // chart options: stacked, cumulative, compare, secondAxis — для line/bar
-  var cow=$('#chartOptsWrap');
-  if(cow) cow.style.display=(viz==='line'||viz==='bar')?'flex':'none';
+
+  // ── Оформление: line style + tension — только line ──
+  var lsw=$('#lineStyleWrap');
+  if(lsw) lsw.style.display = (viz==='line') ? 'block' : 'none';
   // gauge min/max — только для gauge
   var gw=$('#gaugeWrap');
   if(gw) gw.style.display=(viz==='gauge')?'flex':'none';
-  // thresholds — для line/bar
-  var tw=$('#thresholdsWrap');
-  if(tw) tw.style.display=(viz==='line'||viz==='bar')?'flex':'none';
-  // tension — только для line
-  var ts=$('#tensionWrap');
-  if(ts) ts.style.display = (viz==='line') ? 'flex' : 'none';
+
+  // ── Секция «Пороги и опции» — для line/bar ──
+  var showChartOpts = (viz==='line'||viz==='bar');
+  var sChartOpts=$('#sectionChartOpts');
+  if(sChartOpts) sChartOpts.style.display = showChartOpts ? '' : 'none';
 }
-$('#f_group') && $('#f_group').addEventListener('change',toggleCondFields);
-$('#f_agg') && $('#f_agg').addEventListener('change',toggleCondFields);
-$('#f_range') && $('#f_range').addEventListener('change',toggleCondFields);
-$('#f_viz') && $('#f_viz').addEventListener('change',toggleCondFields);
+$('#f_group') && $('#f_group').addEventListener('change',function(){ toggleCondFields(); _debouncePreview(); });
+$('#f_agg') && $('#f_agg').addEventListener('change',function(){ toggleCondFields(); _debouncePreview(); });
+$('#f_range') && $('#f_range').addEventListener('change',function(){ _debouncePreview(); });
 $('#btnAddFilter') && $('#btnAddFilter').addEventListener('click',function(){ addFilterRow('','eq',''); });
+
+/* ── Live preview (debounced) ── */
+var _previewTimer = null;
+function _debouncePreview(){
+  _clearPreviewTimer();
+  _previewTimer = setTimeout(_updatePreview, 600);
+}
+function _clearPreviewTimer(){
+  if(_previewTimer){ clearTimeout(_previewTimer); _previewTimer = null; }
+}
+
+function _updatePreview(){
+  var body = $('#pmPreviewBody');
+  var status = $('#pmPreviewStatus');
+  if(!body) return;
+
+  var cfg = readAdvForm();
+  var src = getSrc();
+
+  // Нет сессии — не можем показать превью
+  if(!src){
+    body.innerHTML = '<div class="pm-preview-empty">Войдите в кабинет — предпросмотр требует src</div>';
+    if(status) status.textContent = '';
+    return;
+  }
+
+  // Для logs — показываем текстовое описание
+  if(cfg.viz === 'logs'){
+    body.innerHTML = '<div class="pm-preview-empty">📝 Логи: таблица последних событий.<br>Тип: ' + escapeHtml(cfg.type || 'все') + ', диапазон: ' + escapeHtml(cfg.range) + '</div>';
+    if(status) status.textContent = '';
+    return;
+  }
+
+  // Показываем спиннер
+  if(status){ status.textContent = 'загрузка…'; status.className = 'pm-preview-status loading'; }
+  body.innerHTML = '<div class="panel-skeleton"></div>';
+
+  var fetchFn = (cfg.viz === 'table') ? fetchStats : fetchStats;
+
+  fetchStats(src, cfg).then(function(data){
+    // Очищаем старый chart в превью (не трогаем основные charts)
+    var previewChartKey = '_preview_';
+    if(charts[previewChartKey]){ charts[previewChartKey].destroy(); delete charts[previewChartKey]; }
+
+    body.innerHTML = '';
+    var tmpP = Object.assign({ id: previewChartKey }, cfg);
+    var tmpBody = document.createElement('div');
+    tmpBody.className = 'panel-body';
+    tmpBody.id = 'body-' + previewChartKey;
+    body.appendChild(tmpBody);
+
+    if(typeof Chart === 'undefined'){
+      tmpBody.innerHTML = '<div class="pm-preview-empty">Chart.js не загружен</div>';
+      if(status){ status.textContent = ''; status.className = 'pm-preview-status'; }
+      return;
+    }
+
+    renderViz(tmpP, data, tmpBody);
+    if(status){ status.textContent = '✓'; status.className = 'pm-preview-status ok'; }
+  }).catch(function(e){
+    body.innerHTML = '<div class="pm-preview-empty" style="color:var(--coral);">Ошибка: ' + escapeHtml(e.message) + '</div>';
+    if(status){ status.textContent = '✕'; status.className = 'pm-preview-status err'; }
+  });
+}
+
+/* ── Wire up preview debounce to form fields ── */
+$('#f_type') && $('#f_type').addEventListener('input', _debouncePreview);
+$('#f_fieldname') && $('#f_fieldname').addEventListener('input', _debouncePreview);
+$('#f_aggfield') && $('#f_aggfield').addEventListener('input', _debouncePreview);
+$('#f_color') && $('#f_color').addEventListener('input', _debouncePreview);
+$('#f_linestyle') && $('#f_linestyle').addEventListener('change', function(){ _onLineStyleChange(); _debouncePreview(); });
+$('#f_format') && $('#f_format').addEventListener('change', _debouncePreview);
+$('#f_tension') && $('#f_tension').addEventListener('input', function(){ _updateTensionLabel(); _debouncePreview(); });
+$('#f_sort') && $('#f_sort').addEventListener('change', _debouncePreview);
+$('#f_limit') && $('#f_limit').addEventListener('input', _debouncePreview);
+$('#f_width') && $('#f_width').addEventListener('change', _debouncePreview);
+$('#f_autorefresh') && $('#f_autorefresh').addEventListener('change', _debouncePreview);
+$('#f_stacked') && $('#f_stacked').addEventListener('change', _debouncePreview);
+$('#f_cumulative') && $('#f_cumulative').addEventListener('change', _debouncePreview);
+$('#f_compare') && $('#f_compare').addEventListener('change', _debouncePreview);
+$('#f_secondaxis') && $('#f_secondaxis').addEventListener('change', _debouncePreview);
+$('#f_gaugeMin') && $('#f_gaugeMin').addEventListener('input', _debouncePreview);
+$('#f_gaugeMax') && $('#f_gaugeMax').addEventListener('input', _debouncePreview);
+$('#f_unit') && $('#f_unit').addEventListener('input', _debouncePreview);
 
 /* ── Синхронизация lineStyle ↔ tension ──
  * Если пользователь выбрал stepped/straight — ставим tension=0.
