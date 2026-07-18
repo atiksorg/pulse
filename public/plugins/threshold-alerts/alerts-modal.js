@@ -11,6 +11,7 @@
   var _dashboardId = null;
   var _configId = null;      // id существующего правила (если есть)
   var _thresholds = [];       // массив мульти-порогов
+  var _formulaAliases = [];   // массив метрик-алиасов для формулы [{name,agg,aggfield,label,range}]
 
   /* ── Открыть модалку для конкретной панели ── */
   function openAlertsModal(panel, dashboardId) {
@@ -121,6 +122,31 @@
     _renderThresholdRows();
     _loadGroupValues();
 
+    // Формула: загрузить условия и текст
+    if (cfg.check_mode === 'formula') {
+      var conds = Array.isArray(cfg.formula_conditions) ? cfg.formula_conditions : (typeof cfg.formula_conditions === 'string' ? (function(){ try { return JSON.parse(cfg.formula_conditions); } catch(_){ return []; } })() : []);
+      _formulaAliases = [];
+      if (Array.isArray(conds)) {
+        conds.forEach(function(c) {
+          if (c.left_metric && c.left_metric.name) {
+            _formulaAliases.push({
+              name: c.left_metric.name,
+              label: '',
+              agg: c.left_metric.agg || 'count',
+              aggfield: c.left_metric.aggfield || '',
+              range: c.left_metric.range || cfg.panel_range || '24h',
+            });
+          }
+        });
+      }
+      if (_formulaAliases.length === 0) _addFormulaAlias();
+      _renderMetricRows();
+      var ft = document.getElementById('a_formulaText');
+      if (ft && cfg.formula_text) ft.value = cfg.formula_text;
+      _syncFormulaFromText();
+      _validateFormulaText();
+    }
+
     _onCheckModeChange();
     _onAggChange();
     _updatePreview();
@@ -163,6 +189,18 @@
     _thresholds = [];
     _renderThresholdRows();
 
+    _formulaAliases = [];
+    var fmContainer = document.getElementById('aFormulaMetricRows');
+    if (fmContainer) fmContainer.innerHTML = '';
+    var ftEl = document.getElementById('a_formulaText');
+    if (ftEl) ftEl.value = '';
+    var fmTags = document.getElementById('aFormulaTags');
+    if (fmTags) fmTags.innerHTML = '';
+    var fmValid = document.getElementById('a_formulaValidation');
+    if (fmValid) fmValid.innerHTML = '';
+    var fmTestRes = document.getElementById('aFormulaTestResult');
+    if (fmTestRes) fmTestRes.innerHTML = '';
+
     _onCheckModeChange();
     _onAggChange();
     _updatePreview();
@@ -198,11 +236,17 @@
     var absEl = document.getElementById('a_absoluteThresholds');
     var deltaEl = document.getElementById('a_deltaThresholds');
     var anomalyEl = document.getElementById('a_anomalyThresholds');
+    var formulaEl = document.getElementById('a_formulaSection');
     var groupSec = document.getElementById('a_groupSection');
 
     if (absEl)    absEl.style.display = (mode === 'absolute') ? '' : 'none';
     if (deltaEl)  deltaEl.style.display = (mode === 'delta_pct') ? '' : 'none';
     if (anomalyEl) anomalyEl.style.display = (mode === 'anomaly') ? '' : 'none';
+    if (formulaEl) formulaEl.style.display = (mode === 'formula') ? '' : 'none';
+
+    if (mode === 'formula' && _formulaAliases.length === 0) {
+      _addFormulaAlias(); // Добавить первую метрику по умолчанию
+    }
 
     _updatePreview();
   }
@@ -276,7 +320,15 @@
       escLabel += ' [' + escapeHtml(groupField) + '=' + escapeHtml(groupValue) + ']';
     }
 
-    if (mode === 'delta_pct') {
+    if (mode === 'formula') {
+      var ft = document.getElementById('a_formulaText');
+      var formula = ft ? ft.value.trim() : '';
+      lines.push('⚠️ <b>' + escLabel + '</b> — формула сработала');
+      lines.push('Результат: <b>1</b>');
+      if (formula) lines.push('Формула: <code>' + escapeHtml(formula).replace(/\{([^}]+)\}/g, '<span style="color:var(--teal);">{$1}</span>') + '</code>');
+      var metricParts = _formulaAliases.map(function(m) { return m.name + '=42'; });
+      if (metricParts.length) lines.push('Метрики: ' + metricParts.join(' | '));
+    } else if (mode === 'delta_pct') {
       var minDelta = document.getElementById('a_minValueDelta').value;
       var maxDelta = document.getElementById('a_maxValueDelta').value;
       lines.push('⚠️ <b>' + escLabel + '</b> — падение на 25%');
@@ -421,6 +473,349 @@
     _renderThresholdRows();
   }
 
+  /* ═══════════════════════════════════════════════════
+     Formula Mode: Визуальный конструктор + текстовая формула
+     ═══════════════════════════════════════════════════ */
+
+  var _FM_TEMPLATES = {
+    error_rate: '{errors} / {total} * 100 > {threshold}',
+    conversion: '{purchases} / {visits} * 100 > {threshold}',
+    ratio: '{metric_a} / {metric_b} > 1',
+    compound: '{count} > 100 AND {avg_value} < 10',
+  };
+
+  function _addFormulaAlias() {
+    var num = _formulaAliases.length + 1;
+    var defaultAgg = _panel ? (_panel.agg || 'count') : 'count';
+    var defaultField = _panel ? (_panel.aggfield || _panel.field || '') : '';
+    _formulaAliases.push({
+      name: 'metric_' + num,
+      label: '',
+      agg: defaultAgg,
+      aggfield: defaultField,
+      range: (_panel ? _panel.range : '') || '24h',
+    });
+    _renderMetricRows();
+  }
+
+  function _removeFormulaAlias(idx) {
+    _formulaAliases.splice(idx, 1);
+    _renderMetricRows();
+    _updatePreview();
+  }
+
+  function _renderMetricRows() {
+    var container = document.getElementById('aFormulaMetricRows');
+    if (!container) return;
+    container.innerHTML = '';
+
+    _formulaAliases.forEach(function(m, idx) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:6px;align-items:center;flex-wrap:wrap;';
+
+      row.innerHTML =
+        '<span style="color:var(--teal,#4DECC7);font-size:11px;font-family:var(--mono);">{</span>' +
+        '<input type="text" class="a-fm-alias-name" data-idx="' + idx + '" value="' + _escAttr(m.name) + '" style="width:80px;font-size:11px;padding:4px 6px;font-family:var(--mono);background:var(--input-bg,#0D1117);color:var(--teal,#4DECC7);border:1px solid rgba(77,236,199,0.25);border-radius:4px;" placeholder="имя">' +
+        '<span style="color:var(--teal,#4DECC7);font-size:11px;font-family:var(--mono);">}</span>' +
+        '<span style="color:var(--muted-2);font-size:11px;">=</span>' +
+        '<select class="a-mi-sel a-fm-alias-agg" data-idx="' + idx + '">' +
+          '<option value="count"' + (m.agg === 'count' ? ' selected' : '') + '>count</option>' +
+          '<option value="sum"' + (m.agg === 'sum' ? ' selected' : '') + '>sum</option>' +
+          '<option value="avg"' + (m.agg === 'avg' ? ' selected' : '') + '>avg</option>' +
+          '<option value="max"' + (m.agg === 'max' ? ' selected' : '') + '>max</option>' +
+          '<option value="min"' + (m.agg === 'min' ? ' selected' : '') + '>min</option>' +
+        '</select>' +
+        '<input type="text" class="a-fm-alias-field" data-idx="' + idx + '" value="' + _escAttr(m.aggfield) + '" placeholder="поле" style="width:70px;font-size:11px;padding:4px 6px;">' +
+        '<select class="a-mi-sel a-fm-alias-range" data-idx="' + idx + '">' +
+          '<option value="1h"' + (m.range === '1h' ? ' selected' : '') + '>1ч</option>' +
+          '<option value="6h"' + (m.range === '6h' ? ' selected' : '') + '>6ч</option>' +
+          '<option value="24h"' + (m.range === '24h' ? ' selected' : '') + '>24ч</option>' +
+          '<option value="7d"' + (m.range === '7d' ? ' selected' : '') + '>7д</option>' +
+          '<option value="30d"' + (m.range === '30d' ? ' selected' : '') + '>30д</option>' +
+        '</select>' +
+        '<button type="button" class="a-mi-del" data-idx="' + idx + '" data-action="del-metric" title="Удалить">✕</button>';
+
+      container.appendChild(row);
+    });
+
+    // Обработчики
+    container.querySelectorAll('.a-fm-alias-name, .a-fm-alias-field').forEach(function(el) {
+      el.addEventListener('change', function() {
+        var idx = parseInt(el.getAttribute('data-idx'));
+        if (idx >= 0 && idx < _formulaAliases.length) {
+          if (el.classList.contains('a-fm-alias-name')) {
+            _formulaAliases[idx].name = el.value.trim().replace(/[^a-zA-Z0-9_]/g, '').slice(0, 32);
+            if (el.value !== _formulaAliases[idx].name) el.value = _formulaAliases[idx].name;
+          } else {
+            _formulaAliases[idx].aggfield = el.value.trim().slice(0, 64);
+          }
+        }
+      });
+    });
+
+    container.querySelectorAll('.a-fm-alias-agg, .a-fm-alias-range').forEach(function(el) {
+      el.addEventListener('change', function() {
+        var idx = parseInt(el.getAttribute('data-idx'));
+        if (idx >= 0 && idx < _formulaAliases.length) {
+          if (el.classList.contains('a-fm-alias-agg')) _formulaAliases[idx].agg = el.value;
+          else _formulaAliases[idx].range = el.value;
+        }
+      });
+    });
+
+    container.querySelectorAll('[data-action="del-metric"]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        _removeFormulaAlias(parseInt(btn.getAttribute('data-idx')));
+      });
+    });
+  }
+
+  /* ── Tags (quick operator insert) ── */
+  function _addFormulaTag(type, value) {
+    var ft = document.getElementById('a_formulaText');
+    if (!ft) return;
+    var ins = '';
+    if (type === 'metric') {
+      var m = _formulaAliases.find(function(a) { return a.name === value; });
+      ins = '{' + value + '}';
+    } else if (type === 'op') {
+      ins = ' ' + value + ' ';
+    } else if (type === 'num') {
+      ins = String(value);
+    } else if (type === 'paren') {
+      ins = value;
+    }
+    var pos = ft.selectionStart || ft.value.length;
+    ft.value = ft.value.slice(0, pos) + ins + ft.value.slice(pos);
+    ft.focus();
+    ft.selectionStart = ft.selectionEnd = pos + ins.length;
+    _syncFormulaFromText();
+    _validateFormulaText();
+    _updatePreview();
+  }
+
+  /* ── Render tags from formula text ── */
+  function _renderFormulaTags() {
+    var container = document.getElementById('aFormulaTags');
+    if (!container) return;
+    container.innerHTML = '';
+
+    var ft = document.getElementById('a_formulaText');
+    var text = ft ? ft.value : '';
+    if (!text.trim()) {
+      container.innerHTML = '<span style="font-size:11px;color:var(--muted-2);">Соберите формулу из блоков или напишите вручную ↓</span>';
+      return;
+    }
+
+    // Простой токенизатор для отображения
+    var re = /(\{[^}]+\})|(\b(?:AND|OR)\b)|(>=|<=|!=|==|[><+\-*/%^])|(\()|(\))|([\d.]+)|(\w+)/g;
+    var m;
+    while ((m = re.exec(text)) !== null) {
+      var span = document.createElement('span');
+      span.className = 'a-fm-tag';
+      if (m[1]) {
+        span.className += ' a-fm-tag-metric';
+        span.textContent = m[1];
+        var aliasName = m[1].slice(1, -1);
+        span.setAttribute('data-alias', aliasName);
+        span.addEventListener('click', function(e) { _openMetricPicker(e, this.getAttribute('data-alias')); });
+      } else if (m[2]) {
+        span.className += ' a-fm-tag-op';
+        span.textContent = m[2];
+      } else if (m[3]) {
+        span.className += ' a-fm-tag-op';
+        span.textContent = m[3];
+      } else if (m[4]) {
+        span.className += ' a-fm-tag-paren';
+        span.textContent = '(';
+      } else if (m[5]) {
+        span.className += ' a-fm-tag-paren';
+        span.textContent = ')';
+      } else if (m[6]) {
+        span.className += ' a-fm-tag-num';
+        span.textContent = m[6];
+      } else if (m[7]) {
+        span.className += ' a-fm-tag-op';
+        span.textContent = m[7];
+      } else continue;
+      container.appendChild(span);
+    }
+  }
+
+  /* ── Inline metric picker ── */
+  function _openMetricPicker(e, aliasName) {
+    e.stopPropagation();
+    var existing = document.querySelector('.a-fm-inline-edit');
+    if (existing) existing.remove();
+
+    var idx = _formulaAliases.findIndex(function(a) { return a.name === aliasName; });
+    if (idx === -1) return;
+
+    var div = document.createElement('div');
+    div.className = 'a-fm-inline-edit';
+    div.style.left = e.clientX + 'px';
+    div.style.top = (e.clientY + 4) + 'px';
+
+    _formulaAliases.forEach(function(m, i) {
+      var opt = document.createElement('button');
+      opt.className = 'a-fm-inline-opt';
+      opt.textContent = '{' + m.name + '} (' + m.agg + (m.aggfield ? ':' + m.aggfield : '') + ')';
+      opt.addEventListener('click', function() {
+        _renameAliasInFormula(aliasName, m.name);
+        div.remove();
+      });
+      div.appendChild(opt);
+    });
+
+    document.body.appendChild(div);
+    setTimeout(function() {
+      document.addEventListener('click', function handler() { div.remove(); document.removeEventListener('click', handler); }, { once: true });
+    }, 10);
+  }
+
+  function _renameAliasInFormula(oldName, newName) {
+    var ft = document.getElementById('a_formulaText');
+    if (!ft) return;
+    ft.value = ft.value.split('{' + oldName + '}').join('{' + newName + '}');
+    _syncFormulaFromText();
+    _validateFormulaText();
+    _updatePreview();
+  }
+
+  /* ── Sync formula text to conditions (for preview) ── */
+  function _syncFormulaFromText() {
+    _renderFormulaTags();
+  }
+
+  /* ── Live validation ── */
+  function _validateFormulaText() {
+    var ft = document.getElementById('a_formulaText');
+    var vl = document.getElementById('a_formulaValidation');
+    if (!ft || !vl) return;
+    var text = ft.value.trim();
+    if (!text) { vl.innerHTML = ''; return; }
+
+    // Синтаксическая валидация: проверяем скобки и базовые ошибки
+    var depth = 0;
+    for (var i = 0; i < text.length; i++) {
+      if (text[i] === '(') depth++;
+      if (text[i] === ')') depth--;
+      if (depth < 0) { vl.innerHTML = '<span style="color:var(--coral,#F2664F);">✗ Лишняя закрывающая скобка на позиции ' + (i+1) + '</span>'; return; }
+    }
+    if (depth !== 0) { vl.innerHTML = '<span style="color:var(--coral,#F2664F);">✗ Незакрытая скобка</span>'; return; }
+
+    // Проверка: есть ли хотя бы одна переменная
+    var vars = text.match(/\{[^}]+\}/g);
+    if (!vars || vars.length === 0) { vl.innerHTML = '<span style="color:var(--amber,#FFB74D);">⚠ Нет метрик ({имя})</span>'; return; }
+
+    // Проверка: известные переменные
+    var knownNames = _formulaAliases.map(function(a) { return a.name; });
+    var unknown = [];
+    vars.forEach(function(v) {
+      var name = v.slice(1, -1);
+      if (knownNames.indexOf(name) === -1 && isNaN(Number(name))) unknown.push(name);
+    });
+    if (unknown.length) {
+      vl.innerHTML = '<span style="color:var(--amber,#FFB74D);">⚠ Неизвестные метрики: ' + unknown.map(function(n){return '{'+n+'}';}).join(', ') + ' (добавьте в «Метрики»)</span>';
+      return;
+    }
+
+    vl.innerHTML = '<span style="color:var(--teal,#4DECC7);">✓ Синтаксис OK (' + vars.length + ' метрик)</span>';
+  }
+
+  /* ── Templates ── */
+  function _applyTemplate(tplKey) {
+    var tpl = _FM_TEMPLATES[tplKey];
+    if (!tpl) return;
+
+    // Автоматически создать метрики-алиасы из шаблона
+    var tplAliases = {
+      errors: { name: 'errors', agg: 'count', aggfield: '', range: '24h' },
+      total: { name: 'total', agg: 'count', aggfield: '', range: '24h' },
+      threshold: { name: 'threshold', agg: 'count', aggfield: '', range: '24h' },
+      purchases: { name: 'purchases', agg: 'count', aggfield: '', range: '24h' },
+      visits: { name: 'visits', agg: 'count', aggfield: '', range: '24h' },
+      metric_a: { name: 'metric_a', agg: 'count', aggfield: '', range: '24h' },
+      metric_b: { name: 'metric_b', agg: 'count', aggfield: '', range: '24h' },
+      count: { name: 'count', agg: 'count', aggfield: '', range: '24h' },
+      avg_value: { name: 'avg_value', agg: 'avg', aggfield: 'value', range: '24h' },
+    };
+
+    var existingNames = _formulaAliases.map(function(a) { return a.name; });
+    var re = /\{([^}]+)\}/g;
+    var m;
+    while ((m = re.exec(tpl)) !== null) {
+      var name = m[1];
+      if (existingNames.indexOf(name) === -1 && isNaN(Number(name))) {
+        var src = tplAliases[name] || { name: name, agg: 'count', aggfield: '', range: '24h' };
+        _formulaAliases.push(Object.assign({}, src));
+        existingNames.push(name);
+      }
+    }
+
+    _renderMetricRows();
+    var ft = document.getElementById('a_formulaText');
+    if (ft) ft.value = tpl;
+    _syncFormulaFromText();
+    _validateFormulaText();
+    _updatePreview();
+    toast('Шаблон применён — настройте имена метрик');
+  }
+
+  /* ── Test evaluation ── */
+  async function _testFormula() {
+    if (!_configId) { toast('Сначала сохраните правило'); return; }
+    var btn = document.getElementById('aFormulaTestBtn');
+    var resultEl = document.getElementById('aFormulaTestResult');
+    if (btn) btn.textContent = '⏳ Считаем…';
+
+    var ft = document.getElementById('a_formulaText');
+    var formulaText = ft ? ft.value.trim() : '';
+    if (!formulaText) { if (resultEl) resultEl.innerHTML = '<span style="color:var(--coral);">Формула пуста</span>'; if (btn) btn.textContent = '▶ Вычислить'; return; }
+
+    try {
+      var r = await fetch(API + '/alerts/config/' + encodeURIComponent(_configId) + '/formula-eval', {
+        method: 'POST',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+        body: JSON.stringify({ formula_text: formulaText, formula_conditions: _buildFormulaConditions() })
+      });
+      if (!r.ok) {
+        var e = await r.json().catch(function() { return {}; });
+        if (resultEl) resultEl.innerHTML = '<span style="color:var(--coral);">✗ ' + (e.detail || e.error || r.status) + '</span>';
+        return;
+      }
+      var data = await r.json();
+      if (resultEl) {
+        var metrics = data.metrics || {};
+        var parts = Object.entries(metrics).map(function(kv) { return '<span style="color:var(--teal);">{' + kv[0] + '}</span>=' + kv[1]; });
+        resultEl.innerHTML =
+          '<div>Результат: <b style="font-size:14px;color:' + (data.breach ? 'var(--coral,#F2664F)' : 'var(--teal,#4DECC7)') + ';">' + data.result + '</b>' +
+          (data.breach ? ' ⚠️ НАРУШЕНИЕ' : ' ✅ В норме') + '</div>' +
+          (parts.length ? '<div style="margin-top:3px;color:var(--muted-2);font-size:11px;">' + parts.join(' · ') + '</div>' : '');
+      }
+    } catch (_) {
+      if (resultEl) resultEl.innerHTML = '<span style="color:var(--coral);">Ошибка сети</span>';
+    } finally {
+      if (btn) btn.textContent = '▶ Вычислить';
+    }
+  }
+
+  /* ── Build formula_conditions from aliases ── */
+  function _buildFormulaConditions() {
+    var formulaText = '';
+    var ft = document.getElementById('a_formulaText');
+    if (ft) formulaText = ft.value.trim();
+    if (!formulaText) return [];
+
+    return _formulaAliases.map(function(m) {
+      return { left_metric: { type: 'metric', name: m.name, agg: m.agg, aggfield: m.aggfield, range: m.range }, operator: '>', right_metric: null, logic: 'AND' };
+    });
+  }
+
+  function _escAttr(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  }
+
   /* ── Собрать body для сохранения (включая новые поля) ── */
   function _collectBody() {
     var $ = function(id) { return document.getElementById(id).value; };
@@ -433,12 +828,15 @@
     } else if (mode === 'anomaly') {
       minRaw = '';
       maxRaw = $('a_maxValueAnomaly').trim();
+    } else if (mode === 'formula') {
+      minRaw = '';
+      maxRaw = '';
     } else {
       minRaw = $('a_minValue').trim();
       maxRaw = $('a_maxValue').trim();
     }
 
-    return {
+    var body = {
       is_active: document.getElementById('a_isActive').checked,
       label: $('a_label').trim() || _panel.title,
       panel_type: _panel.type || '',
@@ -453,7 +851,6 @@
       check_interval_sec: Math.max(30, Number($('a_checkInterval')) || 60),
       cooldown_sec: Math.max(60, (Number($('a_cooldown')) || 15) * 60),
       notify_on_recovery: document.getElementById('a_notifyRecovery').checked,
-      // ── Новые поля ──
       check_mode: mode,
       group_field: $('a_groupField').trim(),
       group_value: $('a_groupValue').trim(),
@@ -462,6 +859,15 @@
       on_empty: $('a_onEmpty'),
       thresholds_json: _thresholds,
     };
+
+    // Formula fields
+    if (mode === 'formula') {
+      var ft = document.getElementById('a_formulaText');
+      body.formula_text = ft ? ft.value.trim() : '';
+      body.formula_conditions = _buildFormulaConditions();
+    }
+
+    return body;
   }
 
   /* ── Сохранить правило ── */
@@ -478,6 +884,11 @@
     }
     if (mode === 'anomaly' && (body.max_value === null || body.max_value <= 0)) {
       toast('Укажите порог z-score (больше 0)'); return;
+    }
+    if (mode === 'formula') {
+      if (!body.formula_text) { toast('Укажите формулу'); return; }
+      var vars = body.formula_text.match(/\{[^}]+\}/g);
+      if (!vars || vars.length === 0) { toast('Формула должна содержать хотя бы одну метрику ({имя})'); return; }
     }
 
     var saveBtn = document.getElementById('aBtnSave');
@@ -627,6 +1038,50 @@
 
     var addThresholdBtn = document.getElementById('aBtnAddThreshold');
     if (addThresholdBtn) addThresholdBtn.addEventListener('click', _addThreshold);
+
+    // ── Formula mode handlers ──
+    var formulaAddMetric = document.getElementById('aFormulaAddMetric');
+    if (formulaAddMetric) formulaAddMetric.addEventListener('click', _addFormulaAlias);
+
+    var formulaText = document.getElementById('a_formulaText');
+    if (formulaText) {
+      formulaText.addEventListener('input', function() {
+        _syncFormulaFromText();
+        _validateFormulaText();
+        _updatePreview();
+      });
+      formulaText.addEventListener('change', function() {
+        _validateFormulaText();
+        _updatePreview();
+      });
+    }
+
+    document.querySelectorAll('.a-fm-tpl').forEach(function(btn) {
+      btn.addEventListener('click', function() { _applyTemplate(btn.getAttribute('data-tpl')); });
+    });
+
+    var formulaTestBtn = document.getElementById('aFormulaTestBtn');
+    if (formulaTestBtn) formulaTestBtn.addEventListener('click', _testFormula);
+
+    var fmAddOpBtn = document.getElementById('aFmAddOpBtn');
+    if (fmAddOpBtn) fmAddOpBtn.addEventListener('click', function() {
+      var opSel = document.getElementById('aFmQuickOp');
+      var numIn = document.getElementById('aFmQuickNum');
+      if (opSel) _addFormulaTag('op', opSel.value);
+      if (numIn && numIn.value !== '') _addFormulaTag('num', numIn.value);
+    });
+
+    var fmParenBtn = document.getElementById('aFmAddParenBtn');
+    if (fmParenBtn) fmParenBtn.addEventListener('click', function() { _addFormulaTag('paren', '('); });
+
+    var fmClearBtn = document.getElementById('aFmClearBtn');
+    if (fmClearBtn) fmClearBtn.addEventListener('click', function() {
+      var ft = document.getElementById('a_formulaText');
+      if (ft) ft.value = '';
+      _syncFormulaFromText();
+      _validateFormulaText();
+      _updatePreview();
+    });
 
     var groupFieldInput = document.getElementById('a_groupField');
     if (groupFieldInput) {
