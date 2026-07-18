@@ -784,7 +784,7 @@
     });
   }
 
-  // Разбить system prompt на секции по разделителям ═══
+  // Разбить system prompt на секции по разделителям ═══ 
   function _parseSystemPromptSections(prompt) {
     var sections = [];
     var parts = prompt.split(/═{10,}/);
@@ -796,7 +796,7 @@
       if (!part) continue;
       // Если часть содержит заголовок секции (короткая строка с названием)
       var lines = part.split('\n');
-      if (lines.length <= 2 && lines[0].length < 80 && /^[А-ZA-Z\s()\-]+$/.test(lines[0].trim())) {
+      if (lines.length <= 2 && lines[0].length < 80 && /^[А-Яа-яA-Za-z\s()\-]+$/.test(lines[0].trim())) {
         // Сохраняем предыдущую секцию
         if (currentContent.trim()) {
           sections.push({ title: currentTitle, content: currentContent.trim() });
