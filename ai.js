@@ -1011,6 +1011,244 @@ async function suggestPanel(prompt, existingTypes, isRetry = false) {
   return validation.panel;
 }
 
+// ═══════════════════════════════════════════════════
+// AI ALERT FORMULA — подбор формулы для алертов
+// ═══════════════════════════════════════════════════
+
+const ALERT_FORMULA_SYSTEM_PROMPT = `Ты — AI-помощник по настройке уведомлений (алертов) для дашборда events.atiks.org.
+Твоя задача: по свободному текстовому запросу пользователя на РУССКОМ языке подобрать ФОРМУЛУ для порогового уведомления.
+
+═══ ЧТО ТАКОЕ ФОРМУЛА АЛЕРТА ═══
+
+Формула — это математическое выражение, которое проверяется каждые N секунд.
+Если результат выражения = true (ненулевое), алерт срабатывает и отправляет уведомление в Telegram.
+
+Переменные формулы — это метрики, обёрнутые в фигурные скобки: {имя_метрики}
+Каждая метрика — это отдельный запрос к API (тип события, агрегация, период).
+
+Примеры формул:
+  {errors} / {total} * 100 > 10       — доля ошибок > 10%
+  {purchases} / {visits} * 100 < 2    — конверсия < 2%
+  {avg_response} > 500                 — среднее время ответа > 500мс
+  {count_today} > {count_yesterday} * 2 — рост событий в 2 раза
+  {total} < 100                        — менее 100 событий (нет данных)
+
+═══ КРАТКИЙ СКИЛЛ ПО API (events.atiks.org) ═══
+
+Сервис принимает события и отдаёт агрегированную статистику.
+Параметры метрики:
+  type    — тип события (purchase, error, signup и т.д.) или "" — все типы
+  agg     — count (кол-во), sum:поле (сумма), avg:поле (среднее)
+  range   — 1h, 6h, 24h, 7d, 30d
+  filters — [{field, op, value}] — дополнительные условия
+
+═══ КОНТЕКСТ ПАНЕЛИ ═══
+
+Тебе передают ТЕКУЩИЕ настройки панели (тип события, агрегация, период).
+Используй их как основу, но можешь создавать метрики с другими параметрами.
+Например: если панель показывает purchase по дням, можно сделать формулу сравнения 
+с ошибками ({errors}) или другой метрикой.
+
+═══ ФОРМАТ ОТВЕТА ═══
+
+Верни ТОЛЬКО один JSON-объект (без markdown, без пояснений, без code-fence):
+
+{
+  "label": "Краткое название на русском (до 80 символов)",
+  "explanation": "Подробное объяснение на русском (2-4 предложения): что делает формула, когда сработает, какие метрики использует. Пользователь должен понять суть ДО применения.",
+  "formula_text": "{metric_a} / {metric_b} * 100 > 10",
+  "metrics": [
+    {
+      "name": "metric_a",
+      "agg": "count",
+      "aggfield": "",
+      "range": "24h"
+    },
+    {
+      "name": "metric_b",
+      "agg": "count",
+      "aggfield": "",
+      "range": "24h"
+    }
+  ],
+  "check_interval_sec": 60,
+  "cooldown_sec": 900
+}
+
+═══ ПРАВИЛА ═══
+
+1. name метрики — только латиница, цифры и _ (макс. 32 символа).
+2. agg: "count" | "sum" | "avg"
+3. aggfield: имя поля payload (для sum/avg), пустая строка для count.
+4. range: "1h" | "6h" | "24h" | "7d" | "30d"
+5. В формуле используй только имена метрик из массива metrics.
+6. Операторы формулы: + - * / > < >= <= == != AND OR ( ) и числа.
+7. formula_text — текст формулы с метриками в {фигурных скобках}.
+8. check_interval_sec: 30–3600 (по умолчанию 60).
+9. cooldown_sec: 60–86400 (по умолчанию 900 = 15 мин).
+10. Если пользователь просит «уведомление о падении конверсии» — создай формулу с двумя метриками.
+11. Если просит «уведомление если событий мало» — используй одну метрику и простое сравнение.
+12. Не используй null — пустая строка "".
+13. Если запрос бессмысленный — всё равно верни простейшую формулу: одна метрика count с порогом.
+14. label — на русском, понятный человеку.
+15. explanation — на русском, подробное объяснение для пользователя.
+
+Ответ — ТОЛЬКО JSON.`;
+
+// ── Валидация ответа suggestAlertFormula ───────────
+const ALLOWED_ALERT_AGG = ['count', 'sum', 'avg'];
+const ALLOWED_ALERT_RANGE = ['1h', '6h', '24h', '7d', '30d'];
+
+function validateAlertFormulaResponse(parsed) {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { ok: false, error: 'not_an_object' };
+  }
+
+  const label = safeTitle(parsed.label || 'Алерт');
+  const explanation = String(parsed.explanation || '').trim().slice(0, 1000) || 'Формула алерта';
+  const formulaText = String(parsed.formula_text || '').trim().slice(0, 500);
+  if (!formulaText) return { ok: false, error: 'empty_formula' };
+
+  // Проверяем что формула содержит хотя бы одну метрику
+  const formulaVars = formulaText.match(/\{[^}]+\}/g);
+  if (!formulaVars || formulaVars.length === 0) return { ok: false, error: 'no_metrics_in_formula' };
+
+  // Валидируем метрики
+  const metricsRaw = Array.isArray(parsed.metrics) ? parsed.metrics : [];
+  if (metricsRaw.length === 0) return { ok: false, error: 'no_metrics' };
+  if (metricsRaw.length > 10) return { ok: false, error: 'too_many_metrics' };
+
+  const metrics = [];
+  for (const m of metricsRaw) {
+    if (!m || typeof m !== 'object') continue;
+    const name = String(m.name || '').replace(/[^a-zA-Z0-9_]/g, '').slice(0, 32);
+    if (!name) continue;
+    const agg = String(m.agg || 'count').toLowerCase();
+    if (!ALLOWED_ALERT_AGG.includes(agg)) continue;
+    const aggfield = safeIdent(m.aggfield || '', 64);
+    const range = String(m.range || '24h').toLowerCase();
+    if (!ALLOWED_ALERT_RANGE.includes(range)) continue;
+    metrics.push({ name, agg, aggfield, range });
+  }
+
+  // Проверяем что все переменные из формулы есть в массиве метрик
+  const metricNames = new Set(metrics.map(m => m.name));
+  const missingInMetrics = formulaVars
+    .map(v => v.slice(1, -1))
+    .filter(n => !metricNames.has(n) && isNaN(Number(n)));
+  if (missingInMetrics.length > 0) return { ok: false, error: 'formula_has_unknown_vars:' + missingInMetrics.join(',') };
+
+  let checkInterval = Number(parsed.check_interval_sec) || 60;
+  checkInterval = Math.max(30, Math.min(3600, checkInterval));
+
+  let cooldown = Number(parsed.cooldown_sec) || 900;
+  cooldown = Math.max(60, Math.min(86400, cooldown));
+
+  return {
+    ok: true,
+    result: {
+      label,
+      explanation,
+      formula_text: formulaText,
+      metrics,
+      check_interval_sec: checkInterval,
+      cooldown_sec: cooldown,
+    }
+  };
+}
+
+// ── suggestAlertFormula: запрос к LLM ──────────────
+async function suggestAlertFormula(prompt, panelContext, isRetry = false) {
+  const userPrompt = String(prompt || '').trim().slice(0, AI_PROMPT_MAX);
+  if (!userPrompt) throw new Error('empty_prompt');
+
+  // Формируем контекст панели
+  const ctx = panelContext || {};
+  const ctxStr = JSON.stringify({
+    title: ctx.title || '',
+    type: ctx.type || '',
+    agg: ctx.agg || 'count',
+    aggfield: ctx.aggfield || '',
+    range: ctx.range || '24h',
+    field: ctx.field || '',
+    filters: Array.isArray(ctx.filters) ? ctx.filters : [],
+  });
+
+  const userContent = `Запрос пользователя: ${userPrompt}\n\nТекущие настройки панели:\n${ctxStr}`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
+  const t0 = Date.now();
+
+  let res;
+  try {
+    res = await fetch(AI_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: AI_MODEL,
+        stream: false,
+        temperature: 0.2,
+        messages: [
+          { role: 'system', content: ALERT_FORMULA_SYSTEM_PROMPT },
+          { role: 'user',   content: userContent },
+        ],
+      }),
+    });
+  } catch (e) {
+    clearTimeout(timer);
+    const msg = (e && e.name === 'AbortError') ? 'timeout' : (e.message || 'fetch_failed');
+    recordAiFailure(msg);
+    throw new Error(msg);
+  }
+  clearTimeout(timer);
+
+  if (!res.ok) {
+    recordAiFailure('http_' + res.status);
+    throw new Error('ai_http_' + res.status);
+  }
+
+  let data;
+  try { data = await res.json(); }
+  catch (_) {
+    recordAiFailure('bad_json');
+    throw new Error('ai_bad_response');
+  }
+
+  const content = data && data.choices && data.choices[0] && data.choices[0].message
+    ? data.choices[0].message.content
+    : null;
+  if (!content) {
+    recordAiFailure('empty_content');
+    throw new Error('ai_empty_content');
+  }
+
+  const parsed = extractJson(content);
+  if (!parsed) {
+    if (!isRetry) {
+      return suggestAlertFormula(prompt, panelContext, true);
+    }
+    recordAiFailure('parse_failed');
+    throw new Error('ai_parse_failed');
+  }
+
+  const validation = validateAlertFormulaResponse(parsed);
+  if (!validation.ok) {
+    if (!isRetry) {
+      return suggestAlertFormula(prompt + '\n\nОШИБКА ВАЛИДАЦИИ: ' + validation.error + '. Исправь.', panelContext, true);
+    }
+    recordAiFailure('invalid_alert_' + validation.error);
+    const e = new Error('ai_invalid_response:' + validation.error);
+    e.code = validation.error;
+    throw e;
+  }
+
+  const ms = Date.now() - t0;
+  recordAiSuccess(ms);
+  return validation.result;
+}
+
 module.exports = {
   // конфиг (для тестов)
   AI_API_URL, AI_MODEL, AI_TIMEOUT_MS, AI_RATE_LIMIT, AI_RATE_WINDOW, AI_PROMPT_MAX,
@@ -1020,6 +1258,8 @@ module.exports = {
   collectExistingTypes,
   // ядро
   extractJson, validatePanelConfig, suggestPanel, optimizePanel, validateOptimizeResponse,
+  // alert formula
+  suggestAlertFormula, validateAlertFormulaResponse,
   // discover
   analyzeLogSample, extractJsonArray, discoverPanels,
   // метрики
