@@ -272,13 +272,13 @@ function fillAdvForm(p){
 
 /* ── Sync viz tile UI with hidden select ── */
 function _syncVizTile(viz){
-  var tiles = $('.viz-tile');
+  var tiles = $$('.viz-tile');
   tiles.forEach(function(t){ t.classList.toggle('active', t.dataset.viz === viz); });
   var sel = $('#f_viz'); if(sel) sel.value = viz;
 }
 
 /* ── Viz tile click handler ── */
-$('.viz-tile').forEach(function(tile){
+$$('.viz-tile').forEach(function(tile){
   tile.addEventListener('click', function(){
     _syncVizTile(tile.dataset.viz);
     toggleCondFields();
