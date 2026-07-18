@@ -386,7 +386,7 @@
       display: none;
       border-bottom: 1px solid var(--border, #2a2a3a);
       background: #0d0d14;
-      max-height: 200px;
+      max-height: 400px;
       overflow-y: auto;
     }
     .cp-brain-header {
@@ -414,6 +414,249 @@
       color: #a0a0b0;
       white-space: pre;
       overflow-x: auto;
+    }
+
+    /* ═══ Markdown Content Styles ═══ */
+    .cp-msg-assistant .cp-md h1,
+    .cp-msg-assistant .cp-md h2,
+    .cp-msg-assistant .cp-md h3 {
+      margin: 12px 0 6px 0;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+    .cp-msg-assistant .cp-md h1 { font-size: 16px; }
+    .cp-msg-assistant .cp-md h2 { font-size: 14px; }
+    .cp-msg-assistant .cp-md h3 { font-size: 13px; }
+    .cp-msg-assistant .cp-md p {
+      margin: 6px 0;
+    }
+    .cp-msg-assistant .cp-md strong {
+      font-weight: 600;
+    }
+    .cp-msg-assistant .cp-md em {
+      font-style: italic;
+    }
+    .cp-msg-assistant .cp-md code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      background: rgba(77,236,199,0.1);
+      padding: 1px 5px;
+      border-radius: 4px;
+      color: #4DECC7;
+    }
+    .cp-msg-assistant .cp-md pre {
+      background: #0d0d14;
+      border: 1px solid var(--border, #2a2a3a);
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin: 8px 0;
+      overflow-x: auto;
+    }
+    .cp-msg-assistant .cp-md pre code {
+      background: none;
+      padding: 0;
+      color: #c0c0d0;
+      font-size: 11px;
+      line-height: 1.5;
+    }
+    .cp-msg-assistant .cp-md ul,
+    .cp-msg-assistant .cp-md ol {
+      margin: 6px 0;
+      padding-left: 20px;
+    }
+    .cp-msg-assistant .cp-md li {
+      margin: 2px 0;
+    }
+    .cp-msg-assistant .cp-md a {
+      color: #4DECC7;
+      text-decoration: none;
+      border-bottom: 1px solid rgba(77,236,199,0.3);
+    }
+    .cp-msg-assistant .cp-md a:hover {
+      border-bottom-color: #4DECC7;
+    }
+    .cp-msg-assistant .cp-md blockquote {
+      border-left: 3px solid rgba(77,236,199,0.3);
+      padding-left: 12px;
+      margin: 8px 0;
+      color: var(--text-muted, #888);
+    }
+    .cp-msg-assistant .cp-md table {
+      border-collapse: collapse;
+      margin: 8px 0;
+      font-size: 12px;
+      width: 100%;
+    }
+    .cp-msg-assistant .cp-md th,
+    .cp-msg-assistant .cp-md td {
+      border: 1px solid var(--border, #2a2a3a);
+      padding: 5px 8px;
+      text-align: left;
+    }
+    .cp-msg-assistant .cp-md th {
+      background: rgba(77,236,199,0.08);
+      font-weight: 600;
+    }
+    .cp-msg-assistant .cp-md hr {
+      border: none;
+      border-top: 1px solid var(--border, #2a2a3a);
+      margin: 10px 0;
+    }
+
+    /* ═══ Inline Action Buttons ═══ */
+    .cp-btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 8px 0 4px 0;
+    }
+    .cp-action-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 6px 12px;
+      border: 1px solid rgba(77,236,199,0.35);
+      border-radius: 8px;
+      background: rgba(77,236,199,0.08);
+      color: #4DECC7;
+      font-size: 12px;
+      font-weight: 500;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .cp-action-btn:hover {
+      background: rgba(77,236,199,0.18);
+      border-color: #4DECC7;
+      transform: translateY(-1px);
+    }
+    .cp-action-btn:active {
+      transform: translateY(0);
+    }
+    .cp-action-btn.cp-btn-pending {
+      opacity: 0.5;
+      pointer-events: none;
+    }
+
+    /* ═══ Brain Panel Enhanced ═══ */
+    .cp-brain-tabs {
+      display: flex;
+      gap: 0;
+      border-bottom: 1px solid rgba(77,236,199,0.15);
+    }
+    .cp-brain-tab {
+      flex: 1;
+      padding: 8px 12px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted, #666);
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      transition: all 0.15s;
+      text-align: center;
+    }
+    .cp-brain-tab:hover {
+      color: var(--text, #e8e8f0);
+      background: rgba(77,236,199,0.04);
+    }
+    .cp-brain-tab.active {
+      color: #4DECC7;
+      border-bottom-color: #4DECC7;
+    }
+    .cp-brain-tab-content {
+      display: none;
+      max-height: 280px;
+      overflow-y: auto;
+    }
+    .cp-brain-tab-content.visible {
+      display: block;
+    }
+    .cp-brain-section {
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(77,236,199,0.08);
+    }
+    .cp-brain-section:last-child {
+      border-bottom: none;
+    }
+    .cp-brain-section-title {
+      font-size: 10px;
+      font-weight: 600;
+      color: #4DECC7;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+    .cp-brain-md {
+      font-size: 12px;
+      line-height: 1.5;
+      color: #c0c0d0;
+    }
+    .cp-brain-md h1, .cp-brain-md h2, .cp-brain-md h3 {
+      font-size: 12px;
+      font-weight: 600;
+      color: #e8e8f0;
+      margin: 10px 0 4px 0;
+    }
+    .cp-brain-md code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      background: rgba(77,236,199,0.1);
+      padding: 1px 4px;
+      border-radius: 3px;
+      color: #4DECC7;
+    }
+    .cp-brain-md pre {
+      background: #0a0a10;
+      border: 1px solid #2a2a3a;
+      border-radius: 6px;
+      padding: 8px;
+      margin: 6px 0;
+      overflow-x: auto;
+    }
+    .cp-brain-md pre code {
+      background: none;
+      padding: 0;
+      color: #a0a0b0;
+    }
+    .cp-brain-tool {
+      padding: 8px 12px;
+      border-bottom: 1px solid rgba(77,236,199,0.06);
+    }
+    .cp-brain-tool:last-child {
+      border-bottom: none;
+    }
+    .cp-brain-tool-name {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 600;
+      color: #4DECC7;
+    }
+    .cp-brain-tool-desc {
+      font-size: 11px;
+      color: #a0a0b0;
+      margin-top: 2px;
+      line-height: 1.4;
+    }
+    .cp-brain-tool-params {
+      margin-top: 4px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      color: #808090;
+    }
+    .cp-brain-tool-confirm {
+      display: inline-block;
+      font-size: 10px;
+      color: #ffb84d;
+      margin-left: 6px;
+    }
+    .cp-brain-loading {
+      padding: 20px;
+      text-align: center;
+      color: var(--text-muted, #666);
+      font-size: 12px;
     }
 
     /* Mobile responsive */
@@ -463,10 +706,20 @@
       </div>
     </div>
     <div class="cp-brain-panel" id="cpBrainPanel">
-      <div class="cp-brain-header">
-        <span>🧠 Контекст агента (XML текущего дашборда)</span>
+      <div class="cp-brain-tabs" id="cpBrainTabs">
+        <button class="cp-brain-tab active" data-tab="instructions">📝 Инструкции</button>
+        <button class="cp-brain-tab" data-tab="tools">🔧 Инструменты</button>
+        <button class="cp-brain-tab" data-tab="xml">📋 XML дашборда</button>
       </div>
-      <pre class="cp-brain-code"><!-- загрузка... --></pre>
+      <div class="cp-brain-tab-content visible" id="brainTabInstructions">
+        <div class="cp-brain-loading">Загрузка контекста...</div>
+      </div>
+      <div class="cp-brain-tab-content" id="brainTabTools">
+        <div class="cp-brain-loading">Загрузка инструментов...</div>
+      </div>
+      <div class="cp-brain-tab-content" id="brainTabXml">
+        <pre class="cp-brain-code"><!-- загрузка... --></pre>
+      </div>
     </div>
     <div class="cp-sessions" id="cpSessions"></div>
     <div class="cp-messages" id="cpMessages"></div>
