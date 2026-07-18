@@ -9,6 +9,7 @@
  *   POST   /ai-copilot/confirm/:messageId — подтвердить action
  *   DELETE /ai-copilot/session/:id        — удалить сессию
  *   POST   /ai-copilot/session/:id/clear  — очистить историю
+ *   POST   /ai-copilot/session/:id/rename — переименовать сессию
  */
 'use strict';
 
@@ -348,6 +349,26 @@ function registerRoutes(server, db) {
           .run(new Date().toISOString(), resourceId);
 
         return auth.json(res, 200, { ok: true, deleted: result.changes });
+      }
+
+      // ── POST /ai-copilot/session/:id/rename — переименовать сессию ──
+      if (req.method === 'POST' && resource === 'session' && resourceId && action === 'rename') {
+        if (!SAFE_ID_RE.test(resourceId)) return auth.json(res, 400, { error: 'bad_id' });
+        const sess = db.prepare('SELECT src FROM ai_copilot_sessions WHERE id = ?').get(resourceId);
+        if (!sess) return auth.json(res, 404, { error: 'not_found' });
+        if (sess.src !== session.src) return auth.json(res, 403, { error: 'forbidden' });
+
+        let body;
+        try { body = await auth.readJsonBody(req); }
+        catch (_) { return auth.json(res, 400, { error: 'invalid_json' }); }
+
+        const newTitle = (body && typeof body.title === 'string') ? body.title.trim().slice(0, 200) : '';
+        if (!newTitle) return auth.json(res, 400, { error: 'empty_title' });
+
+        db.prepare('UPDATE ai_copilot_sessions SET title = ?, updated_at = ? WHERE id = ?')
+          .run(newTitle, new Date().toISOString(), resourceId);
+
+        return auth.json(res, 200, { ok: true, title: newTitle });
       }
 
       // ── GET /ai-copilot/context — полный контекст агента (system prompt + tools) ──
