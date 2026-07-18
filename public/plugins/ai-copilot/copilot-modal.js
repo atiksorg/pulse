@@ -95,6 +95,9 @@
 
     // Load sessions
     loadSessions();
+
+    // Setup inline button delegation
+    _setupButtonDelegation();
   };
 
   // ── API helpers ──────────────────────────────────
@@ -307,7 +310,16 @@
 
     var div = document.createElement('div');
     div.className = 'cp-msg cp-msg-' + (msg.role === 'error' ? 'error' : msg.role);
-    div.textContent = msg.content || '';
+
+    // Assistant-сообщения рендерим через Markdown
+    if (msg.role === 'assistant') {
+      var mdWrap = document.createElement('div');
+      mdWrap.className = 'cp-md';
+      mdWrap.innerHTML = renderMarkdown(msg.content || '');
+      div.appendChild(mdWrap);
+    } else {
+      div.textContent = msg.content || '';
+    }
 
     var ts = document.createElement('div');
     ts.className = 'cp-msg-timestamp';
@@ -414,26 +426,10 @@
     if (elMessages) elMessages.scrollTop = elMessages.scrollHeight;
   }
 
-  // ── Brain Context: показать текущий XML дашборда ──
-  function toggleBrainContext() {
-    var panel = document.getElementById('cpBrainPanel');
-    if (!panel) return;
-    var isOpen = panel.style.display !== 'none';
-    if (isOpen) {
-      panel.style.display = 'none';
-      return;
-    }
-    // Генерируем XML текущего дашборда
-    var xml = _generateDashboardXml();
-    var codeEl = panel.querySelector('.cp-brain-code');
-    if (codeEl) codeEl.textContent = xml;
-    panel.style.display = 'block';
-  }
+  // ═══════════════════════════════════════════════════
+  // DASHBOARD XML GENERATION
+  // ═══════════════════════════════════════════════════
 
-  /**
-   * Сгенерировать XML-описание текущего активного дашборда.
-   * Используется для показа в панели «мозг» и для передачи в system prompt.
-   */
   function _generateDashboardXml() {
     var dash = null;
     try {
@@ -505,19 +501,315 @@
     return null;
   };
 
-  // ── Utilities ────────────────────────────────────
-  function escapeHtml(str) {
-    if (!str) return '';
-    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  // ═══════════════════════════════════════════════════
+  // MARKDOWN RENDERER (lightweight, no dependencies)
+  // ═══════════════════════════════════════════════════
+
+  function renderMarkdown(text) {
+    if (!text) return '';
+    var html = text;
+
+    // 0. Сначала извлекаем {btn:...} кнопки и заменяем на плейсхолдеры
+    var buttons = [];
+    html = html.replace(/\{btn:([^|]*)\|([^|]*)\|([^}]*)\}/g, function(_, label, action, params) {
+      var idx = buttons.length;
+      buttons.push({ label: label.trim(), action: action.trim(), params: params.trim() });
+      return '%%BTN_' + idx + '%%';
+    });
+
+    // 1. Code blocks (```...```) — до всего остального
+    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, function(_, lang, code) {
+      return '<pre><code>' + escapeHtml(code.replace(/\n$/, '')) + '</code></pre>';
+    });
+
+    // 2. Inline code (`...`)
+    html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+
+    // 3. Tables
+    html = html.replace(/^(\|.+\|)\n(\|[\s\-:|]+\|)\n((?:\|.+\|\n?)*)/gm, function(_, header, sep, body) {
+      var ths = header.split('|').filter(function(c) { return c.trim(); });
+      var thead = '<tr>' + ths.map(function(c) { return '<th>' + c.trim() + '</th>'; }).join('') + '</tr>';
+      var rows = body.trim().split('\n').map(function(row) {
+        var tds = row.split('|').filter(function(c) { return c.trim(); });
+        return '<tr>' + tds.map(function(c) { return '<td>' + c.trim() + '</td>'; }).join('') + '</tr>';
+      });
+      return '<table><thead>' + thead + '</thead><tbody>' + rows.join('') + '</tbody></table>';
+    });
+
+    // 4. Headers
+    html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+    html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+    html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+
+    // 5. Horizontal rules
+    html = html.replace(/^---+$/gm, '<hr>');
+
+    // 6. Blockquotes
+    html = html.replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>');
+
+    // 7. Bold and italic
+    html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+
+    // 8. Links [text](url)
+    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+
+    // 9. Lists — обрабатываем блоками
+    // Unordered: - item or * item
+    html = html.replace(/^([\-\*] .+(?:\n[\-\*] .+)*)/gm, function(block) {
+      var items = block.split('\n').map(function(line) {
+        return '<li>' + line.replace(/^[\-\*] /, '') + '</li>';
+      });
+      return '<ul>' + items.join('') + '</ul>';
+    });
+    // Ordered: 1. item
+    html = html.replace(/^(\d+\. .+(?:\n\d+\. .+)*)/gm, function(block) {
+      var items = block.split('\n').map(function(line) {
+        return '<li>' + line.replace(/^\d+\. /, '') + '</li>';
+      });
+      return '<ol>' + items.join('') + '</ol>';
+    });
+
+    // 10. Paragraphs — двойной перенос строки = <p>
+    html = html.replace(/\n\n+/g, '</p><p>');
+    // Single newlines → <br> (except inside pre/code)
+    html = html.replace(/\n/g, '<br>');
+
+    // Wrap in <p> if not starting with block element
+    if (!/^<[a-z]/i.test(html)) {
+      html = '<p>' + html + '</p>';
+    }
+
+    // 11. Вставляем кнопки обратно
+    html = html.replace(/%%BTN_(\d+)%%/g, function(_, idx) {
+      var b = buttons[parseInt(idx)];
+      if (!b) return '';
+      return '<button class="cp-action-btn" data-action="' + escapeHtml(b.action) +
+             '" data-params="' + escapeHtml(b.params) + '">' + escapeHtml(b.label) + '</button>';
+    });
+
+    // Группируем соседние кнопки в строки
+    html = html.replace(/(<button class="cp-action-btn"[^>]*>[^<]*<\/button>(?:\s*<button class="cp-action-btn"[^>]*>[^<]*<\/button>)*)/g, function(match) {
+      return '<div class="cp-btn-row">' + match + '</div>';
+    });
+
+    return html;
   }
 
-  function formatTime(iso) {
-    if (!iso) return '';
-    try {
-      var d = new Date(iso);
-      return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-    } catch (_) {
-      return '';
+  // ═══════════════════════════════════════════════════
+  // INLINE BUTTON HANDLING
+  // ═══════════════════════════════════════════════════
+
+  // Обработка клика по inline-кнопке
+  function _handleActionButtonClick(btn) {
+    var action = btn.getAttribute('data-action');
+    var paramsStr = btn.getAttribute('data-params') || '{}';
+
+    // Визуальная обратная связь
+    btn.classList.add('cp-btn-pending');
+    btn.textContent = '⏳ ' + btn.textContent;
+
+    if (action === '_refresh') {
+      // Сервисные действия — на клиенте
+      window.location.reload();
+      return;
     }
+    if (action === '_help') {
+      // Открыть модалку справки
+      var helpModal = document.getElementById('helpModal');
+      if (helpModal) helpModal.classList.add('open');
+      return;
+    }
+    if (action === '_navigate') {
+      try {
+        var p = JSON.parse(paramsStr);
+        if (p && p.hash) location.hash = p.hash;
+      } catch(_) {}
+      return;
+    }
+
+    // Все остальные actions — отправляем как сообщение в чат,
+    // используя формат который парсится как tool_call
+    var toolMsg = JSON.stringify({
+      tool_call: action,
+      args: JSON.parse(paramsStr || '{}')
+    });
+
+    // Показываем как системное сообщение
+    appendMessage({ role: 'user', content: '▶ ' + action, created_at: new Date().toISOString() });
+    var typingEl = showTyping();
+
+    // Генерируем XML контекст
+    var dashXml = null;
+    try {
+      if (typeof window._copilotGetDashboardXml === 'function') {
+        dashXml = window._copilotGetDashboardXml();
+      }
+    } catch(_) {}
+
+    // Отправляем как запрос "выполни этот инструмент"
+    apiRequest('POST', '/chat', {
+      session_id: currentSessionId,
+      message: 'Выполни инструмент: ' + toolMsg,
+      dashboardXml: dashXml
+    }).then(function(data) {
+      removeTyping(typingEl);
+      if (data.type === 'pending_confirmation') {
+        appendConfirmCard(data);
+      } else if (data.type === 'reply') {
+        if (data.toolCalls && data.toolCalls.length > 0) {
+          for (var i = 0; i < data.toolCalls.length; i++) {
+            appendToolCard(data.toolCalls[i]);
+          }
+        }
+        if (data.reply) {
+          appendMessage({ role: 'assistant', content: data.reply, created_at: new Date().toISOString() });
+        }
+      }
+    }).catch(function(e) {
+      removeTyping(typingEl);
+      appendMessage({ role: 'error', content: '⚠️ Ошибка выполнения', created_at: new Date().toISOString() });
+    }).finally(function() {
+      btn.classList.remove('cp-btn-pending');
+    });
+  }
+
+  // Event delegation для кнопок в сообщениях
+  function _setupButtonDelegation() {
+    if (!elMessages) return;
+    elMessages.addEventListener('click', function(e) {
+      var btn = e.target.closest('.cp-action-btn');
+      if (btn) {
+        e.preventDefault();
+        _handleActionButtonClick(btn);
+      }
+    });
+  }
+
+  // ═══════════════════════════════════════════════════
+  // BRAIN PANEL: загрузка полного контекста агента
+  // ═══════════════════════════════════════════════════
+
+  function toggleBrainContext() {
+    var panel = document.getElementById('cpBrainPanel');
+    if (!panel) return;
+    var isOpen = panel.style.display !== 'none';
+    if (isOpen) {
+      panel.style.display = 'none';
+      return;
+    }
+    panel.style.display = 'block';
+
+    // Инициализируем табы (один раз)
+    if (!panel._tabsInited) {
+      panel._tabsInited = true;
+      var tabs = panel.querySelectorAll('.cp-brain-tab');
+      for (var i = 0; i < tabs.length; i++) {
+        tabs[i].addEventListener('click', function() {
+          // Deactivate all tabs
+          var allTabs = panel.querySelectorAll('.cp-brain-tab');
+          for (var j = 0; j < allTabs.length; j++) allTabs[j].classList.remove('active');
+          var allContents = panel.querySelectorAll('.cp-brain-tab-content');
+          for (var j = 0; j < allContents.length; j++) allContents[j].classList.remove('visible');
+          // Activate clicked
+          this.classList.add('active');
+          var tabId = this.getAttribute('data-tab');
+          var content = document.getElementById('brainTab' + tabId.charAt(0).toUpperCase() + tabId.slice(1));
+          if (content) content.classList.add('visible');
+        });
+      }
+    }
+
+    // Загружаем XML дашборда (всегда доступно локально)
+    var xml = _generateDashboardXml();
+    var codeEl = panel.querySelector('.cp-brain-code');
+    if (codeEl) codeEl.textContent = xml;
+
+    // Загружаем полный контекст агента через API
+    _loadAgentContext();
+  }
+
+  function _loadAgentContext() {
+    var instructionsEl = document.getElementById('brainTabInstructions');
+    var toolsEl = document.getElementById('brainTabTools');
+
+    // Показываем loading
+    if (instructionsEl) instructionsEl.innerHTML = '<div class="cp-brain-loading">Загрузка инструкций...</div>';
+    if (toolsEl) toolsEl.innerHTML = '<div class="cp-brain-loading">Загрузка инструментов...</div>';
+
+    apiRequest('GET', '/context').then(function(data) {
+      // ── Инструкции: полный system prompt ──
+      if (instructionsEl && data.systemPrompt) {
+        var sections = _parseSystemPromptSections(data.systemPrompt);
+        var html = '';
+        for (var i = 0; i < sections.length; i++) {
+          html += '<div class="cp-brain-section">';
+          html += '<div class="cp-brain-section-title">' + escapeHtml(sections[i].title) + '</div>';
+          html += '<div class="cp-brain-md"><pre style="white-space:pre-wrap;word-break:break-word;">' + escapeHtml(sections[i].content) + '</pre></div>';
+          html += '</div>';
+        }
+        instructionsEl.innerHTML = html;
+      }
+
+      // ── Инструменты: детальное описание каждого ──
+      if (toolsEl && data.tools) {
+        var html = '';
+        for (var i = 0; i < data.tools.length; i++) {
+          var t = data.tools[i];
+          html += '<div class="cp-brain-tool">';
+          html += '<div class="cp-brain-tool-name">' + escapeHtml(t.name) +
+                  (t.needsConfirm ? ' <span class="cp-brain-tool-confirm">⚠️ подтверждение</span>' : '') +
+                  '</div>';
+          html += '<div class="cp-brain-tool-desc">' + escapeHtml(t.description) + '</div>';
+          if (t.parameters && t.parameters.properties) {
+            var params = Object.entries(t.parameters.properties);
+            if (params.length > 0) {
+              html += '<div class="cp-brain-tool-params">';
+              for (var j = 0; j < params.length; j++) {
+                html += '<div>• ' + escapeHtml(params[j][0]) + ' (' + escapeHtml(params[j][1].type || '?') + ')' +
+                        (params[j][1].description ? ': ' + escapeHtml(params[j][1].description) : '') +
+                        '</div>';
+              }
+              html += '</div>';
+            }
+          }
+          html += '</div>';
+        }
+        toolsEl.innerHTML = html;
+      }
+    }).catch(function() {
+      if (instructionsEl) instructionsEl.innerHTML = '<div class="cp-brain-loading" style="color:#ff6b6b;">Ошибка загрузки контекста</div>';
+      if (toolsEl) toolsEl.innerHTML = '<div class="cp-brain-loading" style="color:#ff6b6b;">Ошибка загрузки инструментов</div>';
+    });
+  }
+
+  // Разбить system prompt на секции по разделителям ═══
+  function _parseSystemPromptSections(prompt) {
+    var sections = [];
+    var parts = prompt.split(/═{10,}/);
+    var currentTitle = 'Общие инструкции';
+    var currentContent = '';
+
+    for (var i = 0; i < parts.length; i++) {
+      var part = parts[i].trim();
+      if (!part) continue;
+      // Если часть содержит заголовок секции (короткая строка с названием)
+      var lines = part.split('\n');
+      if (lines.length <= 2 && lines[0].length < 80 && /^[А-ZA-Z\s()\-]+$/.test(lines[0].trim())) {
+        // Сохраняем предыдущую секцию
+        if (currentContent.trim()) {
+          sections.push({ title: currentTitle, content: currentContent.trim() });
+        }
+        currentTitle = lines[0].trim();
+        currentContent = lines.slice(1).join('\n').trim();
+      } else {
+        currentContent += '\n' + part;
+      }
+    }
+    if (currentContent.trim()) {
+      sections.push({ title: currentTitle, content: currentContent.trim() });
+    }
+    return sections;
   }
 })();
