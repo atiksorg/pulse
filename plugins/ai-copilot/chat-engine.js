@@ -19,7 +19,7 @@ const MAX_TOOL_ROUNDS = 6; // максимум итераций loop'а
 // SYSTEM PROMPT
 // ═══════════════════════════════════════════════════════
 
-function _buildSystemPrompt() {
+function _buildSystemPrompt(dashboardXml) {
   // Собираем описание всех инструментов
   const toolsDesc = TOOL_SCHEMAS.map(t => {
     const params = Object.entries((t.parameters && t.parameters.properties) || {})
@@ -35,9 +35,28 @@ ${params || '    (нет параметров)'}
 `;
   }).join('\n');
 
+  // Контекст текущего дашборда (XML) — если передан клиентом
+  const dashContext = dashboardXml
+    ? `
+
+═══════════════════════════════════════════════════════
+ТЕКУЩИЙ ДАШБОРД ПОЛЬЗОВАТЕЛЯ (XML)
+═══════════════════════════════════════════════════════
+Вот XML-описание того, что сейчас отображается на дашборде пользователя.
+Используй эти данные, чтобы понимать контекст — какие панели уже есть,
+какие типы событий отслеживаются, какие агрегации используются.
+
+${dashboardXml}
+
+При ответе пользователю учитывай, что у него уже есть эти панели.
+Не создавай дубликаты без просьбы. При рекомендациях ссылайся на существующие панели.
+═══════════════════════════════════════════════════════`
+    : '';
+
   return `Ты — AI-копилот для дашборда аналитики событий events.atiks.org.
 Ты помогаешь пользователю исследовать данные, строить графики, настраивать уведомления и отчёты.
 Отвечай на РУССКОМ языке. Будь конкретным и полезным.
+${dashContext}
 
 ═══════════════════════════════════════════════════════
 КРАТКИЙ СКИЛЛ ПО API
@@ -124,8 +143,8 @@ ${toolsDesc}
  * @param {object} context     — { db }
  * @returns {Promise<{reply: string, toolCalls: Array}>}
  */
-async function processMessage(userMessage, session, history, context) {
-  const systemPrompt = _buildSystemPrompt();
+async function processMessage(userMessage, session, history, context, dashboardXml) {
+  const systemPrompt = _buildSystemPrompt(dashboardXml);
   const toolCalls = [];
 
   // Собираем messages[] для LLM
