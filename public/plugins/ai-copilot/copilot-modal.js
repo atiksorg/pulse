@@ -426,6 +426,26 @@
     if (elMessages) elMessages.scrollTop = elMessages.scrollHeight;
   }
 
+  // ── Utilities ────────────────────────────────────
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function formatTime(iso) {
+    if (!iso) return '';
+    try {
+      var d = new Date(iso);
+      return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+    } catch (_) {
+      return '';
+    }
+  }
+
   // ═══════════════════════════════════════════════════
   // DASHBOARD XML GENERATION
   // ═══════════════════════════════════════════════════
@@ -771,7 +791,7 @@
                         (params[j][1].description ? ': ' + escapeHtml(params[j][1].description) : '') +
                         '</div>';
               }
-              html += '</div>';
+              html += '</div>'; 
             }
           }
           html += '</div>';
