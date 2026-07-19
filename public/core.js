@@ -359,7 +359,86 @@ function sanitizePanelForSave(p){
   return clean;
 }
 
-/* ── Public API: loadSharedDashboard ─────────────── */
+/* ═══════════════════════════════════════════════════
+   Undo / Redo для холста дашборда.
+   Архитектура: снимки (snapshot) массива panels[]
+   через sanitizePanelForSave → стек с лимитом 40.
+   ═══════════════════════════════════════════════════ */
+
+var _undoStack = [];   // [{ label, panels }]
+var _redoStack = [];
+var _undoMaxSize = 40;
+var _undoSuppressed = false; // true = не записывать снимки (для undo/redo)
+
+/* Снимок текущего состояния панелей активного дашборда */
+function snapshotPanels(){
+  var db = getActiveDashboard();
+  if (!db) return [];
+  return (db.panels || []).map(sanitizePanelForSave).map(function(p){
+    return JSON.parse(JSON.stringify(p));
+  });
+}
+
+/* Сохранить снимок в undo-стек и очистить redo */
+function pushUndoSnapshot(label){
+  if (_undoSuppressed) return;
+  var snap = snapshotPanels();
+  _undoStack.push({ label: label || 'изменение', panels: snap });
+  if (_undoStack.length > _undoMaxSize) _undoStack.shift();
+  _redoStack = [];
+  _updateUndoRedoButtons();
+}
+
+/* Восстановить снимок в дашборд + server sync + re-render */
+function _restoreSnapshot(snapshot){
+  var db = getActiveDashboard();
+  if (!db || !snapshot) return;
+  db.panels = JSON.parse(JSON.stringify(snapshot));
+  _undoSuppressed = true;
+  // Очищаем viewport, т.к. renderPanels пересоздаст холст
+  _savedCanvasViewport = null;
+  updateDashboardOnServer(db).catch(function(e){
+    toast('Ошибка сохранения: ' + e.message);
+  });
+  renderPanels();
+  _undoSuppressed = false;
+  // Восстанавливаем viewport после renderPanels
+  setTimeout(function(){ resetCanvasView(true); }, 400);
+}
+
+/* Undo: откатить последнее действие */
+function canvasUndo(){
+  if (!_undoStack.length){ toast('Нечего отменять'); return; }
+  var current = snapshotPanels();
+  var entry = _undoStack.pop();
+  _redoStack.push({ label: entry.label, panels: current });
+  if (_redoStack.length > _undoMaxSize) _redoStack.shift();
+  _restoreSnapshot(entry.panels);
+  toast('↶ Undo: ' + entry.label);
+  _updateUndoRedoButtons();
+}
+
+/* Redo: повторить отменённое действие */
+function canvasRedo(){
+  if (!_redoStack.length){ toast('Нечего повторять'); return; }
+  var current = snapshotPanels();
+  var entry = _redoStack.pop();
+  _undoStack.push({ label: entry.label, panels: current });
+  if (_undoStack.length > _undoMaxSize) _undoStack.shift();
+  _restoreSnapshot(entry.panels);
+  toast('↷ Redo: ' + entry.label);
+  _updateUndoRedoButtons();
+}
+
+/* Обновить disabled-состояние кнопок undo/redo */
+function _updateUndoRedoButtons(){
+  var btnU = document.getElementById('btnUndo');
+  var btnR = document.getElementById('btnRedo');
+  if (btnU) btnU.disabled = !_undoStack.length;
+  if (btnR) btnR.disabled = !_redoStack.length;
+}
+
+/* Публичный API: loadSharedDashboard */
 async function loadSharedDashboard(shareId){
   var r = await fetch(API + '/public/' + encodeURIComponent(shareId));
   if (!r.ok) throw new Error('HTTP ' + r.status);
