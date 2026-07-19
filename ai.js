@@ -14,7 +14,7 @@ const IDENT_RE = /^[a-zA-Z_][a-zA-Z0-9_]{0,63}$/;
 
 // ── Настройки ──────────────────────────────────────
 const AI_API_URL       = 'https://ai.pro-talk.ru/v1_ai_from_ru/chat/completions';
-const AI_MODEL         = 'xiaomi/mimo-v2.5';
+const AI_MODEL         = 'openai/gpt-5.6-luna';
 const AI_TIMEOUT_MS    = 15000;
 const AI_RATE_LIMIT    = 10;          // запросов
 const AI_RATE_WINDOW   = 60 * 1000;   // за 60 секунд
