@@ -671,6 +671,90 @@
       pointer-events: none;
     }
 
+    /* ═══ Debug Card ═══ */
+    .cp-debug-card {
+      align-self: center;
+      max-width: 95%;
+      background: #1a1a2e;
+      border: 1px solid #3a3a5c;
+      border-radius: var(--cp-radius);
+      padding: 8px 10px;
+      font-size: 11px;
+    }
+    .cp-debug-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .cp-debug-title {
+      font-weight: 600;
+      color: #ff9800;
+      font-size: 11px;
+    }
+    .cp-debug-toggle {
+      background: none;
+      border: 1px solid #3a3a5c;
+      color: var(--cp-text-muted);
+      cursor: pointer;
+      padding: 2px 8px;
+      border-radius: var(--cp-radius);
+      font-size: 10px;
+      transition: all 0.1s;
+    }
+    .cp-debug-toggle:hover {
+      color: var(--cp-text-bright);
+      border-color: var(--cp-accent);
+    }
+    .cp-debug-body {
+      display: none;
+      margin-top: 6px;
+    }
+    .cp-debug-body.open { display: block; }
+    .cp-debug-section {
+      margin-bottom: 8px;
+    }
+    .cp-debug-section:last-child { margin-bottom: 0; }
+    .cp-debug-label {
+      font-size: 9px;
+      font-weight: 600;
+      color: var(--cp-accent);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 3px;
+    }
+    .cp-debug-code {
+      background: #0d0d1a;
+      border: 1px solid #2a2a4a;
+      border-radius: var(--cp-radius);
+      padding: 6px 8px;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-size: 10px;
+      line-height: 1.4;
+      color: #a0a0c0;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .cp-debug-code::-webkit-scrollbar { width: 4px; }
+    .cp-debug-code::-webkit-scrollbar-thumb { background: #3a3a5c; }
+    .cp-debug-copy-btn {
+      background: none;
+      border: 1px solid #3a3a5c;
+      color: var(--cp-text-muted);
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: var(--cp-radius);
+      font-size: 9px;
+      margin-top: 4px;
+      transition: all 0.1s;
+    }
+    .cp-debug-copy-btn:hover {
+      color: var(--cp-accent);
+      border-color: var(--cp-accent);
+    }
+
     /* Mobile */
     @media (max-width: 600px) {
       .copilot-panel {
