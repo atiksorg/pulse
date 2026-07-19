@@ -26,27 +26,32 @@ var thresholdPlugin = {
     var yAxis = chart.scales.y;
     if (!yAxis) return;
     var ctx = chart.ctx;
+    // save/restore раньше вызывались на КАЖДУЮ линию; при множестве
+    // threshold-линий это лишние push/pop состояния канваса на каждый
+    // afterDraw (а он дёргается на каждый repaint/hover). Один save/restore
+    // на весь блок дешевле и даёт тот же результат.
+    ctx.save();
+    ctx.font = '10px JetBrains Mono, monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
     opts.lines.forEach(function(line) {
       var y = yAxis.getPixelForValue(line.value);
       if (y < yAxis.top || y > yAxis.bottom) return;
-      ctx.save();
+      var color = line.color || '#FF6B6B';
       ctx.beginPath();
       ctx.setLineDash([6, 4]);
-      ctx.strokeStyle = line.color || '#FF6B6B';
+      ctx.strokeStyle = color;
       ctx.lineWidth = 1.5;
       ctx.moveTo(chart.chartArea.left, y);
       ctx.lineTo(chart.chartArea.right, y);
       ctx.stroke();
       if (line.label) {
         ctx.setLineDash([]);
-        ctx.fillStyle = line.color || '#FF6B6B';
-        ctx.font = '10px JetBrains Mono, monospace';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'bottom';
+        ctx.fillStyle = color;
         ctx.fillText(line.label, chart.chartArea.left + 4, y - 3);
       }
-      ctx.restore();
     });
+    ctx.restore();
   }
 };
 
@@ -144,20 +149,32 @@ function renderGauge(container, opts) {
     }
   }
 
-  // Create canvas
+  // Canvas: переиспользуем существующий, если он уже есть в контейнере —
+  // раньше при каждом обновлении gauge (например, по таймеру поллинга)
+  // canvas пересоздавался с нуля, теряя контекст и создавая мусор для GC.
   var w = container.clientWidth || 280;
   var h = container.clientHeight || 200;
   var dpr = window.devicePixelRatio || 1;
 
-  var canvas = document.createElement('canvas');
-  canvas.width = w * dpr;
-  canvas.height = h * dpr;
-  canvas.style.width = w + 'px';
-  canvas.style.height = h + 'px';
-  container.innerHTML = '';
-  container.appendChild(canvas);
+  var canvas = container.querySelector('canvas.gauge-canvas');
+  var isNew = !canvas;
+  if (isNew) {
+    canvas = document.createElement('canvas');
+    canvas.className = 'gauge-canvas';
+    container.innerHTML = '';
+    container.appendChild(canvas);
+  }
+  var targetW = w * dpr, targetH = h * dpr;
+  if (canvas.width !== targetW || canvas.height !== targetH) {
+    canvas.width = targetW;
+    canvas.height = targetH;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+  }
 
   var ctx = canvas.getContext('2d');
+  ctx.setTransform(1, 0, 0, 1, 0, 0); // сброс перед повторным scale, иначе накопится
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.scale(dpr, dpr);
 
   var cx = w / 2;
@@ -288,59 +305,64 @@ function renderHeatmap(container, opts) {
   var maxVal = allValues.length ? Math.max.apply(null, allValues) : 1;
   if (maxVal === minVal) maxVal = minVal + 1;
 
-  // Парсим базовый цвет для генерации оттенков
-  var rgb = hexToRgb(baseColor);
-  var hsl = rgbToHsl(rgb.r, rgb.g, rgb.b);
+  // Парсим базовый цвет для генерации оттенков (кэшировано)
+  var hsl = hexToHslCached(baseColor);
   var baseH = hsl[0], baseS = hsl[1], baseL = hsl[2];
 
-  // Создаём HTML таблицу
-  var html = '<div class="heatmap-wrap">';
-  html += '<div class="heatmap-scroll"><table class="heatmap-table">';
+  // Создаём HTML таблицу через массив + join вместо += конкатенации
+  // (join() строит одну строку за раз; += в цикле на больших таблицах
+  // многократно копирует всю строку заново — O(n²) вместо O(n))
+  var parts = [];
+  parts.push('<div class="heatmap-wrap"><div class="heatmap-scroll"><table class="heatmap-table">');
 
   // Header row (buckets)
-  html += '<thead><tr><th class="heatmap-corner"></th>';
-  allBuckets.forEach(function(b) {
-    var label = String(b);
+  parts.push('<thead><tr><th class="heatmap-corner"></th>');
+  var bucketLabels = new Array(allBuckets.length);
+  for (var bi = 0; bi < allBuckets.length; bi++) {
+    var label = allBuckets[bi];
     if (label.length === 10 && label[4] === '-') label = label.slice(5);
     else if (label.length === 13 && label[10] === ' ') label = label.slice(11);
-    html += '<th class="heatmap-th">' + escapeHtml(label) + '</th>';
-  });
-  html += '</tr></thead><tbody>';
+    bucketLabels[bi] = label;
+    parts.push('<th class="heatmap-th">', escapeHtml(label), '</th>');
+  }
+  parts.push('</tr></thead><tbody>');
 
-  // Data rows
+  var valRange = maxVal - minVal;
+
+  // Data rows — точечная карта строится один раз на серию (не на ячейку)
   series.forEach(function(s) {
     var pointMap = {};
     (s.points || []).forEach(function(pt) {
       pointMap[String(pt.bucket)] = Number(pt.value) || 0;
     });
-    html += '<tr><td class="heatmap-label">' + escapeHtml(String(s.key)) + '</td>';
-    allBuckets.forEach(function(b) {
+    parts.push('<tr><td class="heatmap-label">', escapeHtml(String(s.key)), '</td>');
+    for (var bj = 0; bj < allBuckets.length; bj++) {
+      var b = allBuckets[bj];
       var v = pointMap[b] !== undefined ? pointMap[b] : 0;
-      var pct = (v - minVal) / (maxVal - minVal);
+      var pct = valRange ? (v - minVal) / valRange : 0;
       var cellL = 8 + pct * 35;
       var cellS = baseS + (1 - pct) * 10;
-      var bgColor = 'hsl(' + baseH + ', ' + cellS + '%, ' + cellL + '%)';
       var textColor = pct > 0.4 ? '#fff' : '#7C8798';
       var displayVal = formatNum(v, fmtType) + (unit ? ' ' + unit : '');
-      html += '<td class="heatmap-cell" style="background:' + bgColor + ';color:' + textColor + ';" '
-           + 'title="' + escapeHtml(String(s.key)) + ' × ' + escapeHtml(String(b)) + ': ' + escapeHtml(displayVal) + '">'
-           + (v !== 0 ? formatCompact(v) : '') + '</td>';
-    });
-    html += '</tr>';
+      parts.push(
+        '<td class="heatmap-cell" style="background:hsl(', baseH, ',', cellS, '%,', cellL, '%);color:', textColor, ';" ',
+        'title="', escapeHtml(String(s.key)), ' × ', escapeHtml(b), ': ', escapeHtml(displayVal), '">',
+        (v !== 0 ? formatCompact(v) : ''), '</td>'
+      );
+    }
+    parts.push('</tr>');
   });
 
-  html += '</tbody></table></div>';
+  parts.push('</tbody></table></div>');
 
   // Legend
-  html += '<div class="heatmap-legend">';
-  html += '<span class="heatmap-legend-label">' + formatNum(minVal, fmtType) + '</span>';
-  html += '<div class="heatmap-legend-bar" style="background:linear-gradient(to right, '
-       + 'hsl(' + baseH + ',' + baseS + '%,8%), hsl(' + baseH + ',' + baseS + '%,43%));"></div>';
-  html += '<span class="heatmap-legend-label">' + formatNum(maxVal, fmtType) + '</span>';
-  html += '</div>';
+  parts.push(
+    '<div class="heatmap-legend"><span class="heatmap-legend-label">', formatNum(minVal, fmtType), '</span>',
+    '<div class="heatmap-legend-bar" style="background:linear-gradient(to right, hsl(', baseH, ',', baseS, '%,8%), hsl(', baseH, ',', baseS, '%,43%));"></div>',
+    '<span class="heatmap-legend-label">', formatNum(maxVal, fmtType), '</span></div></div>'
+  );
 
-  html += '</div>';
-  container.innerHTML = html;
+  container.innerHTML = parts.join('');
 
   var wrap = container.querySelector('.heatmap-wrap');
   if (wrap) {
@@ -350,6 +372,16 @@ function renderHeatmap(container, opts) {
 }
 
 /* ── Color helpers ──────────────────────────────── */
+/* Кэш hex→hsl: тема/базовый цвет обычно не меняется между рендерами,
+ * поэтому повторный парсинг hex + матричная конвертация — лишняя работа. */
+var _hslCache = {};
+function hexToHslCached(hex) {
+  if (_hslCache[hex]) return _hslCache[hex];
+  var rgb = hexToRgb(hex);
+  var hsl = rgbToHsl(rgb.r, rgb.g, rgb.b);
+  _hslCache[hex] = hsl;
+  return hsl;
+}
 function hexToRgb(hex) {
   hex = hex.replace('#', '');
   if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
@@ -749,6 +781,21 @@ var canvasDragState = null;
 var canvasResizeState = null;
 var _canvasGlobalHandlersBound = false;
 
+/* ── rAF-троттлинг дорогого chart.resize() во время resize-драга ───
+ * Раньше resize() дёргался на КАЖДЫЙ pointermove (до сотен раз/сек).
+ * Теперь — максимум раз за кадр, реальный layout Chart.js откладывается. */
+var _pendingChartResizeId = null;
+function _scheduleChartResize(chartId){
+  _pendingChartResizeId = chartId;
+  if (_scheduleChartResize._raf) return;
+  _scheduleChartResize._raf = requestAnimationFrame(function(){
+    _scheduleChartResize._raf = null;
+    var id = _pendingChartResizeId;
+    _pendingChartResizeId = null;
+    if (id && charts[id]) charts[id].resize();
+  });
+}
+
 function _bindCanvasGlobalHandlers(){
   if (_canvasGlobalHandlersBound) return;
   _canvasGlobalHandlersBound = true;
@@ -786,7 +833,7 @@ function _bindCanvasGlobalHandlers(){
       r.p.ch = Math.max(150, Math.round((r.origH + dy2 / scale) / GRID_SIZE) * GRID_SIZE);
       r.card.style.width  = r.p.cw + 'px';
       r.card.style.height = r.p.ch + 'px';
-      if (charts[r.p.id]) charts[r.p.id].resize();
+      _scheduleChartResize(r.p.id);
     }
   });
 
@@ -820,6 +867,7 @@ function _bindCanvasGlobalHandlers(){
           updateDashboardOnServer(db2).catch(function(){});
         }
       }
+      if (charts[r.p.id]) charts[r.p.id].resize();
       canvasResizeState = null;
     }
   }
@@ -864,9 +912,14 @@ async function onDrop(e){
 function onDragEnd(e){ e.currentTarget.classList.remove('dragging'); $$('.panel-card').forEach(function(c){c.classList.remove('drag-over');}); dragSrcPanelId=null; }
 
 /* ── Close all panel dropdowns on outside click ──── */
+/* Раньше каждый клик по документу вызывал querySelectorAll по всему DOM
+ * в поисках открытых dropdown'ов. Т.к. открыт максимум один dropdown
+ * (см. menuTrigger.onclick ниже), храним прямую ссылку — O(1) вместо
+ * полного обхода дерева на КАЖДЫЙ клик в приложении. */
+var _openDropdownEl = null;
 document.addEventListener('click', function(e){
   if(!e.target.closest('.panel-menu-wrap')){
-    document.querySelectorAll('.panel-menu-dropdown.show').forEach(function(d){ d.classList.remove('show'); });
+    if(_openDropdownEl){ _openDropdownEl.classList.remove('show'); _openDropdownEl = null; }
     _restoreDropdownZIndex();
   }
 });
@@ -1152,14 +1205,13 @@ function renderPanels(readonlyData){
       menuTrigger.onclick = function(e){
         e.stopPropagation();
         var isOpen = menuDropdown.classList.contains('show');
-        document.querySelectorAll('.panel-menu-dropdown.show').forEach(function(d){
-          d.classList.remove('show');
-        });
+        if(_openDropdownEl){ _openDropdownEl.classList.remove('show'); _openDropdownEl = null; }
         if(_activeDropdownCard && _activeDropdownCard !== card){
           _restoreDropdownZIndex();
         }
         if(!isOpen){
           menuDropdown.classList.add('show');
+          _openDropdownEl = menuDropdown;
           if(canvasMode){
             _saveDropdownZIndex(card, p);
             card.style.zIndex = CANVAS_Z_MAX;
@@ -1432,9 +1484,106 @@ function loadPanelInto(p, src, bodyEl){
         return;
       }
       renderViz(p, d, bodyEl);
-      setTimeout(function(){ if(charts[p.id]) charts[p.id].resize(); }, 100);
+      // Раньше: setTimeout(100) наугад — либо срабатывает раньше готовности
+      // layout (визуальный "прыжок"), либо позже необходимого (лишняя
+      // задержка). ResizeObserver реагирует ровно в момент, когда контейнер
+      // реально принял финальный размер, и сам себя отключает после первого
+      // срабатывания — не висит лишним таймером в event loop.
+      if (typeof ResizeObserver !== 'undefined') {
+        var _ro = new ResizeObserver(function(){
+          if (charts[p.id]) charts[p.id].resize();
+          _ro.disconnect();
+        });
+        _ro.observe(bodyEl);
+      } else {
+        setTimeout(function(){ if(charts[p.id]) charts[p.id].resize(); }, 100);
+      }
     }).catch(function(e){ bodyEl.innerHTML='Ошибка: '+e.message; });
   }
+}
+
+/* ── Кросс-графиковая синхронизация hover ──────────
+ * Раньше на каждый onHover (десятки раз/сек при движении мыши) шёл
+ * перебор ВСЕХ графиков (Object.keys(charts).forEach) и внутри — линейный
+ * поиск индекса по массиву меток для каждого из них: O(charts × labels)
+ * на каждое событие мыши. Теперь:
+ *  1) label→index кэшируется на самом объекте чарта (строится один раз,
+ *     инвалидируется только если поменялось число меток);
+ *  2) реальная синхронизация остальных графиков троттлится через rAF —
+ *     не чаще одного раза за кадр, даже если mousemove сыпется чаще.
+ */
+function _getLabelIndexMap(chart){
+  var labels = chart.data.labels || [];
+  if (chart._labelIndexMap && chart._labelIndexMapLen === labels.length) {
+    return chart._labelIndexMap;
+  }
+  var map = {};
+  for (var i = 0; i < labels.length; i++) map[String(labels[i])] = i;
+  chart._labelIndexMap = map;
+  chart._labelIndexMapLen = labels.length;
+  return map;
+}
+
+var _hoverSyncPending = null; // { sourceId, label }
+var _hoverSyncRaf = null;
+function _scheduleHoverSync(sourceId, hoveredLabel){
+  _hoverSyncPending = { sourceId: sourceId, label: hoveredLabel };
+  if (_hoverSyncRaf) return;
+  _hoverSyncRaf = requestAnimationFrame(function(){
+    _hoverSyncRaf = null;
+    var job = _hoverSyncPending;
+    _hoverSyncPending = null;
+    if (!job) return;
+    _applyHoverSync(job.sourceId, job.label);
+  });
+}
+function _applyHoverSync(sourceId, hoveredLabel){
+  Object.keys(charts).forEach(function(cid){
+    if (cid === sourceId) return;
+    var otherChart = charts[cid];
+    if (!otherChart) return;
+
+    if (!hoveredLabel) {
+      try {
+        otherChart.setActiveElements([]);
+        if (otherChart.tooltip) otherChart.tooltip.setActiveElements([], {x:0, y:0});
+        otherChart.update('none');
+      } catch(_){}
+      return;
+    }
+
+    var idxMap = _getLabelIndexMap(otherChart);
+    var matchIdx = idxMap[String(hoveredLabel)];
+    if (matchIdx !== undefined) {
+      try {
+        otherChart.setActiveElements([{ datasetIndex: 0, index: matchIdx }]);
+        if (otherChart.tooltip) {
+          otherChart.tooltip.setActiveElements([{ datasetIndex: 0, index: matchIdx }], {x: 0, y: 0});
+        }
+        otherChart.update('none');
+      } catch(_){}
+    }
+  });
+}
+
+/* ── Кэш цветов темы ─────────────────────────────
+ * getThemeColor() читает CSS custom properties (computed style) —
+ * не бесплатная операция. Раньше вызывался 3 раза на КАЖДОЕ построение
+ * графика, хотя тема меняется редко. Кэшируем и сбрасываем при смене темы. */
+var _themeColorsCache = null;
+function _getCachedThemeColors(){
+  if (_themeColorsCache) return _themeColorsCache;
+  _themeColorsCache = {
+    axisColor: (typeof getThemeColor === 'function') ? getThemeColor('--muted-2') : '#4E5768',
+    gridColor: (typeof getThemeColor === 'function') ? getThemeColor('--border-soft') : '#1A2130',
+    legendColor: (typeof getThemeColor === 'function') ? getThemeColor('--muted') : '#7C8798'
+  };
+  return _themeColorsCache;
+}
+function invalidateThemeColorsCache(){ _themeColorsCache = null; }
+if (typeof document !== 'undefined') {
+  // Если приложение диспатчит событие смены темы — подхватываем автоматически.
+  document.addEventListener('themechange', invalidateThemeColorsCache);
 }
 
 function renderViz(p, data, body){
@@ -1574,9 +1723,8 @@ function renderViz(p, data, body){
     datasets = [ds];
   }
 
-  var axisColor = (typeof getThemeColor === 'function') ? getThemeColor('--muted-2') : '#4E5768';
-  var gridColor = (typeof getThemeColor === 'function') ? getThemeColor('--border-soft') : '#1A2130';
-  var legendColor = (typeof getThemeColor === 'function') ? getThemeColor('--muted') : '#7C8798';
+  var _theme = _getCachedThemeColors();
+  var axisColor = _theme.axisColor, gridColor = _theme.gridColor, legendColor = _theme.legendColor;
 
   if(p.secondAxis && datasets.length > 1){
     for(var di = 1; di < datasets.length; di++){
@@ -1600,35 +1748,9 @@ function renderViz(p, data, body){
                            ? charts[p.id].data.labels[activeElements[0].index]
                            : null;
 
-        Object.keys(charts).forEach(function(cid){
-          if(cid === p.id) return;
-          var otherChart = charts[cid];
-          if(!otherChart) return;
-
-          if(!hoveredLabel){
-            try {
-              otherChart.setActiveElements([]);
-              if(otherChart.tooltip) otherChart.tooltip.setActiveElements([], {x:0, y:0});
-              otherChart.update('none');
-            } catch(_){}
-            return;
-          }
-
-          var otherLabels = otherChart.data.labels || [];
-          var matchIdx = -1;
-          for(var i=0; i<otherLabels.length; i++){
-            if(String(otherLabels[i]) === String(hoveredLabel)){ matchIdx = i; break; }
-          }
-          if(matchIdx >= 0){
-            try {
-              otherChart.setActiveElements([{ datasetIndex: 0, index: matchIdx }]);
-              if(otherChart.tooltip){
-                otherChart.tooltip.setActiveElements([{ datasetIndex: 0, index: matchIdx }], {x: 0, y: 0});
-              }
-              otherChart.update('none');
-            } catch(_){}
-          }
-        });
+        // rAF-троттлинг: onHover может стрелять чаще, чем нужно перерисовывать
+        // остальные графики (десятки раз/сек при движении мыши).
+        _scheduleHoverSync(p.id, hoveredLabel);
       },
       plugins: {
         legend: {
