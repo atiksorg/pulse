@@ -1,11 +1,10 @@
 /* ═══════════════════════════════════════════════════
    panels-edit.js — модалка редактирования, фильтры,
    lock/duplicate/smooth/export, share-modal, AI, exportCsv
-   Зависит от: core.js, panels-render.js
+   Зависит от: core.js, chart-engine.js (panels-render, panels-canvas)
    ═══════════════════════════════════════════════════ */
 
-/* ── Mobile detection helper (duplicated для самодостаточности) ─── */
-function isMobile(){ return window.innerWidth < 860; }
+/* ── Mobile detection helper (определена в chart-engine.js) ─── */
 
 /* ── Panel templates ─────────────────────────────── */
 var templates = [
