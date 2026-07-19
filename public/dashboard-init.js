@@ -20,6 +20,8 @@ async function initDashboard(){
       '<button class="icon-btn ft-btn" id="btnFitView" title="Уместить холст">⤢</button>' +
       '<button class="icon-btn ft-btn ft-layout-btn" id="btnArrangeLayout" title="Выстроить графики">▦</button>' +
       '<button class="icon-btn ft-btn" id="btnRefreshAll" title="Обновить">↻</button>' +
+      '<button class="icon-btn ft-btn ft-undo-btn" id="btnUndo" title="Отменить (Ctrl+Z)" disabled>↶</button>' +
+      '<button class="icon-btn ft-btn ft-redo-btn" id="btnRedo" title="Повторить (Ctrl+Shift+Z)" disabled>↷</button>' +
       '<button class="icon-btn ft-btn" id="btnExport" title="Экспорт CSV">↓</button>' +
       '<button class="icon-btn ft-btn" id="btnExportXml" title="Экспорт XML">⬡</button>' +
       '<button class="icon-btn ft-btn" id="btnShare" title="Поделиться">🔗</button>' +
@@ -35,6 +37,8 @@ async function initDashboard(){
   $('#btnFitView').onclick = function(){ resetCanvasView(); };
   $('#btnArrangeLayout').onclick = function(){ arrangeAndFitCanvas(); };
   $('#btnRefreshAll').onclick = function(){ renderPanels(); };
+  $('#btnUndo') && ($('#btnUndo').onclick = function(){ if(typeof canvasUndo === 'function') canvasUndo(); });
+  $('#btnRedo') && ($('#btnRedo').onclick = function(){ if(typeof canvasRedo === 'function') canvasRedo(); });
   $('#btnExport').onclick = exportCsv;
   $('#btnExportXml').onclick = function(e){ exportXml(e.shiftKey); };
   $('#btnShare').onclick = function(){ showShareModal(); };
