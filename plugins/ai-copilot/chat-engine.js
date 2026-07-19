@@ -263,7 +263,7 @@ async function processMessage(userMessage, session, history, context, dashboardX
         maxTokens: 4096,
       });
     } catch (e) {
-      return { reply: `⚠️ Ошибка LLM: ${e.message}`, toolCalls, error: true };
+      return { reply: `⚠️ Ошибка LLM: ${e.message}`, toolCalls, error: true, _debug: e._debug || null };
     }
 
     const content = llmResponse.content;
