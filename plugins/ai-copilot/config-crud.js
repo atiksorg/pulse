@@ -228,7 +228,7 @@ function registerRoutes(server, db) {
             .run(title, sessionId);
         }
 
-        return auth.json(res, 200, {
+        const chatResponse = {
           type: 'reply',
           reply: result.reply || '',
           toolCalls: (result.toolCalls || []).map(tc => ({
@@ -236,7 +236,12 @@ function registerRoutes(server, db) {
             args: tc.args,
             needsConfirm: tc.needsConfirm,
           })),
-        });
+        };
+        // Пробрасываем debug-информацию если есть ошибка
+        if (result.error && result._debug) {
+          chatResponse._debug = result._debug;
+        }
+        return auth.json(res, 200, chatResponse);
       }
 
       // ── POST /ai-copilot/confirm/:messageId — подтвердить действие ──
