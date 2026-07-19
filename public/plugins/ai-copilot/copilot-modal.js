@@ -241,13 +241,22 @@
         if (data.reply) {
           appendMessage({ role: 'assistant', content: data.reply, created_at: new Date().toISOString() });
         }
+        // Show debug card if there was an error with debug info
+        if (data._debug) {
+          appendDebugCard(data._debug);
+        }
         // Update session title
         updateSessionTitle(currentSessionId, text);
       }
     }).catch(function(e) {
       removeTyping(typingEl);
-      var msg = (e && e.data && e.data.error) ? e.data.error : 'Ошибка соединения';
+      var errData = (e && e.data) ? e.data : {};
+      var msg = errData.error || 'Ошибка соединения';
       appendMessage({ role: 'error', content: '⚠️ ' + msg, created_at: new Date().toISOString() });
+      // Show debug card if available
+      if (errData._debug) {
+        appendDebugCard(errData._debug);
+      }
     }).finally(function() {
       sending = false;
       elSendBtn.disabled = false;
@@ -548,6 +557,111 @@
 
   function scrollToBottom() {
     if (elMessages) elMessages.scrollTop = elMessages.scrollHeight;
+  }
+
+  // ── Debug card ──────────────────────────────────
+  function appendDebugCard(debug) {
+    if (!debug) return;
+    removeEmptyState();
+
+    var div = document.createElement('div');
+    div.className = 'cp-debug-card';
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'cp-debug-header';
+
+    var title = document.createElement('span');
+    title.className = 'cp-debug-title';
+    title.textContent = '🔧 Debug' + (debug.attempt ? ' (попытка ' + debug.attempt + ')' : '');
+    header.appendChild(title);
+
+    var toggle = document.createElement('button');
+    toggle.className = 'cp-debug-toggle';
+    toggle.textContent = 'Показать';
+    header.appendChild(toggle);
+
+    div.appendChild(header);
+
+    // Body (скрыт по умолчанию)
+    var body = document.createElement('div');
+    body.className = 'cp-debug-body';
+
+    // Curl section
+    if (debug.curlCmd) {
+      var curlSection = document.createElement('div');
+      curlSection.className = 'cp-debug-section';
+      var curlLabel = document.createElement('div');
+      curlLabel.className = 'cp-debug-label';
+      curlLabel.textContent = 'REQUEST (curl)';
+      curlSection.appendChild(curlLabel);
+      var curlCode = document.createElement('pre');
+      curlCode.className = 'cp-debug-code';
+      curlCode.textContent = debug.curlCmd;
+      curlSection.appendChild(curlCode);
+      body.appendChild(curlSection);
+    }
+
+    // Status section
+    if (debug.rawStatus) {
+      var statusSection = document.createElement('div');
+      statusSection.className = 'cp-debug-section';
+      var statusLabel = document.createElement('div');
+      statusLabel.className = 'cp-debug-label';
+      statusLabel.textContent = 'HTTP STATUS';
+      statusSection.appendChild(statusLabel);
+      var statusCode = document.createElement('pre');
+      statusCode.className = 'cp-debug-code';
+      statusCode.textContent = String(debug.rawStatus);
+      statusSection.appendChild(statusCode);
+      body.appendChild(statusSection);
+    }
+
+    // Response section
+    if (debug.rawResponse) {
+      var respSection = document.createElement('div');
+      respSection.className = 'cp-debug-section';
+      var respLabel = document.createElement('div');
+      respLabel.className = 'cp-debug-label';
+      respLabel.textContent = 'RAW RESPONSE';
+      respSection.appendChild(respLabel);
+      var respCode = document.createElement('pre');
+      respCode.className = 'cp-debug-code';
+      // Try to pretty print JSON
+      try {
+        var parsed = JSON.parse(debug.rawResponse);
+        respCode.textContent = JSON.stringify(parsed, null, 2);
+      } catch (_) {
+        respCode.textContent = debug.rawResponse;
+      }
+      respSection.appendChild(respCode);
+
+      // Copy button
+      var copyBtn = document.createElement('button');
+      copyBtn.className = 'cp-debug-copy-btn';
+      copyBtn.textContent = '📋 Copy';
+      copyBtn.addEventListener('click', function() {
+        try {
+          navigator.clipboard.writeText(respCode.textContent);
+          copyBtn.textContent = '✓ Copied!';
+          setTimeout(function() { copyBtn.textContent = '📋 Copy'; }, 1500);
+        } catch(_) {}
+      });
+      respSection.appendChild(copyBtn);
+      body.appendChild(respSection);
+    }
+
+    div.appendChild(body);
+
+    // Toggle handler
+    toggle.addEventListener('click', function() {
+      var isOpen = body.classList.contains('open');
+      body.classList.toggle('open', !isOpen);
+      toggle.textContent = isOpen ? 'Показать' : 'Скрыть';
+    });
+
+    elMessages.appendChild(div);
+    scrollToBottom();
   }
 
   // ── Utilities ────────────────────────────────────
