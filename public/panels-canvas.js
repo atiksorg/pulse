@@ -80,6 +80,8 @@ function centerPanelInViewport(p){
 function arrangeAndFitCanvas(){
   var db = getActiveDashboard();
   if(!db || !Array.isArray(db.panels) || !db.panels.length){ toast('Нет панелей для выравнивания'); return; }
+  // Undo snapshot ПЕРЕД мутацией
+  if (typeof pushUndoSnapshot === 'function') pushUndoSnapshot('авто-раскладка');
   autoLayoutCanvas(db.panels);
   updateDashboardOnServer(db).catch(function(){});
   _saveCanvasViewport();
@@ -447,6 +449,8 @@ function _bindCanvasGlobalHandlers(){
       d.card.classList.remove('canvas-dragging');
       document.body.classList.remove('canvas-dragging');
       if (save && d._started && !d._cancelled) {
+        // Undo snapshot ПЕРЕД применением изменений
+        if (typeof pushUndoSnapshot === 'function') pushUndoSnapshot('перемещение');
         var db = getActiveDashboard();
         if (db) {
           var pp = db.panels.find(function(x){ return x.id === d.p.id; });
@@ -464,6 +468,8 @@ function _bindCanvasGlobalHandlers(){
       var r = canvasResizeState;
       document.body.classList.remove('canvas-dragging');
       if (save && r._started) {
+        // Undo snapshot ПЕРЕД применением изменений
+        if (typeof pushUndoSnapshot === 'function') pushUndoSnapshot('размер');
         var db2 = getActiveDashboard();
         if (db2) {
           var pp2 = db2.panels.find(function(x){ return x.id === r.p.id; });
@@ -488,6 +494,29 @@ function _bindCanvasGlobalHandlers(){
       endCanvasDrag(false);
       e.preventDefault();
     }
+    // Undo / Redo горячие клавиши
+    // Не срабатываем если фокус в input/textarea/select
+    var tag = (e.target.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+    // Не срабатываем если открыта модалка
+    if (document.querySelector('.overlay.active')) return;
+    if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+      if (e.key === 'z' || e.key === 'Z') {
+        if (e.shiftKey) {
+          // Ctrl+Shift+Z = Redo
+          if (typeof canvasRedo === 'function') canvasRedo();
+          e.preventDefault();
+        } else {
+          // Ctrl+Z = Undo
+          if (typeof canvasUndo === 'function') canvasUndo();
+          e.preventDefault();
+        }
+      } else if (e.key === 'y' || e.key === 'Y') {
+        // Ctrl+Y = Redo
+        if (typeof canvasRedo === 'function') canvasRedo();
+        e.preventDefault();
+      }
+    }
   });
 }
 _bindCanvasGlobalHandlers();
@@ -501,6 +530,8 @@ async function onDrop(e){
   if(!dragSrcPanelId||!tid||dragSrcPanelId===tid) return;
   var db = getActiveDashboard();
   if (!db) return;
+  // Undo snapshot ПЕРЕД перестановкой
+  if (typeof pushUndoSnapshot === 'function') pushUndoSnapshot('перестановка');
   var panels = db.panels;
   var fi = panels.findIndex(function(p){return p.id===dragSrcPanelId;});
   var ti = panels.findIndex(function(p){return p.id===tid;});
