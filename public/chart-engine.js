@@ -58,6 +58,23 @@ var thresholdPlugin = {
 /* ── Register threshold plugin ──────────────────── */
 if (typeof Chart !== 'undefined') {
   Chart.register(thresholdPlugin);
+
+  /* Отключаем анимации Chart.js по умолчанию.
+   * ПОЧЕМУ ЭТО ГЛАВНЫЙ ИСТОЧНИК ФОНОВОЙ НАГРУЗКИ:
+   * renderViz() на каждое автообновление (см. autorefresh, setInterval)
+   * делает chart.destroy() + new Chart(...) — то есть график создаётся
+   * "с нуля" и проигрывает entry-анимацию (~1000ms по умолчанию).
+   * Анимация в Chart.js — это requestAnimationFrame-цикл на 60 кадров/сек,
+   * который на каждый кадр делает полный layout+redraw канваса.
+   * При нескольких панелях с autorefresh (а джиттер в setInterval их не
+   * синхронизирует, а размазывает по времени) получается ПОЧТИ
+   * непрерывный поток таких анимационных циклов — отсюда стабильные
+   * несколько % CPU даже когда пользователь ничего не делает.
+   * Для дашборда с автообновлением entry-анимация не несёт пользы —
+   * данные просто "должны появиться", а не эффектно наехать. */
+  Chart.defaults.animation = false;
+  Chart.defaults.animations = false;
+  Chart.defaults.transitions.active.animation.duration = 0; // hover тоже без анимации
 }
 
 /* ── Cumulative transform ─────────────────────────
@@ -800,6 +817,10 @@ function _bindCanvasGlobalHandlers(){
   if (_canvasGlobalHandlersBound) return;
   _canvasGlobalHandlersBound = true;
 
+  // passive:true — обработчик не вызывает preventDefault(), поэтому браузер
+  // может не ждать его завершения перед скроллом/композитингом кадра.
+  // На высокочастотных pointermove (игровые мыши, трекпады) это заметно
+  // снижает задержку и нагрузку на main thread.
   document.addEventListener('pointermove', function(e){
     if (canvasDragState) {
       var d = canvasDragState;
@@ -835,7 +856,7 @@ function _bindCanvasGlobalHandlers(){
       r.card.style.height = r.p.ch + 'px';
       _scheduleChartResize(r.p.id);
     }
-  });
+  }, { passive: true });
 
   function endCanvasDrag(save){
     if (canvasDragState) {
@@ -1059,11 +1080,51 @@ function zeroFillGroups(groups, p){
 }
 
 /* ── Render panels (оркестратор) ─────────────────── */
+/* Автообновление панелей, чувствительное к видимости вкладки.
+ * ПРОБЛЕМА: raw setInterval() продолжает тикать, даже когда вкладка
+ * свёрнута/неактивна — каждый тик это сетевой запрос + полный
+ * destroy/recreate графика, впустую сжигающие CPU и трафик, пока
+ * пользователь дашборд не видит.
+ * РЕШЕНИЕ: храним конфиг таймеров отдельно от самих интервалов;
+ * на visibilitychange все интервалы останавливаются/перезапускаются.
+ * При возврате на вкладку дополнительно делаем один "catch-up" рефреш,
+ * чтобы данные не выглядели устаревшими после паузы. */
+var _autorefreshConfigs = {}; // id -> { p, src, ms }
+function _startAutorefresh(p, src, ms){
+  _autorefreshConfigs[p.id] = { p: p, src: src, ms: ms };
+  if (document.hidden) return; // не стартуем таймер, пока вкладка скрыта
+  refreshTimers[p.id] = setInterval(function(){ loadPanel(p, src); }, ms + Math.floor(Math.random()*3000));
+}
+function _pauseAllAutorefresh(){
+  Object.keys(refreshTimers).forEach(function(id){ clearInterval(refreshTimers[id]); });
+  refreshTimers = {};
+}
+function _resumeAllAutorefresh(){
+  Object.keys(_autorefreshConfigs).forEach(function(id){
+    var cfg = _autorefreshConfigs[id];
+    if (!cfg) return;
+    refreshTimers[id] = setInterval(function(){ loadPanel(cfg.p, cfg.src); }, cfg.ms + Math.floor(Math.random()*3000));
+    loadPanel(cfg.p, cfg.src); // один catch-up рефреш после возврата на вкладку
+  });
+}
+if (typeof document !== 'undefined' && !_visibilityAutorefreshBound()) {
+  document.addEventListener('visibilitychange', function(){
+    if (document.hidden) _pauseAllAutorefresh();
+    else _resumeAllAutorefresh();
+  });
+}
+function _visibilityAutorefreshBound(){
+  if (window._autorefreshVisibilityBound) return true;
+  window._autorefreshVisibilityBound = true;
+  return false;
+}
+
 function renderPanels(readonlyData){
   var grid = $('#panelGrid');
   grid.innerHTML = '';
   Object.values(refreshTimers).forEach(clearInterval);
   refreshTimers = {};
+  _autorefreshConfigs = {};
   var isShared = !!readonlyData;
   canvasMode = getLayoutMode();
   if(isShared && readonlyData.layoutMode !== undefined) canvasMode = readonlyData.layoutMode;
@@ -1251,7 +1312,9 @@ function renderPanels(readonlyData){
     }
     if(p.viz === 'logs') p._currentPage = 0;
     loadPanel(p,src);
-    if(p.autorefresh && Number(p.autorefresh)>0 && !isShared) refreshTimers[p.id]=setInterval(function(){loadPanel(p,src);},Number(p.autorefresh)*1000 + Math.floor(Math.random()*3000));
+    if(p.autorefresh && Number(p.autorefresh)>0 && !isShared){
+      _startAutorefresh(p, src, Number(p.autorefresh)*1000);
+    }
   });
 
   if(canvasMode && !isMobile() && !isShared){
