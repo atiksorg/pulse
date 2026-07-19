@@ -19,7 +19,7 @@ const http  = require('http');
 
 // ── Конфигурация ─────────────────────────────────────
 const LLM_API_URL    = process.env.LLM_API_URL    || 'https://ai.pro-talk.ru/v1_ai_from_ru/chat/completions';
-const LLM_MODEL      = process.env.LLM_MODEL      || 'xiaomi/mimo-v2.5';
+const LLM_MODEL      = process.env.LLM_MODEL      || 'openai/gpt-5.6-luna';
 const LLM_TIMEOUT_MS = process.env.LLM_TIMEOUT_MS ? Number(process.env.LLM_TIMEOUT_MS) : 120000; // 2 мин
 const LLM_MAX_TOKENS = process.env.LLM_MAX_TOKENS ? Number(process.env.LLM_MAX_TOKENS) : 16384;
 const LLM_RATE_LIMIT = 30;           // сообщений в чат
