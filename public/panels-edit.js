@@ -27,6 +27,8 @@ function bindPanelMenuActions(card, p, src){
         clearInterval(refreshTimers[p.id]);
         delete refreshTimers[p.id];
       }
+      // Undo snapshot ПЕРЕД удалением
+      if (typeof pushUndoSnapshot === 'function') pushUndoSnapshot('удаление');
       // Запоминаем viewport ПЕРЕД удалением
       _saveCanvasViewport();
       var db2 = getActiveDashboard();
@@ -73,6 +75,8 @@ function bindPanelMenuActions(card, p, src){
 
 /* ── Toggle panel lock (pin) — in-place, no full re-render ── */
 async function togglePanelLock(p){
+  // Undo snapshot ПЕРЕД изменением блокировки
+  if (typeof pushUndoSnapshot === 'function') pushUndoSnapshot('блокировка');
   p.locked = !p.locked;
   var db = getActiveDashboard();
   if (db) {
@@ -149,6 +153,8 @@ async function duplicatePanel(p){
   clone.cz = maxZ >= CANVAS_Z_MAX ? CANVAS_Z_MAX : maxZ + 1;
   canvasZCounter = clone.cz;
   if(typeof clone.cx === 'number'){ clone.cx += 40; clone.cy += 40; }
+  // Undo snapshot ПЕРЕД дублированием
+  if (typeof pushUndoSnapshot === 'function') pushUndoSnapshot('дублирование');
   // Запоминаем viewport ПЕРЕД перерисовкой
   _saveCanvasViewport();
   db.panels.push(clone);
@@ -487,6 +493,9 @@ $('#btnSavePanel') && ($('#btnSavePanel').onclick=async function(){
   var db = getActiveDashboard();
   if (!db) return;
 
+  // Undo snapshot ПЕРЕД сохранением
+  if (typeof pushUndoSnapshot === 'function') pushUndoSnapshot(editingPanelId ? 'редактирование' : 'добавление');
+
   if(editingPanelId){
     var p=db.panels.find(function(x){return x.id===editingPanelId;});
     if (p) Object.assign(p,cfg);
@@ -649,6 +658,8 @@ $('#btnAddThreshold') && $('#btnAddThreshold').addEventListener('click',function
 async function addPanelFromConfig(cfg){
   var db = getActiveDashboard();
   if (!db) return;
+  // Undo snapshot ПЕРЕД добавлением
+  if (typeof pushUndoSnapshot === 'function') pushUndoSnapshot('добавление');
   var p = Object.assign({ id: uid('panel') }, cfg);
 
   // Получаем максимальный Z-index среди ВСЕХ панелей дашборда,
@@ -924,6 +935,8 @@ async function optimizePanelWithAI(p, src){
         if(!db){ if(body) body.innerHTML = origContent; return; }
         var pp = db.panels.find(function(x){ return x.id === p.id; });
         if(!pp){ if(body) body.innerHTML = origContent; return; }
+        // Undo snapshot ПЕРЕД AI-оптимизацией
+        if (typeof pushUndoSnapshot === 'function') pushUndoSnapshot('AI оптимизация');
         Object.assign(pp, newPanel);
         try {
           await updateDashboardOnServer(db);
@@ -1101,6 +1114,8 @@ async function applyDiscoveredPanels(panels, sourcePanel){
   var db = getActiveDashboard();
   if(!db) return;
 
+  // Undo snapshot ПЕРЕД добавлением AI-панелей
+  if (typeof pushUndoSnapshot === 'function') pushUndoSnapshot('AI: из логов');
   _saveCanvasViewport();
   var maxZ = getMaxPanelZ(db.panels);
   var gap = 30;
