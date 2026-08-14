@@ -1763,6 +1763,7 @@ body.canvas-dragging *{cursor:grabbing !important;}
 .panel-annotation .panel-body{
   padding:0;
   overflow:visible;
+  background:transparent !important;
 }
 .panel-annotation-text{
   background:transparent !important;
@@ -1793,9 +1794,14 @@ body.canvas-dragging *{cursor:grabbing !important;}
 .canvas-mode .panel-annotation{
   grid-column:auto;
 }
-/* Панелька-меню аннотации — упрощённая (без refresh) */
+/* Панелька-меню аннотации — скрываем кнопку refresh */
 .panel-annotation .pmbtn-refresh{
-  display:none;
+  display:none !important;
+}
+/* Скрываем toggle код примера для аннотаций */
+.panel-annotation .panel-code-toggle,
+.panel-annotation .panel-code-block{
+  display:none !important;
 }
 /* Inline-тулбар аннотации */
 .ann-toolbar{
