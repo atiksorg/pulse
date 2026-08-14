@@ -360,11 +360,13 @@ function applyCanvasPosition(card,p){
 var DRAG_DEAD_ZONE = 5;
 
 function initCanvasDrag(card,p){
-  var head = card.querySelector('.panel-head');
+  var head = card.querySelector('.panel-head') || card;
   head.style.cursor = p.locked ? 'default' : 'grab';
   head.addEventListener('pointerdown', function(e){
     if(p.locked) return;       // runtime check — respects lock state
     if(e.button !== 0) return;
+    // Если кликнули по интерактивному элементу внутри (кнопка, меню, редактируемый текст) — не начинаем drag
+    if(e.target.closest('button, input, select, textarea, .panel-menu-floating, .ann-toolbar, [contenteditable="true"]')) return;
     e.preventDefault();
     try { head.setPointerCapture(e.pointerId); } catch(_){}
     var scale = interactiveCanvas ? interactiveCanvas.scale : 1;
