@@ -577,6 +577,10 @@ function openFullscreenPanel(p, src){
 }
 
 function loadPanelInto(p, src, bodyEl){
+  if(p.viz==='annotation-text' || p.viz==='sticky-note'){
+    if(typeof CanvasAnnotations !== 'undefined') CanvasAnnotations.renderAnnotation(p, bodyEl);
+    return;
+  }
   if(p.viz==='logs'){
     fetchLogs(src, p).then(function(d){ renderLogs(p, d, bodyEl); }).catch(function(e){ bodyEl.innerHTML='Ошибка: '+e.message; });
   } else {
@@ -597,6 +601,11 @@ function renderViz(p, data, body){
   var key=panelKey(p), groups=data.groups||[];
   if(charts[p.id]){charts[p.id].destroy();delete charts[p.id];}
   var fmtType = p.formatType || 'number';
+  // Защита: аннотации не рендерятся через Chart.js
+  if(p.viz==='annotation-text' || p.viz==='sticky-note'){
+    if(typeof CanvasAnnotations !== 'undefined') CanvasAnnotations.renderAnnotation(p, body);
+    return;
+  }
   if(p.viz==='kpi'){
     var val=data.total!==null&&data.total!==undefined?data.total:(groups[0]?groups[0].value:0);
     body.className = isFocus ? 'panel-body kpi-body focus-body' : 'panel-body kpi-body';
