@@ -50,6 +50,20 @@ window.CanvasAnnotations = {
   STICKY_COLORS: STICKY_COLORS
 };
 
+/* ── Хелпер: сохранение одного поля аннотации ──── */
+function _saveAnnotationField(p, field, value){
+  var db = getActiveDashboard();
+  if(!db) return;
+  var pp = db.panels.find(function(x){ return x.id === p.id; });
+  if(pp){
+    if(typeof pushUndoSnapshot === 'function') pushUndoSnapshot('настройка аннотации');
+    pp[field] = value;
+    updateDashboardOnServer(db).catch(function(e){
+      toast('Ошибка сохранения: ' + e.message);
+    });
+  }
+}
+
 /* ── Хелпер: является ли визуализация аннотацией ── */
 function isAnnotation(viz){
   return viz === 'annotation-text' || viz === 'sticky-note';
@@ -130,6 +144,120 @@ function renderAnnotation(p, body){
   var textAlign = p.annotationAlign || 'left';
   var content = p.content || cfg.defaultContent;
 
+  // Контейнер для тулбара и текста
+  var wrapper = document.createElement('div');
+  wrapper.style.position = 'relative';
+  wrapper.style.width = '100%';
+  wrapper.style.height = '100%';
+  wrapper.style.display = 'flex';
+  wrapper.style.flexDirection = 'column';
+
+  // ── Inline-тулбар (показывается по hover) ──
+  var toolbar = document.createElement('div');
+  toolbar.className = 'ann-toolbar';
+  toolbar.style.cssText = 'display:none;position:absolute;top:0;left:0;right:0;z-index:10;'
+    +'padding:4px 8px;background:rgba(19,25,38,0.92);backdrop-filter:blur(6px);'
+    +'border-bottom:1px solid var(--border);border-radius:4px 4px 0 0;'
+    +'align-items:center;gap:6px;flex-wrap:wrap;font-family:var(--mono);font-size:11px;';
+
+  // Размер шрифта: − / значение / +
+  var fontSizeDisplay = document.createElement('span');
+  fontSizeDisplay.style.cssText = 'color:var(--muted);min-width:28px;text-align:center;';
+  fontSizeDisplay.textContent = fontSize;
+
+  function makeTbBtn(label, title){
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.title = title;
+    b.style.cssText = 'width:22px;height:22px;border-radius:4px;border:1px solid var(--border);'
+      +'background:var(--panel-2);color:var(--muted);cursor:pointer;display:flex;'
+      +'align-items:center;justify-content:center;font-size:12px;transition:all .12s;';
+    b.textContent = label;
+    b.onmouseenter = function(){ b.style.color='var(--text)'; b.style.borderColor='var(--muted-2)'; };
+    b.onmouseleave = function(){ b.style.color='var(--muted)'; b.style.borderColor='var(--border)'; };
+    return b;
+  }
+
+  var btnFsDown = makeTbBtn('A−', 'Уменьшить шрифт');
+  var btnFsUp = makeTbBtn('A+', 'Увеличить шрифт');
+
+  btnFsDown.onclick = function(e){
+    e.stopPropagation();
+    var newSize = Math.max(8, (p.annotationFontSize || fontSize) - 2);
+    p.annotationFontSize = newSize;
+    fontSize = newSize;
+    fontSizeDisplay.textContent = newSize;
+    var contentEl = wrapper.querySelector('.annotation-content');
+    if(contentEl) contentEl.style.fontSize = newSize + 'px';
+    _saveAnnotationField(p, 'annotationFontSize', newSize);
+  };
+  btnFsUp.onclick = function(e){
+    e.stopPropagation();
+    var newSize = Math.min(72, (p.annotationFontSize || fontSize) + 2);
+    p.annotationFontSize = newSize;
+    fontSize = newSize;
+    fontSizeDisplay.textContent = newSize;
+    var contentEl = wrapper.querySelector('.annotation-content');
+    if(contentEl) contentEl.style.fontSize = newSize + 'px';
+    _saveAnnotationField(p, 'annotationFontSize', newSize);
+  };
+
+  toolbar.appendChild(btnFsDown);
+  toolbar.appendChild(fontSizeDisplay);
+  toolbar.appendChild(btnFsUp);
+
+  // Разделитель
+  var sep = document.createElement('span');
+  sep.style.cssText = 'width:1px;height:14px;background:var(--border);flex-shrink:0;';
+  toolbar.appendChild(sep);
+
+  // Цвет стикера (только для sticky-note)
+  if(isSticky){
+    STICKY_COLORS.forEach(function(c, i){
+      var swatch = document.createElement('button');
+      swatch.type = 'button';
+      swatch.title = c.label;
+      swatch.style.cssText = 'width:18px;height:18px;border-radius:4px;border:2px solid '
+        + (i === colorIdx ? c.accent : 'transparent')
+        + ';background:' + c.accent + ';cursor:pointer;transition:all .12s;flex-shrink:0;';
+      swatch.onclick = function(e){
+        e.stopPropagation();
+        p.stickyColor = i;
+        // Обновляем border подсветку
+        toolbar.querySelectorAll('.ann-swatch-active').forEach(function(s){
+          s.style.borderColor = 'transparent';
+          s.classList.remove('ann-swatch-active');
+        });
+        swatch.style.borderColor = c.accent;
+        swatch.classList.add('ann-swatch-active');
+        // Обновляем фон body
+        body.style.background = c.bg;
+        body.style.borderTop = '3px solid ' + c.accent;
+        _saveAnnotationField(p, 'stickyColor', i);
+      };
+      if(i === colorIdx) swatch.classList.add('ann-swatch-active');
+      toolbar.appendChild(swatch);
+    });
+
+    // Разделитель
+    var sep2 = document.createElement('span');
+    sep2.style.cssText = 'width:1px;height:14px;background:var(--border);flex-shrink:0;';
+    toolbar.appendChild(sep2);
+  }
+
+  // Кнопка «Настроить» (открывает модалку)
+  var btnSettings = makeTbBtn('⚙', 'Расширенные настройки');
+  btnSettings.style.width = 'auto';
+  btnSettings.style.padding = '0 6px';
+  btnSettings.onclick = function(e){
+    e.stopPropagation();
+    openEditModal(p);
+  };
+  toolbar.appendChild(btnSettings);
+
+  wrapper.appendChild(toolbar);
+
+  // ── Контент ──
   var div = document.createElement('div');
   div.className = 'annotation-content' + (isSticky ? ' annotation-sticky-content' : ' annotation-text-content');
   div.style.fontSize = fontSize + 'px';
@@ -138,8 +266,7 @@ function renderAnnotation(p, body){
   div.style.color = 'var(--text)';
   div.style.lineHeight = '1.55';
   div.style.padding = isSticky ? '12px 14px' : '8px 12px';
-  div.style.width = '100%';
-  div.style.height = '100%';
+  div.style.flex = '1';
   div.style.overflow = 'auto';
   div.style.whiteSpace = 'pre-wrap';
   div.style.wordBreak = 'break-word';
@@ -147,17 +274,29 @@ function renderAnnotation(p, body){
   div.style.userSelect = 'text';
   div.textContent = content;
 
-  body.appendChild(div);
+  wrapper.appendChild(div);
+  body.appendChild(wrapper);
+
+  // Показываем тулбар по hover на card
+  var card = body.closest('.panel-card');
+  if(card){
+    card.addEventListener('mouseenter', function(){ toolbar.style.display = 'flex'; });
+    card.addEventListener('mouseleave', function(e){
+      // Не скрываем если идёт редактирование текста
+      if(div.contentEditable === 'true') return;
+      toolbar.style.display = 'none';
+    });
+  }
 
   // Inline-редактирование по двойному клику
   div.addEventListener('dblclick', function(e){
     e.stopPropagation();
-    startInlineEdit(div, p);
+    startInlineEdit(div, p, toolbar);
   });
 }
 
 /* ── Inline-редактирование ──────────────────────── */
-function startInlineEdit(div, p){
+function startInlineEdit(div, p, toolbar){
   if(div.contentEditable === 'true') return; // уже редактируется
 
   div.contentEditable = 'true';
