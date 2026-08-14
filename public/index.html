@@ -789,6 +789,8 @@ GET https://events.atiks.org/s?src=my_app&type=purchase&group=day&from=2026-06-0
               <button class="viz-tile" data-viz="heatmap" title="Тепловая карта"><span class="vt-icon">🗺️</span><span class="vt-label">Тепло</span></button>
               <button class="viz-tile" data-viz="table" title="Таблица агрегаций"><span class="vt-icon">📋</span><span class="vt-label">Таблица</span></button>
               <button class="viz-tile" data-viz="logs" title="Логи (события)"><span class="vt-icon">📝</span><span class="vt-label">Логи</span></button>
+              <button class="viz-tile" data-viz="annotation-text" title="Текстовая надпись"><span class="vt-icon">🔤</span><span class="vt-label">Текст</span></button>
+              <button class="viz-tile" data-viz="sticky-note" title="Заметка / стикер"><span class="vt-icon">📌</span><span class="vt-label">Заметка</span></button>
             </div>
             <!-- Скрытый select для обратной совместимости (заполняется из плитки) -->
             <select id="f_viz" style="display:none;">
@@ -800,11 +802,13 @@ GET https://events.atiks.org/s?src=my_app&type=purchase&group=day&from=2026-06-0
               <option value="heatmap">Тепловая карта</option>
               <option value="table">Таблица (агрегация)</option>
               <option value="logs">Логи (события)</option>
+              <option value="annotation-text">Текстовая надпись</option>
+              <option value="sticky-note">Заметка / стикер</option>
             </select>
           </div>
 
           <!-- ── Секция 1: Источник данных + Фильтры ── -->
-          <div class="pm-section">
+          <div class="pm-section" id="sectionSource">
             <div class="pm-section-head"><span class="pm-section-num">2</span> Источник данных</div>
             <div class="field-row">
               <div class="field"><label>Название панели</label><input id="f_title" placeholder="Например: Регистрации по дням"></div>
@@ -1141,6 +1145,7 @@ GET https://events.atiks.org/s?src=my_app&type=purchase&group=day&from=2026-06-0
 <script src="plugins/threshold-alerts/alerts-ui.js"></script>
 <script src="plugins/ai-copilot/copilot-widget.js"></script>
 <script src="plugins/ai-copilot/copilot-modal.js"></script>
+<script src="plugins/canvas-annotations/annotations-ui.js"></script>
 
 <!-- ═══ Mobile PWA: Device Detector (Progressive Enhancement) ═══ -->
 <!-- Загружает мобильные ресурсы ТОЛЬКО при width < 860px + touch -->
