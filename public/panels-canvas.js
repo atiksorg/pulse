@@ -360,7 +360,7 @@ function applyCanvasPosition(card,p){
 var DRAG_DEAD_ZONE = 5;
 
 function initCanvasDrag(card,p){
-  var head = card.querySelector('.panel-head') || card;
+  var head = card.querySelector('.panel-head') || card.querySelector('.annotation-drag-bar') || card;
   head.style.cursor = p.locked ? 'default' : 'grab';
   head.addEventListener('pointerdown', function(e){
     if(p.locked) return;       // runtime check — respects lock state
