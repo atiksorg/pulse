@@ -143,6 +143,7 @@ function renderAnnotation(p, body){
   var fontWeight = p.annotationFontWeight || 'normal';
   var textAlign = p.annotationAlign || 'left';
   var content = p.content || cfg.defaultContent;
+  var textColor = p.annotationTextColor || 'var(--text)';
 
   // Контейнер для тулбара и текста
   var wrapper = document.createElement('div');
