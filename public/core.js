@@ -350,7 +350,8 @@ function sanitizePanelForSave(p){
     'filters','breakdownfield',
     'cx','cy','cw','ch','cz','locked',
     'thresholds','stacked','cumulative','secondAxis','compare',
-    'gaugeMin','gaugeMax','formula','derived'
+    'gaugeMin','gaugeMax','formula','derived',
+    'content','stickyColor','annotationFontSize','annotationFontWeight','annotationAlign','annotationTextColor'
   ];
   for(var i=0;i<keepKeys.length;i++){
     var k = keepKeys[i];
