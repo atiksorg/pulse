@@ -36,7 +36,9 @@ var CANVAS_VIZ_PRESETS = {
   gauge: { cw: 280, ch: 200 },
   heatmap: { cw: 500, ch: 350 },
   table: { cw: 480, ch: 420 },
-  logs:  { cw: 520, ch: 480 }
+  logs:  { cw: 520, ch: 480 },
+  'annotation-text': { cw: 320, ch: 80 },
+  'sticky-note':     { cw: 240, ch: 200 }
 };
 
 function getVizPreset(viz){
@@ -139,7 +141,9 @@ function autoLayoutCanvas(panels){
     pie:     { prefW: 320, prefH: 280, minW: 240, minH: 220 },
     heatmap: { prefW: 480, prefH: 320, minW: 360, minH: 260 },
     table:   { prefW: mw,  prefH: 380, minW: 320, minH: 240 },
-    logs:    { prefW: mw,  prefH: 420, minW: 320, minH: 280 }
+    logs:    { prefW: mw,  prefH: 420, minW: 320, minH: 280 },
+    'annotation-text': { prefW: 320, prefH: 80, minW: 100, minH: 40 },
+    'sticky-note':     { prefW: 240, prefH: 200, minW: 140, minH: 100 }
   };
 
   function getSize(viz){
