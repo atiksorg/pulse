@@ -202,24 +202,30 @@ function renderPanels(readonlyData){
 
   panels.forEach(function(p){
     var card = document.createElement('div');
-    card.className = 'panel-card' + (isShared ? ' readonly' : '') + (p.locked ? ' locked' : '');
+    var isAnnotation = (typeof CanvasAnnotations !== 'undefined') ? CanvasAnnotations.isAnnotation(p.viz) : false;
+    card.className = 'panel-card' + (isShared ? ' readonly' : '') + (p.locked ? ' locked' : '') + (isAnnotation ? ' panel-annotation panel-annotation-' + p.viz : '');
     card.style.setProperty('--w', p.width||6);
-    var panelMenuItems = [
-      { act:'edit', icon:'edit', label:'Изменить', hidden: isShared },
-      { act:'lock', icon:'lock', label: p.locked ? 'Разблокировать' : 'Закрепить', hidden: isShared },
-      { act:'duplicate', icon:'copy', label:'Дублировать', hidden: isShared },
-      { act:'refresh', icon:'refresh', label:'Обновить' },
-      { act:'fullscreen', icon:'fullscreen', label:'Полный экран', hidden: isShared },
-      { act:'png', icon:'download', label:'Экспорт PNG', hidden: isShared },
-      { act:'copy', icon:'clipboard', label:'Копировать данные', hidden: isShared },
-      { act:'smooth', icon:'wave', label:'Сглаживание', hidden: isShared },
-      { act:'example', icon:'terminal', label:'Пример записи', hidden: isShared },
-      { act:'ai-optimize', icon:'sparkles', label:'Оптимизировать (AI)', hidden: isShared },
-      { act:'ai-discover', icon:'sparkles', label:'AI: построить дашборд из логов', hidden: isShared || p.viz !== 'logs' },
-      { act:'alerts', icon:'bell', label:'Пороговые уведомления', hidden: isShared },
-      { act:'clear', icon:'trash', label:'Очистить данные', danger: true, hidden: isShared },
-      { act:'remove', icon:'delete', label:'Удалить панель', danger: true, hidden: isShared }
-    ].filter(function(m){ return !m.hidden; });
+    var panelMenuItems;
+    if(isAnnotation && typeof CanvasAnnotations !== 'undefined'){
+      panelMenuItems = CanvasAnnotations.getMenuItems(p, isShared);
+    } else {
+      panelMenuItems = [
+        { act:'edit', icon:'edit', label:'Изменить', hidden: isShared },
+        { act:'lock', icon:'lock', label: p.locked ? 'Разблокировать' : 'Закрепить', hidden: isShared },
+        { act:'duplicate', icon:'copy', label:'Дублировать', hidden: isShared },
+        { act:'refresh', icon:'refresh', label:'Обновить' },
+        { act:'fullscreen', icon:'fullscreen', label:'Полный экран', hidden: isShared },
+        { act:'png', icon:'download', label:'Экспорт PNG', hidden: isShared },
+        { act:'copy', icon:'clipboard', label:'Копировать данные', hidden: isShared },
+        { act:'smooth', icon:'wave', label:'Сглаживание', hidden: isShared },
+        { act:'example', icon:'terminal', label:'Пример записи', hidden: isShared },
+        { act:'ai-optimize', icon:'sparkles', label:'Оптимизировать (AI)', hidden: isShared },
+        { act:'ai-discover', icon:'sparkles', label:'AI: построить дашборд из логов', hidden: isShared || p.viz !== 'logs' },
+        { act:'alerts', icon:'bell', label:'Пороговые уведомления', hidden: isShared },
+        { act:'clear', icon:'trash', label:'Очистить данные', danger: true, hidden: isShared },
+        { act:'remove', icon:'delete', label:'Удалить панель', danger: true, hidden: isShared }
+      ].filter(function(m){ return !m.hidden; });
+    }
 
     function panelMenuIcon(name){
       var icons = {
@@ -256,20 +262,25 @@ function renderPanels(readonlyData){
       +'<div class="panel-menu-dropdown">'+menuHtml+'</div>'
       +'</div></div>'
       +'<div class="panel-body" id="body-'+p.id+'"><div style="color:var(--muted-2);font-family:var(--mono);font-size:12px;">загрузка…</div></div>'
-      +'<div class="panel-code-toggle" data-panel="'+p.id+'"><span class="pct-icon">▸</span> Пример записи данных</div>'
-      +'<div class="panel-code-block" id="code-'+p.id+'" style="display:none;">'+buildPanelCodeTabs(p, src)+'</div>';
+      +(isAnnotation ? '' : '<div class="panel-code-toggle" data-panel="'+p.id+'"><span class="pct-icon">▸</span> Пример записи данных</div>'
+      +'<div class="panel-code-block" id="code-'+p.id+'" style="display:none;">'+buildPanelCodeTabs(p, src)+'</div>');
     surface.appendChild(card);
 
-    var toggleEl = card.querySelector('.panel-code-toggle');
-    var codeEl = card.querySelector('#code-'+p.id);
-    toggleEl.onclick=function(){ var open=codeEl.style.display==='none'; codeEl.style.display=open?'block':'none'; toggleEl.querySelector('.pct-icon').textContent=open?'▾':'▸'; };
-    codeEl.querySelectorAll('.pc-tab').forEach(function(tab){
-      tab.onclick=function(ev){ ev.stopPropagation(); codeEl.querySelectorAll('.pc-tab').forEach(function(t){t.classList.remove('active');}); codeEl.querySelectorAll('.pc-panel').forEach(function(pp){pp.classList.remove('active');}); tab.classList.add('active'); var idx=tab.dataset.lang; var pan=codeEl.querySelector('#pc-'+p.id+'-'+idx); if(pan) pan.classList.add('active'); };
-    });
-    var cpyBtn = codeEl.querySelector('.pc-copy-btn');
-    if(cpyBtn){ cpyBtn.onclick=function(ev){ ev.stopPropagation(); var act=codeEl.querySelector('.pc-panel.active pre'); if(act) navigator.clipboard.writeText(act.textContent).then(function(){cpyBtn.textContent='Скопировано!';setTimeout(function(){cpyBtn.textContent='Копировать';},1500);}); }; }
+    if(!isAnnotation){
+      var toggleEl = card.querySelector('.panel-code-toggle');
+      var codeEl = card.querySelector('#code-'+p.id);
+      if(toggleEl && codeEl){
+        toggleEl.onclick=function(){ var open=codeEl.style.display==='none'; codeEl.style.display=open?'block':'none'; toggleEl.querySelector('.pct-icon').textContent=open?'▾':'▸'; };
+        codeEl.querySelectorAll('.pc-tab').forEach(function(tab){
+          tab.onclick=function(ev){ ev.stopPropagation(); codeEl.querySelectorAll('.pc-tab').forEach(function(t){t.classList.remove('active');}); codeEl.querySelectorAll('.pc-panel').forEach(function(pp){pp.classList.remove('active');}); tab.classList.add('active'); var idx=tab.dataset.lang; var pan=codeEl.querySelector('#pc-'+p.id+'-'+idx); if(pan) pan.classList.add('active'); };
+        });
+        var cpyBtn = codeEl.querySelector('.pc-copy-btn');
+        if(cpyBtn){ cpyBtn.onclick=function(ev){ ev.stopPropagation(); var act=codeEl.querySelector('.pc-panel.active pre'); if(act) navigator.clipboard.writeText(act.textContent).then(function(){cpyBtn.textContent='Скопировано!';setTimeout(function(){cpyBtn.textContent='Копировать';},1500);}); }; }
+      }
+    }
 
-    card.querySelector('[data-act="refresh-inline"]').onclick=function(){loadPanel(p,src);};
+    var refreshBtn = card.querySelector('[data-act="refresh-inline"]');
+    if(refreshBtn) refreshBtn.onclick=function(){loadPanel(p,src);};
     if(!isShared){
       // Делегируем обработчики меню к panels-edit.js (bindPanelMenuActions)
       if(typeof bindPanelMenuActions === 'function'){
@@ -350,6 +361,11 @@ async function loadPanel(p, src){
   if(!body) return;
   // Если AI-оптимизация в процессе — не перезаписываем содержимое панели
   if(panelAiActive[p.id]) return;
+  // Аннотации не требуют сетевых запросов
+  if(typeof CanvasAnnotations !== 'undefined' && CanvasAnnotations.isAnnotation(p.viz)){
+    CanvasAnnotations.renderAnnotation(p, body);
+    return;
+  }
   showSkeleton(body);
   try{
     if(p.viz==='logs'){ var d=await fetchLogs(src,p); hideSkeleton(body); renderLogs(p,d,body); }
