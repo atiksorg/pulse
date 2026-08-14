@@ -201,6 +201,64 @@ function renderPanels(readonlyData){
   }
 
   panels.forEach(function(p){
+    // ── Текстовый элемент: отдельный рендер, без panel-head/body ──
+    if(p.viz === 'text'){
+      var textCard = document.createElement('div');
+      textCard.className = 'text-card' + (isShared ? ' readonly' : '') + (p.locked ? ' locked' : '');
+      textCard.dataset.panelId = p.id;
+      textCard.style.left = (p.cx||0)+'px';
+      textCard.style.top = (p.cy||0)+'px';
+      textCard.style.width = (p.cw||300)+'px';
+      textCard.style.minHeight = (p.ch||60)+'px';
+      textCard.style.zIndex = Math.min(Math.max(p.cz || CANVAS_Z_MIN, CANVAS_Z_MIN), CANVAS_Z_MAX);
+      textCard.style.fontSize = (p.fontSize||24)+'px';
+      textCard.style.fontWeight = p.fontWeight||'600';
+      textCard.style.color = p.fontColor||'#E8ECF4';
+      textCard.style.textAlign = p.textAlign||'left';
+      textCard.textContent = p.textContent || 'Заголовок';
+
+      if(!isShared){
+        // Inline-редактирование по двойному клику
+        textCard.addEventListener('dblclick', function(e){
+          if(p.locked) return;
+          e.stopPropagation();
+          textCard.contentEditable = 'true';
+          textCard.focus();
+          // Выделяем весь текст
+          var range = document.createRange();
+          range.selectNodeContents(textCard);
+          var sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(range);
+        });
+        textCard.addEventListener('blur', function(){
+          textCard.contentEditable = 'false';
+          var newText = textCard.textContent.trim() || 'Заголовок';
+          textCard.textContent = newText;
+          // Сохраняем
+          var db = getActiveDashboard();
+          if(db){
+            var pp = db.panels.find(function(x){ return x.id === p.id; });
+            if(pp) pp.textContent = newText;
+            // Обновляем ch по реальной высоте
+            p.ch = textCard.offsetHeight;
+            pp.ch = p.ch;
+            updateDashboardOnServer(db).catch(function(){});
+          }
+        });
+        // Предотвращаем pan при клике на текст
+        textCard.addEventListener('mousedown', function(e){
+          if(textCard.contentEditable === 'true'){
+            e.stopPropagation();
+          }
+        });
+        // Drag + resize
+        if(canvasMode){ initCanvasDrag(textCard, p); initCanvasResize(textCard, p); }
+      }
+      surface.appendChild(textCard);
+      return; // пропускаем остальную логику для этой панели
+    }
+
     var card = document.createElement('div');
     card.className = 'panel-card' + (isShared ? ' readonly' : '') + (p.locked ? ' locked' : '');
     card.style.setProperty('--w', p.width||6);
@@ -348,6 +406,8 @@ function renderPanels(readonlyData){
 async function loadPanel(p, src){
   var body = document.getElementById('body-'+p.id);
   if(!body) return;
+  // Текстовые элементы не загружают данные
+  if(p.viz === 'text') return;
   // Если AI-оптимизация в процессе — не перезаписываем содержимое панели
   if(panelAiActive[p.id]) return;
   showSkeleton(body);
