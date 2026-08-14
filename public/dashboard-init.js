@@ -27,7 +27,8 @@ async function initDashboard(){
       '<button class="icon-btn ft-btn" id="btnShare" title="Поделиться">🔗</button>' +
       '<button class="icon-btn ft-btn ft-theme-btn" id="btnThemeToggle" title="Сменить тему">◐</button>' +
       '<button class="icon-btn ft-btn ft-help-btn" id="btnHelpModal" title="Справка">?</button>' +
-      '<button class="icon-btn ft-btn ft-add-btn" id="btnAddPanel" title="Добавить панель">+</button>';
+      '<button class="icon-btn ft-btn ft-add-btn" id="btnAddPanel" title="Добавить панель">+</button>' +
+      '<button class="icon-btn ft-btn ft-add-btn" id="btnAddText" title="Добавить текст" style="font-family:var(--mono);font-weight:700;">T</button>';
   }
   // Восстанавливаем видимость табов
   var dashTabsEl = document.getElementById('dashTabs');
@@ -43,6 +44,7 @@ async function initDashboard(){
   $('#btnExportXml').onclick = function(e){ exportXml(e.shiftKey); };
   $('#btnShare').onclick = function(){ showShareModal(); };
   $('#btnAddPanel').onclick = openAddPanel;
+  $('#btnAddText') && ($('#btnAddText').onclick = addTextToCanvas);
 
   // Кнопка темы — цикл по доступным темам
   var themeBtn = document.getElementById('btnThemeToggle');
