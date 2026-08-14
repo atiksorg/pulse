@@ -36,7 +36,8 @@ var CANVAS_VIZ_PRESETS = {
   gauge: { cw: 280, ch: 200 },
   heatmap: { cw: 500, ch: 350 },
   table: { cw: 480, ch: 420 },
-  logs:  { cw: 520, ch: 480 }
+  logs:  { cw: 520, ch: 480 },
+  text:  { cw: 300, ch: 60 }
 };
 
 function getVizPreset(viz){
@@ -147,8 +148,8 @@ function autoLayoutCanvas(panels){
   }
 
   // ── Разделяем на locked и free ──
-  var locked = panels.filter(function(p){ return !!p.locked; });
-  var free   = panels.filter(function(p){ return !p.locked; });
+  var locked = panels.filter(function(p){ return !!p.locked || p.viz === 'text'; });
+  var free   = panels.filter(function(p){ return !p.locked && p.viz !== 'text'; });
 
   // ── Заполняем cw/ch если не заданы ──
   panels.forEach(function(p){
