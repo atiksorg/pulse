@@ -254,16 +254,25 @@ function renderPanels(readonlyData){
         + '</button>';
     }).join('');
 
-    card.innerHTML = '<div class="panel-head"><div><h3>'+escapeHtml(p.title)+'</h3><div class="meta">'+describeMeta(p)+'</div></div></div>'
-      +'<div class="panel-menu-floating">'
-      +'<button class="pmbtn pmbtn-refresh" data-act="refresh-inline" title="Обновить">'+panelMenuIcon('refresh')+'</button>'
-      +'<div class="panel-menu-wrap">'
-      +'<button class="pmbtn pmbtn-trigger" data-menu-trigger title="Ещё">'+panelMenuIcon('ellipsis')+'</button>'
-      +'<div class="panel-menu-dropdown">'+menuHtml+'</div>'
-      +'</div></div>'
-      +'<div class="panel-body" id="body-'+p.id+'"><div style="color:var(--muted-2);font-family:var(--mono);font-size:12px;">загрузка…</div></div>'
-      +(isAnnotation ? '' : '<div class="panel-code-toggle" data-panel="'+p.id+'"><span class="pct-icon">▸</span> Пример записи данных</div>'
-      +'<div class="panel-code-block" id="code-'+p.id+'" style="display:none;">'+buildPanelCodeTabs(p, src)+'</div>');
+    if(isAnnotation){
+      card.innerHTML = '<div class="panel-menu-floating">'
+        +'<div class="panel-menu-wrap">'
+        +'<button class="pmbtn pmbtn-trigger" data-menu-trigger title="Ещё">'+panelMenuIcon('ellipsis')+'</button>'
+        +'<div class="panel-menu-dropdown">'+menuHtml+'</div>'
+        +'</div></div>'
+        +'<div class="panel-body" id="body-'+p.id+'"></div>';
+    } else {
+      card.innerHTML = '<div class="panel-head"><div><h3>'+escapeHtml(p.title)+'</h3><div class="meta">'+describeMeta(p)+'</div></div></div>'
+        +'<div class="panel-menu-floating">'
+        +'<button class="pmbtn pmbtn-refresh" data-act="refresh-inline" title="Обновить">'+panelMenuIcon('refresh')+'</button>'
+        +'<div class="panel-menu-wrap">'
+        +'<button class="pmbtn pmbtn-trigger" data-menu-trigger title="Ещё">'+panelMenuIcon('ellipsis')+'</button>'
+        +'<div class="panel-menu-dropdown">'+menuHtml+'</div>'
+        +'</div></div>'
+        +'<div class="panel-body" id="body-'+p.id+'"><div style="color:var(--muted-2);font-family:var(--mono);font-size:12px;">загрузка…</div></div>'
+        +'<div class="panel-code-toggle" data-panel="'+p.id+'"><span class="pct-icon">▸</span> Пример записи данных</div>'
+        +'<div class="panel-code-block" id="code-'+p.id+'" style="display:none;">'+buildPanelCodeTabs(p, src)+'</div>';
+    }
     surface.appendChild(card);
 
     if(!isAnnotation){
