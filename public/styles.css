@@ -1793,6 +1793,14 @@ body.canvas-dragging *{cursor:grabbing !important;}
 .panel-annotation .pmbtn-refresh{
   display:none;
 }
+/* Inline-тулбар аннотации */
+.ann-toolbar{
+  display:none;
+  transition:opacity .15s ease;
+}
+.panel-card:hover .ann-toolbar{
+  display:flex !important;
+}
 
 /* ── Heatmap ─────────────────────────────────── */
 .heatmap-wrap{max-width:100%;overflow-x:auto;}
