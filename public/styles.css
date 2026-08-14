@@ -1751,7 +1751,8 @@ body.canvas-dragging *{cursor:grabbing !important;}
   background:transparent !important;
   border:1px solid transparent !important;
   box-shadow:none !important;
-  cursor:grab;
+  border-radius:6px;
+  overflow:visible;
 }
 .panel-annotation:hover{
   border:1px dashed var(--muted-2) !important;
@@ -1763,7 +1764,7 @@ body.canvas-dragging *{cursor:grabbing !important;}
 .panel-annotation .panel-body{
   padding:0;
   overflow:visible;
-  background:transparent !important;
+  height:100%;
 }
 .panel-annotation-text{
   background:transparent !important;
@@ -1771,21 +1772,132 @@ body.canvas-dragging *{cursor:grabbing !important;}
   box-shadow:none !important;
 }
 .panel-annotation-sticky-note{
-  border-radius:8px !important;
-  box-shadow:0 4px 16px rgba(0,0,0,0.35) !important;
+  border-radius:6px !important;
 }
-.panel-annotation-sticky-note:hover{
-  box-shadow:0 6px 24px rgba(0,0,0,0.45) !important;
+
+/* ── Ручка захвата (Drag bar) ── */
+.annotation-drag-bar{
+  width:100%;
+  height:14px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:grab;
+  opacity:0;
+  background:rgba(255,255,255,0.03);
+  border-radius:4px 4px 0 0;
+  border-bottom:1px solid transparent;
+  transition:all .15s ease;
+  user-select:none;
 }
+.panel-annotation:hover .annotation-drag-bar{
+  opacity:1;
+  background:rgba(255,255,255,0.06);
+  border-bottom-color:rgba(255,255,255,0.08);
+}
+.annotation-drag-bar:active{
+  cursor:grabbing;
+}
+.ann-grip-dots{
+  color:var(--muted);
+  font-size:10px;
+  letter-spacing:2px;
+  line-height:1;
+}
+
+/* ── Тулбар надписи/заметки ── */
+.ann-toolbar{
+  position:absolute;
+  top:-34px;
+  left:0;
+  z-index:20;
+  display:none;
+  align-items:center;
+  gap:4px;
+  padding:4px 8px;
+  background:rgba(19,25,38,0.95);
+  backdrop-filter:blur(8px);
+  border:1px solid var(--border);
+  border-radius:6px;
+  box-shadow:0 4px 14px rgba(0,0,0,0.4);
+  font-family:var(--mono);
+  font-size:11px;
+}
+.panel-annotation:hover .ann-toolbar{
+  display:flex;
+}
+.ann-fs-val{
+  color:var(--teal);
+  min-width:32px;
+  text-align:center;
+  font-size:11px;
+  font-weight:600;
+}
+.ann-tb-btn{
+  height:22px;
+  padding:0 6px;
+  border-radius:4px;
+  border:1px solid var(--border);
+  background:var(--panel-2);
+  color:var(--text);
+  font-size:11px;
+  cursor:pointer;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  transition:all .12s ease;
+}
+.ann-tb-btn:hover{
+  border-color:var(--teal-dim);
+  color:var(--teal);
+}
+.ann-tb-sep{
+  width:1px;
+  height:14px;
+  background:var(--border);
+  margin:0 2px;
+  flex-shrink:0;
+}
+.ann-color-swatch{
+  width:14px;
+  height:14px;
+  border-radius:50%;
+  border:2px solid transparent;
+  cursor:pointer;
+  padding:0;
+  transition:transform .12s, border-color .12s;
+  flex-shrink:0;
+}
+.ann-color-swatch:hover, .ann-color-swatch.active{
+  border-color:#fff;
+  transform:scale(1.2);
+}
+.ann-sticky-swatch{
+  width:14px;
+  height:14px;
+  border-radius:3px;
+  border:2px solid transparent;
+  cursor:pointer;
+  padding:0;
+  transition:transform .12s, border-color .12s;
+  flex-shrink:0;
+}
+.ann-sticky-swatch:hover, .ann-sticky-swatch.active{
+  border-color:#fff;
+  transform:scale(1.2);
+}
+
 .annotation-content{
-  transition:outline .15s ease, color .15s ease;
+  transition:color .15s ease, font-size .15s ease;
+  outline:none;
 }
-.annotation-text-content{
-  color:var(--text);
+.annotation-content.editing{
+  outline:1.5px solid var(--teal) !important;
+  outline-offset:-1px;
+  background:rgba(77,236,199,0.04);
+  border-radius:4px;
 }
-.annotation-sticky-content{
-  color:var(--text);
-}
+
 /* В grid-режиме аннотации занимают одну колонку */
 .panel-annotation:not(.canvas-mode .panel-annotation){
   grid-column:span 6 !important;
@@ -1802,14 +1914,6 @@ body.canvas-dragging *{cursor:grabbing !important;}
 .panel-annotation .panel-code-toggle,
 .panel-annotation .panel-code-block{
   display:none !important;
-}
-/* Inline-тулбар аннотации */
-.ann-toolbar{
-  display:none;
-  transition:opacity .15s ease;
-}
-.panel-card:hover .ann-toolbar{
-  display:flex !important;
 }
 
 /* ── Heatmap ─────────────────────────────────── */
