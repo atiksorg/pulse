@@ -64,6 +64,7 @@ window.CanvasAnnotations = {
 
 /* ── Хелпер: сохранение одного поля аннотации ──── */
 function _saveAnnotationField(p, field, value){
+  p[field] = value;
   var db = getActiveDashboard();
   if(!db) return;
   var pp = db.panels.find(function(x){ return x.id === p.id; });
