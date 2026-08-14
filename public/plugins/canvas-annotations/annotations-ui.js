@@ -211,7 +211,7 @@ function renderAnnotation(p, body){
   sep.style.cssText = 'width:1px;height:14px;background:var(--border);flex-shrink:0;';
   toolbar.appendChild(sep);
 
-  // Цвет стикера (только для sticky-note)
+  // Цвет стикера / текста
   if(isSticky){
     STICKY_COLORS.forEach(function(c, i){
       var swatch = document.createElement('button');
@@ -243,6 +243,36 @@ function renderAnnotation(p, body){
     var sep2 = document.createElement('span');
     sep2.style.cssText = 'width:1px;height:14px;background:var(--border);flex-shrink:0;';
     toolbar.appendChild(sep2);
+  } else {
+    // Для обычного текста — выбор цвета текста
+    var TEXT_COLORS = [
+      { color: 'var(--text)', label: 'Основной' },
+      { color: 'var(--teal)', label: 'Бирюзовый' },
+      { color: 'var(--amber)', label: 'Янтарный' },
+      { color: 'var(--coral)', label: 'Коралловый' },
+      { color: '#5B8DEF', label: 'Синий' },
+      { color: '#B892FF', label: 'Фиолетовый' },
+      { color: 'var(--muted)', label: 'Серый' }
+    ];
+    TEXT_COLORS.forEach(function(tc){
+      var swatch = document.createElement('button');
+      swatch.type = 'button';
+      swatch.title = tc.label;
+      swatch.style.cssText = 'width:18px;height:18px;border-radius:50%;border:2px solid transparent;'
+        + 'background:' + tc.color + ';cursor:pointer;transition:all .12s;flex-shrink:0;';
+      swatch.onclick = function(e){
+        e.stopPropagation();
+        p.annotationTextColor = tc.color;
+        var contentEl = wrapper.querySelector('.annotation-content');
+        if(contentEl) contentEl.style.color = tc.color;
+        _saveAnnotationField(p, 'annotationTextColor', tc.color);
+      };
+      toolbar.appendChild(swatch);
+    });
+
+    var sepText = document.createElement('span');
+    sepText.style.cssText = 'width:1px;height:14px;background:var(--border);flex-shrink:0;';
+    toolbar.appendChild(sepText);
   }
 
   // Кнопка «Настроить» (открывает модалку)
