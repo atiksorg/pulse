@@ -15,11 +15,19 @@ var templates = [
   { id:'by_hour', title:'Активность по часам', desc:'Линия: распределение событий по часам суток', cfg:{viz:'line', type:'', group:'hour', agg:'count', field:'', aggfield:'', range:'24h', width:6}},
   { id:'logs_table', title:'Логи (таблица)', desc:'Последние события в виде таблицы с фильтрацией по типу', cfg:{viz:'logs', type:'', group:'raw', agg:'count', field:'', aggfield:'', range:'24h', width:8, autorefresh:10}},
   { id:'blank', title:'Пустая панель', desc:'Настроить всё вручную с нуля', cfg:{viz:'line', type:'', group:'day', agg:'count', field:'', aggfield:'', range:'7d', width:6}},
+  { id:'ann_text', title:'📝 Текст / заголовок', desc:'Статическая надпись на холсте — заголовок раздела или аннотация', cfg:{viz:'annotation-text', title:'Текст', content:'Введите текст…', group:'', agg:'count', range:'', width:6}},
+  { id:'ann_note', title:'📌 Заметка (стикер)', desc:'Цветная заметка для команды с произвольным текстом', cfg:{viz:'sticky-note', title:'Заметка', content:'Заметка…', group:'', agg:'count', range:'', width:6}},
 ];
 
 /* ── Привязка обработчиков контекстного меню панели ── */
 function bindPanelMenuActions(card, p, src){
-  card.querySelector('[data-act="edit"]') && (card.querySelector('[data-act="edit"]').onclick=function(){openEditPanel(p);});
+  card.querySelector('[data-act="edit"]') && (card.querySelector('[data-act="edit"]').onclick=function(){
+    if(typeof CanvasAnnotations !== 'undefined' && CanvasAnnotations.isAnnotation(p.viz)){
+      CanvasAnnotations.openEditModal(p);
+    } else {
+      openEditPanel(p);
+    }
+  });
   card.querySelector('[data-act="lock"]') && (card.querySelector('[data-act="lock"]').onclick=function(){ togglePanelLock(p); });
   card.querySelector('[data-act="remove"]') && (card.querySelector('[data-act="remove"]').onclick=async function(){
     if(await confirmModal('Удалить панель?','Удалить панель «'+p.title+'» с дашборда? (Данные останутся в базе)','Удалить')){
@@ -199,7 +207,11 @@ function buildTemplateGrid(){
     b.innerHTML='<div class="t-title">'+t.title+'</div><div class="t-desc">'+t.desc+'</div>';
     b.onclick=function(){
       var cfg=Object.assign({},t.cfg,{title:t.title});
-      if(t.cfg.agg==='avg'||t.cfg.group==='__field'){
+      // Аннотации — добавляем сразу через addPanelFromConfig (content уже в cfg)
+      if(t.cfg.viz && typeof CanvasAnnotations !== 'undefined' && CanvasAnnotations.isAnnotation(t.cfg.viz)){
+        addPanelFromConfig(cfg);
+        closePanelModal();
+      } else if(t.cfg.agg==='avg'||t.cfg.group==='__field'){
         $('#advForm').classList.add('active');
         $('#advToggle').textContent='Скрыть ручные настройки';
         fillAdvForm(cfg);
@@ -292,14 +304,20 @@ $$('.viz-tile').forEach(function(tile){
 });
 
 function toggleCondFields(){
+  var viz=$('#f_viz').value;
+  var isAnnotation = (viz==='annotation-text' || viz==='sticky-note');
+
   $('#fieldNameWrap').style.display=$('#f_group').value==='__field'?'flex':'none';
   // aggFieldWrap нужен для count НЕ нужен, а для всех остальных — нужен
   $('#aggFieldWrap').style.display=$('#f_agg').value!=='count'?'flex':'none';
   var cr=$('#customRangeWrap'); if(cr)cr.style.display=$('#f_range').value==='custom'?'flex':'none';
-  var viz=$('#f_viz').value;
+
+  // ── Секция «Источник данных» — скрываем для аннотаций ──
+  var sSource = $('#sectionSource');
+  if(sSource) sSource.style.display = isAnnotation ? 'none' : '';
 
   // ── Секция «Разбивка и сортировка» — для line/bar/heatmap ──
-  var showBreakdownSection = (viz==='line'||viz==='bar'||viz==='heatmap');
+  var showBreakdownSection = !isAnnotation && (viz==='line'||viz==='bar'||viz==='heatmap');
   var sBreakdown=$('#sectionBreakdown');
   if(sBreakdown) sBreakdown.style.display = showBreakdownSection ? '' : 'none';
 
@@ -320,9 +338,14 @@ function toggleCondFields(){
   if(gw) gw.style.display=(viz==='gauge')?'flex':'none';
 
   // ── Секция «Пороги и опции» — для line/bar ──
-  var showChartOpts = (viz==='line'||viz==='bar');
+  var showChartOpts = !isAnnotation && (viz==='line'||viz==='bar');
   var sChartOpts=$('#sectionChartOpts');
   if(sChartOpts) sChartOpts.style.display = showChartOpts ? '' : 'none';
+
+  // ── Секция «Поведение на дашборде» — скрываем автообновление для аннотаций ──
+  if(isAnnotation){
+    var arEl=$('#f_autorefresh'); if(arEl) arEl.value='0';
+  }
 }
 $('#f_group') && $('#f_group').addEventListener('change',function(){ toggleCondFields(); _debouncePreview(); });
 $('#f_agg') && $('#f_agg').addEventListener('change',function(){ toggleCondFields(); _debouncePreview(); });
@@ -485,6 +508,9 @@ function readAdvForm(){
   var gmEl=$('#f_gaugeMin'); c.gaugeMin=(gmEl&&gmEl.value!=='')?Number(gmEl.value):undefined;
   var gxEl=$('#f_gaugeMax'); c.gaugeMax=(gxEl&&gxEl.value!=='')?Number(gxEl.value):undefined;
   c.thresholds=readThresholdRows();
+  // content — для аннотаций (textarea из модалки или дефолт)
+  var ctEl = document.getElementById('annEditContent');
+  if(ctEl) c.content = ctEl.value;
   return c;
 }
 
