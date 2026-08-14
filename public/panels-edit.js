@@ -189,7 +189,6 @@ function openEditPanel(p){ editingPanelId=p.id; $('#modalTitle').textContent='И
 function closePanelModal(){ $('#panelModal').classList.remove('active'); $('#advToggle').style.display=''; editingPanelId=null; _clearPreviewTimer(); }
 $('#btnCancelPanel') && ($('#btnCancelPanel').onclick=closePanelModal);
 $('#btnAddPanel') && ($('#btnAddPanel').onclick=openAddPanel);
-$('#btnAddText') && ($('#btnAddText').onclick=addTextToCanvas);
 $('#advToggle') && ($('#advToggle').onclick=function(){ var f=$('#advForm'); f.classList.toggle('active'); $('#advToggle').textContent=f.classList.contains('active')?'Скрыть ручные настройки':'Настроить вручную →'; });
 
 function buildTemplateGrid(){
@@ -689,124 +688,6 @@ async function addPanelFromConfig(cfg){
     renderPanels();
     // centerPanelInViewport НЕ вызываем — восстанавливаем viewport вместо прыжка
   } catch(e) { toast('Ошибка сохранения: ' + e.message); }
-}
-
-/* ── Add text element to canvas ─────────────────── */
-async function addTextToCanvas(){
-  var db = getActiveDashboard();
-  if(!db) return;
-  if (typeof pushUndoSnapshot === 'function') pushUndoSnapshot('добавление текста');
-  var p = {
-    id: uid('text'),
-    viz: 'text',
-    title: '',
-    textContent: 'Заголовок',
-    fontSize: 24,
-    fontWeight: '600',
-    fontColor: '#E8ECF4',
-    textAlign: 'left',
-    cx: 0, cy: 0,
-    cw: 300, ch: 60,
-    cz: 0,
-    locked: false
-  };
-  var maxZ = getMaxPanelZ(db.panels);
-  p.cz = maxZ >= CANVAS_Z_MAX ? CANVAS_Z_MAX : maxZ + 1;
-  canvasZCounter = p.cz;
-  if(canvasMode && !isMobile() && interactiveCanvas){
-    _saveCanvasViewport();
-    var vp = interactiveCanvas.viewport.getBoundingClientRect();
-    var centerX = (vp.width / 2 - interactiveCanvas.offsetX) / interactiveCanvas.scale - p.cw / 2;
-    var centerY = (vp.height / 2 - interactiveCanvas.offsetY) / interactiveCanvas.scale - p.ch / 2;
-    p.cx = Math.round(centerX / 20) * 20;
-    p.cy = Math.round(centerY / 20) * 20;
-  }
-  db.panels.push(p);
-  try {
-    await updateDashboardOnServer(db);
-    renderPanels();
-    toast('Текст добавлен — двойной клик для редактирования');
-  } catch(e) { toast('Ошибка сохранения: ' + e.message); }
-}
-
-/* ── Open text editor modal ─────────────────────── */
-function openTextEditor(p){
-  var overlay = document.createElement('div');
-  overlay.className = 'modal-overlay active';
-  overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5);';
-  var box = document.createElement('div');
-  box.className = 'modal-box';
-  box.style.cssText = 'max-width:440px;width:90%;';
-
-  var html = '<div style="padding:20px;">'
-    + '<h3 style="margin:0 0 16px;">Редактирование текста</h3>'
-    + '<div class="field" style="margin-bottom:12px;">'
-    + '  <label>Текст</label>'
-    + '  <textarea id="textEditContent" rows="3" style="width:100%;resize:vertical;">' + escapeHtml(p.textContent || '') + '</textarea>'
-    + '</div>'
-    + '<div class="field-row" style="margin-bottom:12px;">'
-    + '  <div class="field"><label>Размер шрифта</label>'
-    + '    <input id="textEditSize" type="range" min="10" max="72" value="' + (p.fontSize||24) + '" style="width:100%;">'
-    + '    <span id="textEditSizeVal" style="font-family:var(--mono);font-size:12px;color:var(--teal);">' + (p.fontSize||24) + 'px</span>'
-    + '  </div>'
-    + '  <div class="field"><label>Цвет</label>'
-    + '    <input id="textEditColor" type="color" value="' + (p.fontColor||'#E8ECF4') + '" style="height:38px;padding:4px;cursor:pointer;width:100%;">'
-    + '  </div>'
-    + '</div>'
-    + '<div class="field-row" style="margin-bottom:16px;">'
-    + '  <div class="field"><label>Жирность</label>'
-    + '    <select id="textEditWeight" style="width:100%;">'
-    + '      <option value="400"' + ((p.fontWeight||'600')==='400'?' selected':'') + '>Обычный</option>'
-    + '      <option value="500"' + ((p.fontWeight||'600')==='500'?' selected':'') + '>Средний</option>'
-    + '      <option value="600"' + ((p.fontWeight||'600')==='600'?' selected':'') + '>Полужирный</option>'
-    + '      <option value="700"' + ((p.fontWeight||'600')==='700'?' selected':'') + '>Жирный</option>'
-    + '    </select>'
-    + '  </div>'
-    + '  <div class="field"><label>Выравнивание</label>'
-    + '    <select id="textEditAlign" style="width:100%;">'
-    + '      <option value="left"' + ((p.textAlign||'left')==='left'?' selected':'') + '>По левому краю</option>'
-    + '      <option value="center"' + ((p.textAlign||'left')==='center'?' selected':'') + '>По центру</option>'
-    + '      <option value="right"' + ((p.textAlign||'left')==='right'?' selected':'') + '>По правому краю</option>'
-    + '    </select>'
-    + '  </div>'
-    + '</div>'
-    + '<div style="display:flex;gap:10px;justify-content:flex-end;">'
-    + '  <button class="btn btn-ghost" id="textEditCancel">Отмена</button>'
-    + '  <button class="btn btn-primary" id="textEditSave">Сохранить</button>'
-    + '</div>'
-    + '</div>';
-
-  box.innerHTML = html;
-  overlay.appendChild(box);
-  document.body.appendChild(overlay);
-
-  var sizeInput = box.querySelector('#textEditSize');
-  var sizeVal = box.querySelector('#textEditSizeVal');
-  sizeInput.oninput = function(){ sizeVal.textContent = sizeInput.value + 'px'; };
-
-  function close(){ overlay.remove(); }
-
-  box.querySelector('#textEditCancel').onclick = close;
-  overlay.addEventListener('click', function(e){ if(e.target === overlay) close(); });
-
-  box.querySelector('#textEditSave').onclick = async function(){
-    if (typeof pushUndoSnapshot === 'function') pushUndoSnapshot('редактирование текста');
-    var db = getActiveDashboard();
-    if(!db){ close(); return; }
-    var pp = db.panels.find(function(x){ return x.id === p.id; });
-    if(!pp){ close(); return; }
-    pp.textContent = box.querySelector('#textEditContent').value.trim() || 'Заголовок';
-    pp.fontSize = Number(sizeInput.value) || 24;
-    pp.fontColor = box.querySelector('#textEditColor').value || '#E8ECF4';
-    pp.fontWeight = box.querySelector('#textEditWeight').value || '600';
-    pp.textAlign = box.querySelector('#textEditAlign').value || 'left';
-    try {
-      await updateDashboardOnServer(db);
-      renderPanels();
-      toast('Текст обновлён');
-    } catch(e) { toast('Ошибка сохранения: ' + e.message); }
-    close();
-  };
 }
 
 /* ── Share helpers ───────────────────────────────── */
@@ -1530,8 +1411,7 @@ function showQuickStartBanner(){
 
 /* ── buildPanelSummary: краткое текстовое описание сути панели ── */
 function buildPanelSummary(p, src){
-  var vizNames = {line:'Линейный график',bar:'Столбчатая диаграмма',pie:'Круговая диаграмма',kpi:'KPI-число',table:'Таблица',logs:'Таблица логов',gauge:'Шкала-индикатор',heatmap:'Тепловая карта',text:'Текст'};
-  if(p.viz === 'text') return 'текст: ' + (p.textContent || '').slice(0, 80);
+  var vizNames = {line:'Линейный график',bar:'Столбчатая диаграмма',pie:'Круговая диаграмма',kpi:'KPI-число',table:'Таблица',logs:'Таблица логов',gauge:'Шкала-индикатор',heatmap:'Тепловая карта'};
   var rangeNames = {'24h':'24ч','7d':'7д','30d':'30д','all':'всё время','custom':'выбранный период'};
   var groupNames = {'day':'по дням','hour':'по часам','minute':'по минутам','month':'по месяцам','week':'по неделям','__field':'по полю'};
   var aggNames = {'count':'количество','sum':'сумма','avg':'среднее','min':'минимум','max':'максимум','median':'медиана','p95':'p95','p99':'p99'};
