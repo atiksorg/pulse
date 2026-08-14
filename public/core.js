@@ -287,6 +287,7 @@ function formatNum(n, formatType){
 /* ── describeMeta ────────────────────────────────── */
 function describeMeta(p){
   var esc = escapeHtml;
+  if(p.viz === 'text') return '<span class="meta-tag">текст</span>';
   var parts = [];
   parts.push(p.type ? 'type:'+esc(p.type) : 'все типы');
   if(p.group === '__field') parts.push('поле:'+(p.field ? esc(p.field) : '—'));
@@ -350,7 +351,8 @@ function sanitizePanelForSave(p){
     'filters','breakdownfield',
     'cx','cy','cw','ch','cz','locked',
     'thresholds','stacked','cumulative','secondAxis','compare',
-    'gaugeMin','gaugeMax','formula','derived'
+    'gaugeMin','gaugeMax','formula','derived',
+    'textContent','fontSize','fontWeight','fontColor','textAlign'
   ];
   for(var i=0;i<keepKeys.length;i++){
     var k = keepKeys[i];
